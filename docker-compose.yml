@@ -36,7 +36,7 @@ x-pg-hardening: &pg-hardening
 
 services:
   postgres:
-    image: postgres:17.9-alpine
+    image: postgres:18.3-alpine
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # let Postgres flush WAL on shutdown
@@ -114,7 +114,7 @@ services:
     networks: [deepfake]
 
   rabbitmq:
-    image: rabbitmq:4.2.6-management-alpine
+    image: rabbitmq:4.3.0-management-alpine
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # flush queues to disk before exit
@@ -243,7 +243,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.34.38
+    image: amazon/aws-cli:2.34.40
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -269,7 +269,7 @@ services:
     # Dedicated Postgres for Keycloak. Without this, start-dev would fall back
     # to in-memory H2 — every `compose down` would wipe users created in dev,
     # which is annoying when testing login flows. Postgres from day one.
-    image: postgres:17.9-alpine
+    image: postgres:18.3-alpine
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s
