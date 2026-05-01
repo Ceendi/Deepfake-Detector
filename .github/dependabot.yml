@@ -1,0 +1,37 @@
+# Dependabot automatically opens PRs when pinned tags / actions have newer
+# versions. The compose tags are pinned to patch level (e.g. postgres:17.9-alpine);
+# Dependabot bumps them, the security-scan workflow re-runs against the new
+# tag because it reads from compose dynamically, so dev and scan stay in lockstep.
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "ci"
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      docker-compose:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "infra"
+    labels:
+      - "dependencies"
+      - "infra"

@@ -1,0 +1,178 @@
+name: Security scan (Trivy)
+
+# Warning-only: this workflow scans every image referenced from the dev and
+# prod compose files for HIGH/CRITICAL CVEs and posts a summary to the PR.
+# It deliberately does NOT fail the build — base images carry 0-days for
+# weeks before patches land, and we don't want to block PRs on upstream
+# vendor timelines. Once the application services exist and we control
+# their Dockerfiles directly, switch this workflow's `exit-code` to 1 for
+# the application images.
+
+on:
+  pull_request:
+    paths:
+      - "docker-compose.yml"
+      - "**/Dockerfile"
+      - ".github/workflows/security-scan.yml"
+  push:
+    branches: [main]
+  schedule:
+    # Weekly re-scan to catch newly disclosed CVEs in pinned images.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+# Workflow-level: deny all by default. Each job declares its own.
+permissions: {}
+
+concurrency:
+  group: security-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  list-images:
+    # Single source of truth: docker-compose.yml. We ask Compose itself which
+    # images would be pulled (`docker compose config --images`) and feed that
+    # list into the scan matrix. This means dev and scan can never drift —
+    # bumping a tag in compose automatically rescopes the scan.
+    name: Enumerate compose images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      images: ${{ steps.collect.outputs.images }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Collect images from compose
+        id: collect
+        run: |
+          # `docker compose config` interpolates ${VAR} from env. CI runners
+          # don't have `.env`, so without `--env-file .env.example` Compose
+          # warns about every unset var. The example file is the published
+          # contract; using it here guarantees CI sees the same render the
+          # team uses locally.
+          # `--profile '*'` is not supported by Compose; pass every profile
+          # explicitly so services gated behind any profile are included.
+          IMAGES=$(docker compose \
+            --env-file .env.example \
+            --profile core --profile auth --profile ml --profile monitoring \
+            config --images | sort -u | jq -R . | jq -s -c)
+          if [ "$IMAGES" = "[]" ] || [ -z "$IMAGES" ]; then
+            echo "::error::No images extracted from compose. Aborting scan." >&2
+            exit 1
+          fi
+          echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
+          echo "Will scan:"; echo "$IMAGES" | jq -r '.[]'
+
+  scan-images:
+    name: Scan compose images
+    needs: list-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.list-images.outputs.images) }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0" # warning-only; flip to "1" once we own Dockerfiles
+          vuln-type: "os,library"
+
+      - name: Run Trivy in SARIF mode (for Code Scanning)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: sarif
+          output: trivy-${{ strategy.job-index }}.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
+        with:
+          sarif_file: trivy-${{ strategy.job-index }}.sarif
+          category: trivy-${{ matrix.image }}
+
+  scan-config:
+    name: Scan compose / Dockerfile config
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "0" # warning-only
+
+      - name: Trivy config scan (SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config.sarif
+          severity: HIGH,CRITICAL
+
+      - name: Upload config SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225 # v4.35.2
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+  generate-sbom:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          format: cyclonedx-json
+          output-file: sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: sbom.cdx.json
+          retention-days: 90
