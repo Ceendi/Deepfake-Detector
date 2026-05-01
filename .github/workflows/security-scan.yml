@@ -58,10 +58,12 @@ jobs:
           # team uses locally.
           # `--profile '*'` is not supported by Compose; pass every profile
           # explicitly so services gated behind any profile are included.
+          # We filter out services with a 'build' block, as those are local
+          # application images that haven't been built yet in this job.
           IMAGES=$(docker compose \
             --env-file .env.example \
             --profile core --profile auth --profile ml --profile monitoring \
-            config --images | sort -u | jq -R . | jq -s -c)
+            config --format json | jq -r '.services | to_entries[] | select(.value.build == null) | .value.image' | sort -u | jq -R . | jq -s -c)
           if [ "$IMAGES" = "[]" ] || [ -z "$IMAGES" ]; then
             echo "::error::No images extracted from compose. Aborting scan." >&2
             exit 1
@@ -85,6 +87,10 @@ jobs:
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40 # v2.19.0
         with:
           egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+
 
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
