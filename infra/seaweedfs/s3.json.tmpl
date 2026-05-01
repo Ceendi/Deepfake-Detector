@@ -1,0 +1,46 @@
+{
+  "identities": [
+    {
+      "name": "admin",
+      "credentials": [
+        {
+          "accessKey": "${S3_ADMIN_KEY}",
+          "secretKey": "${S3_ADMIN_SECRET}"
+        }
+      ],
+      "actions": ["Admin"]
+    },
+    {
+      "name": "file-service",
+      "credentials": [
+        {
+          "accessKey": "${S3_FILE_SERVICE_KEY}",
+          "secretKey": "${S3_FILE_SERVICE_SECRET}"
+        }
+      ],
+      "actions": [
+        "Read:deepfake-uploads",
+        "Write:deepfake-uploads",
+        "List:deepfake-uploads",
+        "Tagging:deepfake-uploads"
+      ]
+    },
+    {
+      "name": "detector",
+      "credentials": [
+        {
+          "accessKey": "${S3_DETECTOR_KEY}",
+          "secretKey": "${S3_DETECTOR_SECRET}"
+        }
+      ],
+      "actions": [
+        "Read:deepfake-uploads",
+        "List:deepfake-uploads",
+        "Read:analysis-artifacts",
+        "Write:analysis-artifacts",
+        "List:analysis-artifacts",
+        "Tagging:analysis-artifacts"
+      ]
+    }
+  ]
+}

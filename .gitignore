@@ -1,0 +1,62 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+*.swp
+
+# Claude Code (per-user; settings.json may be committed if shared)
+.claude/settings.local.json
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# Java
+target/
+*.jar
+*.class
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+
+# Test / coverage
+coverage/
+htmlcov/
+.coverage
+.nyc_output/
+
+# Logs / tmp
+*.log
+logs/
+tmp/
+
+# ML artifacts
+*.pt
+*.onnx
+*.ckpt
+wandb/
+lightning_logs/
+mlruns/
+
+# Data
+data/
+datasets/
