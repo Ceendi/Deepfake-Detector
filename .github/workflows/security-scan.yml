@@ -52,14 +52,9 @@ jobs:
         id: collect
         run: |
           # `docker compose config` interpolates ${VAR} from env. CI runners
-          # don't have `.env`, so without `--env-file .env.example` Compose
-          # warns about every unset var. The example file is the published
-          # contract; using it here guarantees CI sees the same render the
-          # team uses locally.
-          # `--profile '*'` is not supported by Compose; pass every profile
-          # explicitly so services gated behind any profile are included.
-          # We filter out services with a 'build' block, as those are local
-          # application images that haven't been built yet in this job.
+          # don't have `.env`, so without copying it from `.env.example` Compose
+          # will fail on services that have `env_file: [.env]` hardcoded.
+          cp .env.example .env || touch .env
           IMAGES=$(docker compose \
             --env-file .env.example \
             --profile core --profile auth --profile ml --profile monitoring \

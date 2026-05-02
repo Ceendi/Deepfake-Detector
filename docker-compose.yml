@@ -352,6 +352,7 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
       interval: 10s
       retries: 10
+    networks: [deepfake]
 
   gateway:
     build: ./gateway
@@ -362,6 +363,23 @@ services:
     ports: ["8080:8080"]
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    networks: [deepfake]
+
+  file-service:
+    build: ./file-service
+    profiles: ["core"]
+    depends_on:
+      eureka-server: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+      seaweedfs-bucket-init: { condition: service_completed_successfully }
+    env_file: [.env]
+    environment:
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      retries: 10
+    networks: [deepfake]
 
 volumes:
   pgdata:

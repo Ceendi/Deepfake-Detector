@@ -1,0 +1,28 @@
+server:
+  port:
+    8081
+spring:
+  application:
+    name: file-service
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+storage:
+  endpoint: http://seaweedfs:8333
+  region: us-east-1
+  access-key: ${S3_FILE_SERVICE_KEY}
+  secret-key: ${S3_FILE_SERVICE_SECRET}
+  bucket: deepfake-uploads
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
