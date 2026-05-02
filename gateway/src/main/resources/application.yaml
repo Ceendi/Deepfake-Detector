@@ -1,0 +1,44 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: gateway
+  cloud:
+    gateway:
+      server:
+        webflux:
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowedOrigins:
+                  - "http://localhost:5173"
+                  - "http://localhost:4173"
+                allowedMethods: ["GET","POST","PUT","DELETE","PATCH","OPTIONS"]
+                allowedHeaders: "*"
+                allowCredentials: true
+                maxAge: 3600
+          routes:
+            - id: orchestrator
+              uri: lb://orchestrator
+              predicates:
+                - Path=/api/analysis/**,/ws/**
+            - id: file-service
+              uri: lb://file-service
+              predicates:
+                - Path=/api/files/**
+          default-filters:
+            - name: RequestSize
+              args:
+                maxSize: 500MB
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always

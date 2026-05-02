@@ -353,6 +353,16 @@ services:
       interval: 10s
       retries: 10
 
+  gateway:
+    build: ./gateway
+    profiles: ["core"]
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    ports: ["8080:8080"]
+    environment:
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+
 volumes:
   pgdata:
   redisdata:
