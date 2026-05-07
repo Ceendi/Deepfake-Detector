@@ -52,6 +52,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      PGDATA: /var/lib/postgresql/data
     ports:
       # 127.0.0.1 prefix: don't expose dev creds to LAN.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -285,6 +286,7 @@ services:
       POSTGRES_USER: keycloak
       POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       POSTGRES_DB: keycloak
+      PGDATA: /var/lib/postgresql/data
     volumes:
       - keycloak-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -379,6 +381,24 @@ services:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 15s
       retries: 10
+    networks: [deepfake]
+
+  orchestrator:
+    build: ./orchestrator
+    profiles: ["core"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      eureka-server: { condition: service_healthy }
+    env_file: [.env] # POSTGRES_*, REDIS_PASSWORD, RABBITMQ_* wszystkie tutaj
+    environment:
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      retries: 15
+      start_period: 40s
     networks: [deepfake]
 
 volumes:
