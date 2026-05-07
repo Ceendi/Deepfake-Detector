@@ -152,7 +152,7 @@ services:
     networks: [deepfake]
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.22
+    image: chrislusf/seaweedfs:4.23
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # volume server flushes outstanding writes on SIGTERM
@@ -244,7 +244,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.34.40
+    image: amazon/aws-cli:2.34.41
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
