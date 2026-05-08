@@ -1,0 +1,21 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deepfake-video-detector"
+version = "0.1.0"
+description = "Video Detector Service for Deepfakes"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi==0.136.*",
+    "uvicorn[standard]==0.46.*",
+    "pika==1.4.*",
+    "pydantic==2.13.*",
+    "prometheus-client==0.25.*",
+    "structlog==25.*",
+    "boto3==1.42.*",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

@@ -401,6 +401,70 @@ services:
       start_period: 40s
     networks: [deepfake]
 
+  video-detector:
+    build: ./video-detector
+    profiles: ["ml"]
+    restart: unless-stopped
+    security_opt: *default-security
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.5"
+          pids: 500
+    logging: *default-logging
+    depends_on:
+      rabbitmq:                 { condition: service_healthy }
+      seaweedfs:                { condition: service_healthy }
+      seaweedfs-bucket-init:    { condition: service_completed_successfully }
+      redis:                    { condition: service_healthy }
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      QUEUE_NAME: analysis.video
+      SOURCE_LABEL: video
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_DETECTOR_KEY}
+      S3_SECRET_KEY: ${S3_DETECTOR_SECRET}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [deepfake]
+
+  audio-detector:
+    build: ./audio-detector
+    profiles: ["ml"]
+    restart: unless-stopped
+    security_opt: *default-security
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.5"
+          pids: 500
+    logging: *default-logging
+    depends_on:
+      rabbitmq:                 { condition: service_healthy }
+      seaweedfs:                { condition: service_healthy }
+      seaweedfs-bucket-init:    { condition: service_completed_successfully }
+      redis:                    { condition: service_healthy }
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      QUEUE_NAME: analysis.audio
+      SOURCE_LABEL: audio
+      S3_ENDPOINT: http://seaweedfs:8333
+      S3_REGION: us-east-1
+      S3_ACCESS_KEY: ${S3_DETECTOR_KEY}
+      S3_SECRET_KEY: ${S3_DETECTOR_SECRET}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks: [deepfake]
+
 volumes:
   pgdata:
   redisdata:
