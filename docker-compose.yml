@@ -374,9 +374,10 @@ services:
       eureka-server: { condition: service_healthy }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
-    env_file: [.env]
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
+      S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 15s
@@ -391,9 +392,14 @@ services:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
-    env_file: [.env] # POSTGRES_*, REDIS_PASSWORD, RABBITMQ_* wszystkie tutaj
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
       interval: 15s
