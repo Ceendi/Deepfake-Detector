@@ -383,8 +383,6 @@ services:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
-      S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
-      S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 15s
