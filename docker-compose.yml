@@ -218,6 +218,11 @@ services:
     # Runs before the main seaweedfs service starts (via depends_on).
     image: alpine:3.23
     profiles: ["core"]
+    # user must match SeaweedFS uid (1000) so files in the shared seaweedconfig
+    # volume are owned by the same user that SeaweedFS runs as. Without this,
+    # cap_drop:ALL strips CAP_DAC_OVERRIDE and root can't write to a 755 dir
+    # owned by uid 1000.
+    user: "1000:1000"
     security_opt: *default-security
     cap_drop: [ALL]
     deploy:
@@ -393,7 +398,6 @@ services:
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     environment:
-      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -421,10 +425,10 @@ services:
           pids: 500
     logging: *default-logging
     depends_on:
-      rabbitmq:                 { condition: service_healthy }
-      seaweedfs:                { condition: service_healthy }
-      seaweedfs-bucket-init:    { condition: service_completed_successfully }
-      redis:                    { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+      seaweedfs-bucket-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
@@ -453,10 +457,10 @@ services:
           pids: 500
     logging: *default-logging
     depends_on:
-      rabbitmq:                 { condition: service_healthy }
-      seaweedfs:                { condition: service_healthy }
-      seaweedfs-bucket-init:    { condition: service_completed_successfully }
-      redis:                    { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+      seaweedfs: { condition: service_healthy }
+      seaweedfs-bucket-init: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
