@@ -216,15 +216,16 @@ services:
     # Phase 1 (pre-start): renders /etc/seaweedfs/s3.json from the template
     # using env vars, populated into the shared `seaweedconfig` volume.
     # Runs before the main seaweedfs service starts (via depends_on).
+    # Runs as root: the seaweedfs image entrypoint also runs as root, so a
+    # 0644 file written here is readable downstream regardless of ownership.
     image: alpine:3.23
     profiles: ["core"]
-    # user must match SeaweedFS uid (1000) so files in the shared seaweedconfig
-    # volume are owned by the same user that SeaweedFS runs as. Without this,
-    # cap_drop:ALL strips CAP_DAC_OVERRIDE and root can't write to a 755 dir
-    # owned by uid 1000.
-    user: "1000:1000"
     security_opt: *default-security
     cap_drop: [ALL]
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     deploy:
       resources:
         limits:
@@ -320,7 +321,8 @@ services:
       keycloak-db:
         condition: service_healthy
     # DEV-ONLY: start-dev disables HTTPS and skips the provider build cache.
-    command: ["start-dev", "--import-realm"]
+    # Realm import owned by keycloak-config-cli (idempotent) — see ADR-0001.
+    command: ["start-dev"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
@@ -337,8 +339,6 @@ services:
       KC_METRICS_ENABLED: "true"
     ports:
       - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
-    volumes:
-      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
     healthcheck:
       # KC UBI image has no curl/wget — raw bash /dev/tcp probe against the
       # management port (9000, internal) where /health/ready lives.
@@ -349,6 +349,44 @@ services:
       timeout: 5s
       retries: 15
       start_period: 60s
+    networks: [deepfake]
+
+  keycloak-config-cli:
+    # Version pin: cli was built/tested against KC 26.5.4; our KC is 26.6.1.
+    # Forward-compatible for the API surface we use — see ADR-0001 §Consequences.
+    image: adorsys/keycloak-config-cli:6.5.0-26.5.4
+    profiles: ["auth"]
+    restart: "no"
+    security_opt: *default-security
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+          pids: 200
+    logging: *default-logging
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      # Admin REST API, not OIDC — uses the internal hostname, not the
+      # localhost issuer URL the Java services need via extra_hosts.
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_USER: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: "true"
+      KEYCLOAK_AVAILABILITYCHECK_TIMEOUT: 120s
+      IMPORT_FILES_LOCATIONS: /config/*.json
+      IMPORT_VARSUBSTITUTION_ENABLED: "true"
+      # Default for everything else is `full`; users get `no-delete` so UI-created
+      # accounts survive sync. See ADR-0001 §Consequences.
+      IMPORT_MANAGED_USER: no-delete
+    volumes:
+      - ./infra/keycloak/realm-export.json:/config/realm-export.json:ro
     networks: [deepfake]
 
   eureka-server:
