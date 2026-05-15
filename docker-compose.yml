@@ -67,7 +67,7 @@ services:
     networks: [deepfake]
 
   redis:
-    image: redis:8.6.2-alpine
+    image: redis:8.6.3-alpine
     profiles: ["core"]
     restart: unless-stopped
     security_opt: *default-security
@@ -249,7 +249,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.34.41
+    image: amazon/aws-cli:2.34.45
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -381,6 +381,8 @@ services:
       seaweedfs-bucket-init: { condition: service_completed_successfully }
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
+      S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
       S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
     healthcheck:
