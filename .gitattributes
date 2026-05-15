@@ -1,0 +1,5 @@
+# Force LF for files that must run on Linux containers
+*.sh    text eol=lf
+*.py    text eol=lf
+mvnw    text eol=lf
+*.cmd   text eol=crlf
