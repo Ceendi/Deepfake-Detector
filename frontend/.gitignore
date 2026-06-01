@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Lokalny plan roboczy (nie śledzony)
+PLAN.md
+DOBRE_PRAKTYKI.md
+CLAUDE-DESIGN.md

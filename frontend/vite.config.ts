@@ -5,10 +5,7 @@ import path from 'node:path'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
-  ],
+  plugins: [react(), visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true })],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
