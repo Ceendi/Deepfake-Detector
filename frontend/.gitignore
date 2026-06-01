@@ -23,7 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 
-# Lokalny plan roboczy (nie śledzony)
-PLAN.md
-DOBRE_PRAKTYKI.md
-CLAUDE-DESIGN.md
+# Wszystkie pliki .md (lokalne notatki, plany) — nie śledzone, poza README.md
+*.md
+!README.md
