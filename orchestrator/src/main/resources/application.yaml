@@ -3,6 +3,12 @@ server:
 spring:
   application:
     name: orchestrator
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri → Spring sam pobiera OIDC discovery (JWKS) i waliduje claim iss
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/deepfake}
   datasource:
     url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
     username: ${POSTGRES_USER}
