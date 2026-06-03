@@ -9,6 +9,11 @@ spring:
         jwt:
           # issuer-uri: Spring fetches OIDC discovery (JWKS endpoint) and validates the iss claim
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/deepfake}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
   cloud:
     gateway:
       server:
@@ -24,14 +29,38 @@ spring:
                 allowCredentials: true
                 maxAge: 3600
           routes:
-            - id: orchestrator
-              uri: lb://orchestrator
+            # Upload route first (more specific): stricter bucket, ~10 burst / ~60/min sustained.
+            - id: file-service-upload
+              uri: lb://file-service
               predicates:
-                - Path=/api/analysis/**,/ws/**
+                - Path=/api/files/upload
+                - Method=POST
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 1
+                    redis-rate-limiter.burstCapacity: 10
+                    key-resolver: "#{@userKeyResolver}"
             - id: file-service
               uri: lb://file-service
               predicates:
                 - Path=/api/files/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 2
+                    redis-rate-limiter.burstCapacity: 100
+                    key-resolver: "#{@userKeyResolver}"
+            - id: orchestrator
+              uri: lb://orchestrator
+              predicates:
+                - Path=/api/analysis/**,/ws/**
+              filters:
+                - name: RequestRateLimiter
+                  args:
+                    redis-rate-limiter.replenishRate: 2
+                    redis-rate-limiter.burstCapacity: 100
+                    key-resolver: "#{@userKeyResolver}"
           default-filters:
             - name: RequestSize
               args:
