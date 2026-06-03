@@ -405,9 +405,17 @@ services:
     depends_on:
       eureka-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports: ["8080:8080"]
+    # localhost -> host so the container can reach Keycloak on the host's published port
+    # and resolve the same issuer (iss) the token carries from KC_HOSTNAME.
+    extra_hosts:
+      - "localhost:host-gateway"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/deepfake
     networks: [deepfake]
 
   file-service:
@@ -417,10 +425,13 @@ services:
       eureka-server: { condition: service_healthy }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
+    extra_hosts:
+      - "localhost:host-gateway"
     environment:
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
+      JWT_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/deepfake
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 15s
@@ -435,6 +446,8 @@ services:
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
+    extra_hosts:
+      - "localhost:host-gateway"
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -442,6 +455,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      JWT_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/deepfake
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
       interval: 15s

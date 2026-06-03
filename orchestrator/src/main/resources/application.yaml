@@ -8,7 +8,7 @@ spring:
       resourceserver:
         jwt:
           # issuer-uri: Spring fetches OIDC discovery (JWKS) and validates the iss claim
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/deepfake}
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8180/realms/deepfake}
   datasource:
     url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
     username: ${POSTGRES_USER}
