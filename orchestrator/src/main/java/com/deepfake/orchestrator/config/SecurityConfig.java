@@ -13,7 +13,7 @@ import com.deepfake.orchestrator.security.JwtRoleConverter;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity // włącza @PreAuthorize
+@EnableMethodSecurity // enables @PreAuthorize
 public class SecurityConfig {
 
     @Bean

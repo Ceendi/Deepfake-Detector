@@ -19,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -68,10 +69,17 @@ public class AnalysisService {
     @Transactional(readOnly = true)
     public AnalysisResponse get(UUID id, String currentUserId) {
         Analysis a = repository.findById(id)
-                // IDOR guard — 404 (nie 403), by nie ujawniać istnienia cudzego zasobu (OWASP A01)
+                // IDOR guard: 404 not 403, so a foreign resource looks like a missing one (OWASP A01)
                 .filter(found -> found.getUserId().equals(currentUserId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
         return AnalysisResponse.from(a);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnalysisResponse> list(String currentUserId) {
+        return repository.findAllByUserIdOrderByCreatedAtDesc(currentUserId).stream()
+                .map(AnalysisResponse::from)
+                .toList();
     }
 
     public void handleResult(Map<String, Object> payload) {

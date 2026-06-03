@@ -9,8 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 
 /**
  * Immutable view of the authenticated principal, decoupling the controller layer from
- * Spring Security's {@link Jwt}. The service layer receives only {@code id()} (DIP) — see
- * Plan_Auth_Security_Layer §"Zasada nadrzędna".
+ * Spring Security's {@link Jwt}. The service layer receives only {@code id()} (DIP).
  */
 public record AuthenticatedUser(String id, String email, Set<String> roles) {
 

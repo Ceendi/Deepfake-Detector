@@ -7,7 +7,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          # issuer-uri → Spring sam pobiera OIDC discovery (JWKS) i waliduje claim iss
+          # issuer-uri: Spring fetches OIDC discovery (JWKS) and validates the iss claim
           issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/deepfake}
   datasource:
     url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -34,11 +34,8 @@ spring:
     publisher-confirm-type: correlated
     publisher-returns: true
     listener:
-      # Dzień 1: auto-ack — Spring acknowledguje po pomyślnym return z metody
-      # listenera, na exception nack. Wystarcza dla walking skeleton.
-      # Semestr 1 tydz 5 (wymaganie D6 — DLQ consumer + idempotentność):
-      # przejdziemy na manual i listenery przyjmą Channel + @Header(AmqpHeaders.DELIVERY_TAG)
-      # żeby ręcznie ack/nack po commitcie transakcji.
+      # auto-ack: Spring acks on successful listener return, nacks on exception.
+      # TODO(week 5, D6): switch to manual ack (Channel + DELIVERY_TAG) after tx commit.
       simple:
         acknowledge-mode: auto
         prefetch: 1

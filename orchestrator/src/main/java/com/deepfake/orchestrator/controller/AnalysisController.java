@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -25,6 +26,11 @@ public class AnalysisController {
     public AnalysisResponse create(@CurrentUser AuthenticatedUser user,
                                    @Valid @RequestBody CreateAnalysisRequest req) {
         return service.create(req, user.id());
+    }
+
+    @GetMapping
+    public List<AnalysisResponse> list(@CurrentUser AuthenticatedUser user) {
+        return service.list(user.id());
     }
 
     @GetMapping("/{id}")
