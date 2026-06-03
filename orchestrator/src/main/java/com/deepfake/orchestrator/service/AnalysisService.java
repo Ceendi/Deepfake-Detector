@@ -121,10 +121,10 @@ public class AnalysisService {
         }
         repository.save(a);
 
-        // 🔧 TODO (semester 1 week 5 — D6 race fix): replace findById + save with an atomic
+        // TODO(week 5, D6 race fix): replace findById + save with an atomic
         // UPDATE ... WHERE id = :id AND status IN ('PENDING','PROCESSING') RETURNING *.
         // With dummy ML (~2s sleep) the race is unlikely; with real ML both replies arrive
-        // within ms and last-write-wins drops one of videoProb/audioProb. See Plan_Dnia §7.
+        // within ms and last-write-wins drops one of videoProb/audioProb.
     }
 
     public void handleProgress(Map<String, Object> payload) {
