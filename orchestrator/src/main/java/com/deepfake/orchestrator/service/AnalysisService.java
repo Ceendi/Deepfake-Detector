@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.service;
 
 import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
+import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -18,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,7 +38,7 @@ public class AnalysisService {
     private final RabbitTemplate rabbitTemplate;
     private final StringRedisTemplate redis;
 
-    public Analysis create(CreateAnalysisRequest req, String userId) {
+    public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         Analysis analysis = Analysis.builder()
                 .userId(userId)
                 .fileId(req.fileId())
@@ -61,13 +63,23 @@ public class AnalysisService {
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, payload);
         }
 
-        return analysis;
+        return AnalysisResponse.from(analysis);
     }
 
     @Transactional(readOnly = true)
-    public Analysis get(UUID id) {
-        return repository.findById(id)
+    public AnalysisResponse get(UUID id, String currentUserId) {
+        Analysis a = repository.findById(id)
+                // IDOR guard: 404 not 403, so a foreign resource looks like a missing one (OWASP A01)
+                .filter(found -> found.getUserId().equals(currentUserId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        return AnalysisResponse.from(a);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AnalysisResponse> list(String currentUserId) {
+        return repository.findAllByUserIdOrderByCreatedAtDesc(currentUserId).stream()
+                .map(AnalysisResponse::from)
+                .toList();
     }
 
     public void handleResult(Map<String, Object> payload) {
@@ -109,10 +121,10 @@ public class AnalysisService {
         }
         repository.save(a);
 
-        // 🔧 TODO (semester 1 week 5 — D6 race fix): replace findById + save with an atomic
+        // TODO(week 5, D6 race fix): replace findById + save with an atomic
         // UPDATE ... WHERE id = :id AND status IN ('PENDING','PROCESSING') RETURNING *.
         // With dummy ML (~2s sleep) the race is unlikely; with real ML both replies arrive
-        // within ms and last-write-wins drops one of videoProb/audioProb. See Plan_Dnia §7.
+        // within ms and last-write-wins drops one of videoProb/audioProb.
     }
 
     public void handleProgress(Map<String, Object> payload) {

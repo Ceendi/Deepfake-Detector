@@ -4,6 +4,14 @@ server:
 spring:
   application:
     name: file-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri validates the iss claim (public URL in the token); jwk-set-uri is where
+          # keys are actually fetched (internal URL in docker, so no host-gateway hacks needed).
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8180/realms/deepfake}
+          jwk-set-uri: ${JWK_SET_URI:http://localhost:8180/realms/deepfake/protocol/openid-connect/certs}
   servlet:
     multipart:
       max-file-size: 500MB

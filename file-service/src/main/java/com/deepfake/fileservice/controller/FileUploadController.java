@@ -1,6 +1,11 @@
 package com.deepfake.fileservice.controller;
 
+import com.deepfake.fileservice.dto.FileUploadResponse;
+import com.deepfake.fileservice.security.AuthenticatedUser;
+import com.deepfake.fileservice.security.CurrentUser;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -19,19 +24,18 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/files")
+@PreAuthorize("hasRole('USER')")
+@RequiredArgsConstructor
 public class FileUploadController {
     private final S3Client s3Client;
     @Value("${storage.bucket}") String bucket;
 
-    public FileUploadController(S3Client s3Client) {
-        this.s3Client = s3Client;
-    }
-
     @PostMapping("/upload")
-    public Map<String, Object> upload(@RequestParam MultipartFile file) throws IOException {
+    public FileUploadResponse upload(@CurrentUser AuthenticatedUser user,
+                                     @RequestParam MultipartFile file) throws IOException {
         String fileId = UUID.randomUUID().toString();
         String key = fileId + "_" + file.getOriginalFilename();
-        
+
         Path tempFile = Files.createTempFile("upload-", "-" + file.getOriginalFilename());
         try {
             file.transferTo(tempFile);
@@ -40,6 +44,7 @@ public class FileUploadController {
                             .bucket(bucket).key(key)
                             .contentType(file.getContentType())
                             .contentLength(file.getSize())
+                            .metadata(Map.of("user-id", user.id())) // stamp owner (x-amz-meta-user-id)
                             .build(),
                     RequestBody.fromFile(tempFile)
             );
@@ -47,11 +52,7 @@ public class FileUploadController {
             Files.deleteIfExists(tempFile);
         }
 
-        return Map.of(
-                "file_id", fileId,
-                "file_key", key,
-                "size", file.getSize(),
-                "mimetype", Objects.requireNonNull(file.getContentType())
-        );
+        return new FileUploadResponse(fileId, key, file.getSize(),
+                Objects.requireNonNull(file.getContentType()));
     }
 }

@@ -1,8 +1,73 @@
 # Keycloak realm
 
-`realm-export.json` is auto-imported by `start-dev --import-realm` on first
-boot (see `docker-compose.yml`). It defines the `deepfake` realm with one
-public client (`deepfake-web`, PKCE).
+`realm-export.json` is the **declared state** of the `deepfake` realm. It is
+synced into a running Keycloak by [`keycloak-config-cli`](https://github.com/adorsys/keycloak-config-cli)
+on every `docker compose --profile auth up` — see [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md).
+
+## What's in the realm
+
+- One public client (`deepfake-web`, PKCE S256) for the SPA
+- Realm role `USER`, granted by default to every newly-registered user via the
+  composite meta-role `default-roles-deepfake`
+- Two dev users (`alice`, `bob`, password `Test1234!@`) for smoke tests and IDOR
+  verification — passwords satisfy the realm policy and contain no username
+  substring
+- Password policy, brute-force protection, token lifespans (details below)
+
+## Update flow — how to change realm config
+
+The realm is **idempotent IaC** — edit the JSON, commit, and the next compose
+up applies the diff. Concretely:
+
+```bash
+# 1. Edit infra/keycloak/realm-export.json
+# 2. Restart the sync container (or run a full up)
+docker compose --profile auth up keycloak-config-cli
+# Exits 0 when the realm matches the file. Re-runs are no-ops.
+```
+
+`keycloak-config-cli` connects to KC's Admin REST API as the bootstrap admin
+(`KEYCLOAK_ADMIN` from `.env`), diffs declared vs actual, and applies the
+delta. It does **not** wipe and reimport — existing user sessions, audit logs,
+and manually-created users are preserved (see Managed modes below).
+
+### What happens to teammates who pulled an older branch
+
+The previous setup used `start-dev --import-realm`, which imported the realm
+only on first boot (when DB was empty). After `git pull` of this branch, run:
+
+```bash
+docker compose --profile auth up keycloak-config-cli
+```
+
+This applies the new declared state to your existing realm. **No volume drop
+is required** — that's the entire point of switching to kc-config-cli. Users
+you created manually for testing survive.
+
+## Managed modes (resource ownership)
+
+| Resource          | Mode        | Effect                                                                 |
+|-------------------|-------------|------------------------------------------------------------------------|
+| roles, clients, authentication flows | `full` (default) | File is the sole source of truth. UI additions get purged on next sync. |
+| users             | `no-delete` | File-declared users are reconciled (incl. password reset). UI-created users are preserved. |
+
+This split means **dev users `alice` and `bob` have their passwords reset to
+`Test1234!@` on every sync** — that's deliberate, gives the team a known good
+state for scripted tests. If you want a dev account whose password sticks,
+create it via Admin UI; `no-delete` will leave it alone.
+
+**Rule for the team:** for anything other than ad-hoc throwaway users (roles,
+clients, password policy, etc.), edit the JSON. Admin UI changes to managed
+resources will silently disappear on the next sync.
+
+## Compatibility note
+
+We pin `adorsys/keycloak-config-cli:6.5.0-26.5.4` (latest stable as of May
+2026). Our Keycloak is `26.6.1` — the cli was built/tested against 26.5.4.
+The Admin REST API surface we exercise (realms, roles, users, clients,
+password policy) is stable across the 26.5→26.6 minor bump, so this works for
+our scope. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for
+the full risk analysis and upgrade plan.
 
 ## Password policy
 
