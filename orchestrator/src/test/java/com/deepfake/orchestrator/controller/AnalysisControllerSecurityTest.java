@@ -1,5 +1,6 @@
 package com.deepfake.orchestrator.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -117,5 +118,13 @@ class AnalysisControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fileId\":\"\",\"fileKey\":\"key-1\",\"type\":\"VIDEO\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void openApiDocsPathIsPublic() throws Exception {
+        // Security must not reject the docs path with 401 (no springdoc handler in the slice,
+        // so the exact downstream status is irrelevant — only "not blocked by auth" matters).
+        mvc.perform(get("/v3/api-docs"))
+                .andExpect(r -> assertThat(r.getResponse().getStatus()).isNotEqualTo(401));
     }
 }
