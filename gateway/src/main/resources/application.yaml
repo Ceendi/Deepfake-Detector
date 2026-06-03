@@ -3,6 +3,12 @@ server:
 spring:
   application:
     name: gateway
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri → Spring sam pobiera OIDC discovery (JWKS endpoint) i waliduje claim iss
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/deepfake}
   cloud:
     gateway:
       server:
