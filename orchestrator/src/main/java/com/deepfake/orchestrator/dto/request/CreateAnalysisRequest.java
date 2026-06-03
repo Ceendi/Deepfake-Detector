@@ -2,4 +2,10 @@ package com.deepfake.orchestrator.dto.request;
 
 import com.deepfake.orchestrator.entity.AnalysisType;
 
-public record CreateAnalysisRequest(String fileId, String fileKey, AnalysisType type) {}
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
+public record CreateAnalysisRequest(
+        @NotBlank String fileId,
+        @NotBlank String fileKey,
+        @NotNull AnalysisType type) {}

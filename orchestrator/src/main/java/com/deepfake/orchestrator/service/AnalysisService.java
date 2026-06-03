@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.service;
 
 import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
+import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -36,7 +37,7 @@ public class AnalysisService {
     private final RabbitTemplate rabbitTemplate;
     private final StringRedisTemplate redis;
 
-    public Analysis create(CreateAnalysisRequest req, String userId) {
+    public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         Analysis analysis = Analysis.builder()
                 .userId(userId)
                 .fileId(req.fileId())
@@ -61,13 +62,16 @@ public class AnalysisService {
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, payload);
         }
 
-        return analysis;
+        return AnalysisResponse.from(analysis);
     }
 
     @Transactional(readOnly = true)
-    public Analysis get(UUID id) {
-        return repository.findById(id)
+    public AnalysisResponse get(UUID id, String currentUserId) {
+        Analysis a = repository.findById(id)
+                // IDOR guard — 404 (nie 403), by nie ujawniać istnienia cudzego zasobu (OWASP A01)
+                .filter(found -> found.getUserId().equals(currentUserId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        return AnalysisResponse.from(a);
     }
 
     public void handleResult(Map<String, Object> payload) {
