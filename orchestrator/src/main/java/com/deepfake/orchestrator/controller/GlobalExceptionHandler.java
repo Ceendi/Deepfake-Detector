@@ -15,6 +15,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.deepfake.orchestrator.dto.response.ErrorResponse;
 
@@ -55,6 +57,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException ex) {
         return body(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required", null);
+    }
+
+    // Unmapped path/static-resource miss: keep Spring's default 404 instead of falling into the
+    // catch-all 500 below.
+    @ExceptionHandler({NoResourceFoundException.class, NoHandlerFoundException.class})
+    public ResponseEntity<ErrorResponse> handleNotFound(Exception ex) {
+        return body(HttpStatus.NOT_FOUND, "NOT_FOUND", "Resource not found", null);
     }
 
     @ExceptionHandler(Exception.class)
