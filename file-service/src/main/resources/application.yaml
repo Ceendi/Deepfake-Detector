@@ -4,6 +4,12 @@ server:
 spring:
   application:
     name: file-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri: Spring fetches OIDC discovery (JWKS) and validates the iss claim
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8180/realms/deepfake}
   servlet:
     multipart:
       max-file-size: 500MB

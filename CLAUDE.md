@@ -249,6 +249,7 @@ python -m src.training.train            # trening (Colab/Kaggle)
 - **Nie mieszaj Jackson 2 i Jackson 3** na classpath — wybierz Jackson 3 (domyślny SB 4.0)
 - **Nie używaj `Jackson2JsonMessageConverter`** — w SB 4.0 użyj `JacksonJsonMessageConverter`
 - **Nie używaj `spring-cloud-dependencies` 2025.0** z Spring Boot 4.0 — wymaga 2025.1 (Oakwood)
+- **Nie abstrahuj na siłę security primitives** — `JwtRoleConverter`, `AuthenticatedUser`, `@CurrentUser`, `CurrentUserArgumentResolver`, `SecurityConfig` są **świadomie zduplikowane** między `orchestrator` a `file-service` (2 serwisy × ~80 linii; wspólny `common-security` to premature abstraction przy 2 konsumentach). Zmieniasz jeden — zsynchronizuj drugi.
 
 ---
 
