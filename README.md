@@ -82,11 +82,12 @@ product decision, and the email-verification setup deferred until SMTP).
 
 `KC_HOSTNAME` is forced to `http://localhost:8180` in dev, so JWTs always
 carry the same `iss` claim regardless of which network the request
-originated from. Both frontend and backend services use the single
-`JWT_ISSUER_URI=http://localhost:8180/realms/deepfake` from the env —
-backend services running inside the docker network reach it via
-`extra_hosts: host.docker.internal:host-gateway` (configured per-service
-in their own compose entries when they exist).
+originated from. Backend services validate that `iss` against
+`JWT_ISSUER_URI=http://localhost:8180/realms/deepfake` but fetch the signing
+keys from `JWK_SET_URI=http://keycloak:8080/.../certs` over the docker
+network — `localhost` inside a container is the container itself, so the key
+fetch must target Keycloak directly. The frontend uses the public
+`localhost:8180` URL for the login redirect.
 
 ## Architecture
 
