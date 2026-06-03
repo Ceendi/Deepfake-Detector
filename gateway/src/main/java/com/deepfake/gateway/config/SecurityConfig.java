@@ -18,7 +18,7 @@ class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable) // stateless API
                 .authorizeExchange(ex -> ex
                         .pathMatchers("/actuator/health/**", "/actuator/info").permitAll()
-                        .pathMatchers("/actuator/prometheus").permitAll() // scraper jest internal
+                        .pathMatchers("/actuator/prometheus").permitAll() // scraper is internal
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter)))
