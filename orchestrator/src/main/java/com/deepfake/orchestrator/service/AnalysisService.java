@@ -3,6 +3,7 @@ package com.deepfake.orchestrator.service;
 import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
+import com.deepfake.orchestrator.dto.response.AnalysisSummary;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -10,6 +11,8 @@ import com.deepfake.orchestrator.repository.AnalysisRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -19,7 +22,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -76,10 +78,9 @@ public class AnalysisService {
     }
 
     @Transactional(readOnly = true)
-    public List<AnalysisResponse> list(String currentUserId) {
-        return repository.findAllByUserIdOrderByCreatedAtDesc(currentUserId).stream()
-                .map(AnalysisResponse::from)
-                .toList();
+    public Page<AnalysisSummary> list(String currentUserId, Pageable pageable) {
+        // IDOR is enforced by scoping to currentUserId — the query never returns foreign rows.
+        return repository.findByUserId(currentUserId, pageable);
     }
 
     public void handleResult(Map<String, Object> payload) {

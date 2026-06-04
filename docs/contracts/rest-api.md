@@ -59,12 +59,38 @@ gateway / orchestrator returns `429 Too Many Requests` with body
 
 ### `GET /api/analysis/{id}`
 
-Returns `200 OK` with `Analysis`. Returns `404 Not Found` if the resource
-does not exist OR `userId != jwt.sub` (IDOR guard — never `403`).
+Returns `200 OK` with the full `Analysis` (see below). Returns `404 Not Found`
+if the resource does not exist OR `userId != jwt.sub` (IDOR guard — never `403`).
 
 ### `GET /api/analysis`
 
-Returns `200 OK` with `Analysis[]` for the authenticated user.
+Paginated history for the authenticated user. Query params: `page` (default `0`),
+`size` (default `20`); ordered by `createdAt DESC`. Returns `200 OK` with a
+`PagedModel` of the lightweight `AnalysisSummary` projection — **not** the full
+`Analysis` (detail-only fields such as `fileKey`, `videoProb`, `audioProb`,
+`errorMessage`, `details` are omitted; fetch them via `GET /api/analysis/{id}`).
+
+```json
+{
+  "content": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "fileId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "VIDEO",
+      "status": "COMPLETED",
+      "verdict": "FAKE",
+      "confidence": 0.74,
+      "createdAt": "2026-04-21T10:30:00Z",
+      "updatedAt": "2026-04-21T10:30:02Z"
+    }
+  ],
+  "page": { "size": 20, "number": 0, "totalElements": 1, "totalPages": 1 }
+}
+```
+
+`AnalysisSummary` fields (`id`, `fileId`, `type`, `status`, `verdict`,
+`confidence`, `createdAt`, `updatedAt`) follow the same types and nullability as
+the matching `Analysis` fields below.
 
 ## `Analysis` shape
 
