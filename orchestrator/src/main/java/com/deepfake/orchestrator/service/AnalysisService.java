@@ -1,5 +1,6 @@
 package com.deepfake.orchestrator.service;
 
+import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
@@ -39,6 +40,7 @@ public class AnalysisService {
     private final AnalysisRepository repository;
     private final RabbitTemplate rabbitTemplate;
     private final StringRedisTemplate redis;
+    private final AnalysisCache cache;
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         Analysis analysis = Analysis.builder()
@@ -70,11 +72,19 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public AnalysisResponse get(UUID id, String currentUserId) {
-        Analysis a = repository.findById(id)
-                // IDOR guard: 404 not 403, so a foreign resource looks like a missing one (OWASP A01)
-                .filter(found -> found.getUserId().equals(currentUserId))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        return AnalysisResponse.from(a);
+        AnalysisResponse a = cache.getById(id).orElseGet(() -> {
+            AnalysisResponse loaded = repository.findById(id).map(AnalysisResponse::from).orElse(null);
+            if (loaded != null) {
+                cache.putById(loaded);
+            }
+            return loaded;
+        });
+        // IDOR guard runs after the cache read (404 not 403), so a cache hit on a foreign id still
+        // 404s instead of leaking another user's data — see AnalysisServiceCacheIdorTest.
+        if (a == null || !a.userId().equals(currentUserId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        return a;
     }
 
     @Transactional(readOnly = true)
@@ -100,6 +110,7 @@ public class AnalysisService {
             a.setStatus(AnalysisStatus.FAILED);
             a.setErrorMessage(extractError(payload));
             repository.save(a);
+            cache.evictById(id);
             return;
         }
 
@@ -121,6 +132,8 @@ public class AnalysisService {
             a.setConfidence(finalProb.subtract(THRESHOLD).abs().multiply(TWO));
         }
         repository.save(a);
+        // Evict so a GET right after completion returns the new state, not the cached PENDING.
+        cache.evictById(id);
 
         // TODO(week 5, D6 race fix): replace findById + save with an atomic
         // UPDATE ... WHERE id = :id AND status IN ('PENDING','PROCESSING') RETURNING *.

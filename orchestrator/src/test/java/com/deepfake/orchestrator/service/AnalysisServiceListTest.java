@@ -19,6 +19,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
+import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 
@@ -31,6 +32,8 @@ class AnalysisServiceListTest {
     RabbitTemplate rabbitTemplate;
     @Mock
     StringRedisTemplate redis;
+    @Mock
+    AnalysisCache cache;
     @InjectMocks
     AnalysisService service;
 
