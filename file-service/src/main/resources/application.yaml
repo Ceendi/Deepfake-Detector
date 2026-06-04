@@ -12,6 +12,20 @@ spring:
           # keys are actually fetched (internal URL in docker, so no host-gateway hacks needed).
           issuer-uri: ${JWT_ISSUER_URI:http://localhost:8180/realms/deepfake}
           jwk-set-uri: ${JWK_SET_URI:http://localhost:8180/realms/deepfake/protocol/openid-connect/certs}
+  # Own database + own least-privilege user (database-per-service), separate from the
+  # orchestrator's DB in the same Postgres container — so each service has its own
+  # flyway_schema_history and no cross-service SQL access.
+  datasource:
+    url: jdbc:postgresql://postgres:5432/${FILE_SERVICE_DB_NAME:fileservice}
+    username: ${FILE_SERVICE_DB_USER}
+    password: ${FILE_SERVICE_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   servlet:
     multipart:
       max-file-size: 500MB

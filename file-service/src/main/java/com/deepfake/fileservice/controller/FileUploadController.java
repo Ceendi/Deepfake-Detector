@@ -1,6 +1,8 @@
 package com.deepfake.fileservice.controller;
 
 import com.deepfake.fileservice.dto.FileUploadResponse;
+import com.deepfake.fileservice.entity.FileMetadata;
+import com.deepfake.fileservice.repository.FileMetadataRepository;
 import com.deepfake.fileservice.security.AuthenticatedUser;
 import com.deepfake.fileservice.security.CurrentUser;
 import lombok.RequiredArgsConstructor;
@@ -28,13 +30,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FileUploadController {
     private final S3Client s3Client;
+    private final FileMetadataRepository metadataRepository;
     @Value("${storage.bucket}") String bucket;
 
     @PostMapping("/upload")
     public FileUploadResponse upload(@CurrentUser AuthenticatedUser user,
                                      @RequestParam MultipartFile file) throws IOException {
-        String fileId = UUID.randomUUID().toString();
+        UUID fileId = UUID.randomUUID();
         String key = fileId + "_" + file.getOriginalFilename();
+        String mimetype = Objects.requireNonNull(file.getContentType());
 
         Path tempFile = Files.createTempFile("upload-", "-" + file.getOriginalFilename());
         try {
@@ -42,7 +46,7 @@ public class FileUploadController {
             s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(bucket).key(key)
-                            .contentType(file.getContentType())
+                            .contentType(mimetype)
                             .contentLength(file.getSize())
                             .metadata(Map.of("user-id", user.id())) // stamp owner (x-amz-meta-user-id)
                             .build(),
@@ -52,7 +56,14 @@ public class FileUploadController {
             Files.deleteIfExists(tempFile);
         }
 
-        return new FileUploadResponse(fileId, key, file.getSize(),
-                Objects.requireNonNull(file.getContentType()));
+        // S3 first, then DB. If the row write fails the object is orphaned in S3 but invisible to
+        // the API (every lookup goes through this row); the bucket TTL job reclaims it later.
+        // TODO(week 5+): reconcile orphans via the same S3 cleanup job as soft-deleted files.
+        metadataRepository.save(FileMetadata.builder()
+                .fileId(fileId).objectKey(key).userId(user.id())
+                .originalName(file.getOriginalFilename()).mimetype(mimetype)
+                .sizeBytes(file.getSize()).build());
+
+        return new FileUploadResponse(fileId.toString(), key, file.getSize(), mimetype);
     }
 }

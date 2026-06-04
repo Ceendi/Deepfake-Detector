@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import com.deepfake.fileservice.config.SecurityConfig;
 import com.deepfake.fileservice.config.WebConfig;
+import com.deepfake.fileservice.repository.FileMetadataRepository;
 import com.deepfake.fileservice.security.CurrentUserArgumentResolver;
 import com.deepfake.fileservice.security.JwtRoleConverter;
 
@@ -42,6 +43,9 @@ class FileUploadControllerSecurityTest {
 
     @MockitoBean
     S3Client s3Client;
+
+    @MockitoBean
+    FileMetadataRepository metadataRepository;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
