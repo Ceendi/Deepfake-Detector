@@ -5,6 +5,8 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 import { Spinner } from '@/components/ui/Spinner/Spinner'
+import { RouteError } from '@/routes/RouteError'
+import PageNotFound from '@/pages/PageNotFound/PageNotFound'
 
 const LazyDashboard = lazy(() => import('@/pages/Dashboard/Dashboard'))
 const LazyLogin = lazy(() => import('@/pages/Login/Login'))
@@ -20,6 +22,7 @@ const router = createBrowserRouter([
     children: [
       {
         element: <ProtectedRoute />,
+        errorElement: <RouteError />,
         children: [
           {
             index: true,
@@ -57,10 +60,11 @@ const router = createBrowserRouter([
         <LazyLogin />
       </Suspense>
     ),
+    errorElement: <RouteError />,
   },
   {
     path: '*',
-    element: <div>Bład</div>,
+    element: <PageNotFound />,
   },
 ])
 
