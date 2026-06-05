@@ -2,6 +2,7 @@ package com.deepfake.fileservice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -9,6 +10,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -63,6 +65,38 @@ class FileMetadataServiceTest {
         when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.metadata(id, "alice"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void softDeleteStampsDeletedAtForOwner() {
+        FileMetadata m = FileMetadata.builder().fileId(id).userId("alice").objectKey("k").build();
+        when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(m));
+
+        service.softDelete(id, "alice");
+
+        ArgumentCaptor<FileMetadata> saved = ArgumentCaptor.forClass(FileMetadata.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getDeletedAt()).isNotNull();
+    }
+
+    @Test
+    void softDeleteRejectsCrossUserAs404() {
+        FileMetadata m = FileMetadata.builder().fileId(id).userId("alice").build();
+        when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(m));
+
+        assertThatThrownBy(() -> service.softDelete(id, "bob"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
+    }
+
+    // A second delete of an already soft-deleted file: the active-only lookup misses -> 404.
+    @Test
+    void softDeleteMissingReturns404() {
+        when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.softDelete(id, "alice"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
     }

@@ -66,6 +66,13 @@ internal storage endpoint).
 }
 ```
 
+### `DELETE /api/files/{id}`
+
+Soft-deletes a file (sets `deleted_at`; the stored object is retained and reclaimed by
+a later cleanup job). `204 No Content` on success. Afterwards the file is gone from the
+API: metadata/presign and a repeated delete all return `404`. `404` also for a missing or
+non-owned file (IDOR — never `403`).
+
 ## Orchestrator
 
 ### `POST /api/analysis`

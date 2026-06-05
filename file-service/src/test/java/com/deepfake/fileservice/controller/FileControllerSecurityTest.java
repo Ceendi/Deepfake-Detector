@@ -2,8 +2,10 @@ package com.deepfake.fileservice.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -116,6 +118,24 @@ class FileControllerSecurityTest {
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
 
         mvc.perform(get("/api/files/{id}/presign", id)
+                        .with(jwt().jwt(j -> j.subject("user-b")).authorities(userRole())))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deleteReturns204ForOwner() throws Exception {
+        mvc.perform(delete("/api/files/{id}", UUID.randomUUID())
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void deleteReturns404ForDifferentUser() throws Exception {
+        UUID id = UUID.randomUUID();
+        doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND))
+                .when(metadataService).softDelete(eq(id), eq("user-b"));
+
+        mvc.perform(delete("/api/files/{id}", id)
                         .with(jwt().jwt(j -> j.subject("user-b")).authorities(userRole())))
                 .andExpect(status().isNotFound());
     }
