@@ -1,9 +1,11 @@
 package com.deepfake.fileservice.controller;
 
 import com.deepfake.fileservice.dto.FileMetadataResponse;
+import com.deepfake.fileservice.dto.PresignResponse;
 import com.deepfake.fileservice.security.AuthenticatedUser;
 import com.deepfake.fileservice.security.CurrentUser;
 import com.deepfake.fileservice.service.FileMetadataService;
+import com.deepfake.fileservice.service.PresignService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,9 +23,15 @@ import java.util.UUID;
 public class FileController {
 
     private final FileMetadataService metadataService;
+    private final PresignService presignService;
 
     @GetMapping("/{id}/metadata")
     public FileMetadataResponse metadata(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return metadataService.metadata(id, user.id());
+    }
+
+    @GetMapping("/{id}/presign")
+    public PresignResponse presign(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
+        return presignService.presign(id, user.id());
     }
 }

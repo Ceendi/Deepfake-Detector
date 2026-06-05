@@ -21,12 +21,16 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Instant;
+
 import com.deepfake.fileservice.config.SecurityConfig;
 import com.deepfake.fileservice.config.WebConfig;
 import com.deepfake.fileservice.dto.FileMetadataResponse;
+import com.deepfake.fileservice.dto.PresignResponse;
 import com.deepfake.fileservice.security.CurrentUserArgumentResolver;
 import com.deepfake.fileservice.security.JwtRoleConverter;
 import com.deepfake.fileservice.service.FileMetadataService;
+import com.deepfake.fileservice.service.PresignService;
 
 /**
  * Auth + IDOR behaviour of the metadata endpoint: anonymous -> 401, wrong role -> 403, owner -> 200,
@@ -41,6 +45,9 @@ class FileControllerSecurityTest {
 
     @MockitoBean
     FileMetadataService metadataService;
+
+    @MockitoBean
+    PresignService presignService;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
@@ -84,6 +91,31 @@ class FileControllerSecurityTest {
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
 
         mvc.perform(get("/api/files/{id}/metadata", id)
+                        .with(jwt().jwt(j -> j.subject("user-b")).authorities(userRole())))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void presignReturns200ForOwner() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(presignService.presign(eq(id), eq("user-a")))
+                .thenReturn(new PresignResponse("http://localhost:8333/deepfake-uploads/" + id,
+                        Instant.parse("2026-01-01T00:00:00Z")));
+
+        mvc.perform(get("/api/files/{id}/presign", id)
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.url").value("http://localhost:8333/deepfake-uploads/" + id))
+                .andExpect(jsonPath("$.expiresAt").exists());
+    }
+
+    @Test
+    void presignReturns404ForDifferentUser() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(presignService.presign(eq(id), eq("user-b")))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        mvc.perform(get("/api/files/{id}/presign", id)
                         .with(jwt().jwt(j -> j.subject("user-b")).authorities(userRole())))
                 .andExpect(status().isNotFound());
     }

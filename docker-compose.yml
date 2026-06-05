@@ -445,6 +445,8 @@ services:
       FILE_SERVICE_DB_PASSWORD: ${FILE_SERVICE_DB_PASSWORD}
       S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
+      # Host baked into presigned URLs — must be browser-reachable, not the internal endpoint.
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://localhost:8333}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 15s

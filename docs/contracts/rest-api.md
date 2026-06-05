@@ -52,6 +52,20 @@ not exist, was soft-deleted, OR `userId != jwt.sub` (IDOR guard — never `403`)
 `duration` is the media length in seconds (from `ffprobe`); `null` if unknown.
 `name` is the original upload filename and may be `null`.
 
+### `GET /api/files/{id}/presign`
+
+Returns a short-lived (1 h) presigned URL for fetching the file directly from object
+storage (e.g. `<video src=...>`). `200 OK`; `404 Not Found` for a missing, soft-deleted,
+or non-owned file (IDOR — never `403`). The URL host is browser-reachable (not the
+internal storage endpoint).
+
+```json
+{
+  "url": "http://localhost:8333/deepfake-uploads/550e8400-..._test.mp4?X-Amz-Algorithm=...&X-Amz-Signature=...",
+  "expiresAt": "2026-04-21T11:30:00Z"
+}
+```
+
 ## Orchestrator
 
 ### `POST /api/analysis`

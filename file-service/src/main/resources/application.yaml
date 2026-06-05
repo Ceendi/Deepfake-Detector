@@ -36,6 +36,9 @@ eureka:
       defaultZone: http://eureka-server:8761/eureka/
 storage:
   endpoint: http://seaweedfs:8333
+  # Browser-reachable host baked into presigned URLs (the internal endpoint is not resolvable
+  # outside the docker network). Dev: localhost:8333; prod: public domain / via gateway.
+  public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:8333}
   region: us-east-1
   access-key: ${S3_FILE_SERVICE_KEY}
   secret-key: ${S3_FILE_SERVICE_SECRET}
