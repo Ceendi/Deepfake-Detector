@@ -18,6 +18,11 @@ Authorization: Bearer <token>
 Body: file=@<file>
 ```
 
+Two-stage validation (magic bytes via Tika, then `ffprobe`) runs before the file
+is stored; `mimetype` is the **detected** type, not the client-supplied one.
+Rejections: `413` (over the 500 MB limit), `422` (not a whitelisted A/V container —
+MP4/MOV/AVI/WAV/MP3/FLAC). `422` body uses code `INVALID_FILE`.
+
 Response `200 OK`:
 
 ```json
@@ -28,6 +33,45 @@ Response `200 OK`:
   "mimetype": "video/mp4"
 }
 ```
+
+### `GET /api/files/{id}/metadata`
+
+Metadata for an uploaded file. Returns `200 OK`; `404 Not Found` if the file does
+not exist, was soft-deleted, OR `userId != jwt.sub` (IDOR guard — never `403`).
+
+```json
+{
+  "fileId": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "test.mp4",
+  "size": 10485760,
+  "duration": 12.5,
+  "mimetype": "video/mp4"
+}
+```
+
+`duration` is the media length in seconds (from `ffprobe`); `null` if unknown.
+`name` is the original upload filename and may be `null`.
+
+### `GET /api/files/{id}/presign`
+
+Returns a short-lived (1 h) presigned URL for fetching the file directly from object
+storage (e.g. `<video src=...>`). `200 OK`; `404 Not Found` for a missing, soft-deleted,
+or non-owned file (IDOR — never `403`). The URL host is browser-reachable (not the
+internal storage endpoint).
+
+```json
+{
+  "url": "http://localhost:8333/deepfake-uploads/550e8400-..._test.mp4?X-Amz-Algorithm=...&X-Amz-Signature=...",
+  "expiresAt": "2026-04-21T11:30:00Z"
+}
+```
+
+### `DELETE /api/files/{id}`
+
+Soft-deletes a file (sets `deleted_at`; the stored object is retained and reclaimed by
+a later cleanup job). `204 No Content` on success. Afterwards the file is gone from the
+API: metadata/presign and a repeated delete all return `404`. `404` also for a missing or
+non-owned file (IDOR — never `403`).
 
 ## Orchestrator
 
@@ -59,12 +103,38 @@ gateway / orchestrator returns `429 Too Many Requests` with body
 
 ### `GET /api/analysis/{id}`
 
-Returns `200 OK` with `Analysis`. Returns `404 Not Found` if the resource
-does not exist OR `userId != jwt.sub` (IDOR guard — never `403`).
+Returns `200 OK` with the full `Analysis` (see below). Returns `404 Not Found`
+if the resource does not exist OR `userId != jwt.sub` (IDOR guard — never `403`).
 
 ### `GET /api/analysis`
 
-Returns `200 OK` with `Analysis[]` for the authenticated user.
+Paginated history for the authenticated user. Query params: `page` (default `0`),
+`size` (default `20`); ordered by `createdAt DESC`. Returns `200 OK` with a
+`PagedModel` of the lightweight `AnalysisSummary` projection — **not** the full
+`Analysis` (detail-only fields such as `fileKey`, `videoProb`, `audioProb`,
+`errorMessage`, `details` are omitted; fetch them via `GET /api/analysis/{id}`).
+
+```json
+{
+  "content": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "fileId": "550e8400-e29b-41d4-a716-446655440000",
+      "type": "VIDEO",
+      "status": "COMPLETED",
+      "verdict": "FAKE",
+      "confidence": 0.74,
+      "createdAt": "2026-04-21T10:30:00Z",
+      "updatedAt": "2026-04-21T10:30:02Z"
+    }
+  ],
+  "page": { "size": 20, "number": 0, "totalElements": 1, "totalPages": 1 }
+}
+```
+
+`AnalysisSummary` fields (`id`, `fileId`, `type`, `status`, `verdict`,
+`confidence`, `createdAt`, `updatedAt`) follow the same types and nullability as
+the matching `Analysis` fields below.
 
 ## `Analysis` shape
 
