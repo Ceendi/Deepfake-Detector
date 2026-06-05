@@ -3,6 +3,7 @@ package com.deepfake.fileservice.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -25,6 +26,7 @@ import com.deepfake.fileservice.config.WebConfig;
 import com.deepfake.fileservice.repository.FileMetadataRepository;
 import com.deepfake.fileservice.security.CurrentUserArgumentResolver;
 import com.deepfake.fileservice.security.JwtRoleConverter;
+import com.deepfake.fileservice.validation.FileValidator;
 
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -46,6 +48,9 @@ class FileUploadControllerSecurityTest {
 
     @MockitoBean
     FileMetadataRepository metadataRepository;
+
+    @MockitoBean
+    FileValidator fileValidator;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
@@ -74,6 +79,8 @@ class FileUploadControllerSecurityTest {
 
     @Test
     void uploadStampsJwtSubjectAsOwner() throws Exception {
+        when(fileValidator.validate(any())).thenReturn(new FileValidator.Result("video/mp4", 12.5));
+
         mvc.perform(multipart("/api/files/upload").file(sampleFile())
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
                 .andExpect(status().isOk())

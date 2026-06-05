@@ -5,6 +5,7 @@ import com.deepfake.fileservice.entity.FileMetadata;
 import com.deepfake.fileservice.repository.FileMetadataRepository;
 import com.deepfake.fileservice.security.AuthenticatedUser;
 import com.deepfake.fileservice.security.CurrentUser;
+import com.deepfake.fileservice.validation.FileValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,7 +22,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.io.IOException;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -31,6 +31,7 @@ import java.util.UUID;
 public class FileUploadController {
     private final S3Client s3Client;
     private final FileMetadataRepository metadataRepository;
+    private final FileValidator fileValidator;
     @Value("${storage.bucket}") String bucket;
 
     @PostMapping("/upload")
@@ -38,15 +39,16 @@ public class FileUploadController {
                                      @RequestParam MultipartFile file) throws IOException {
         UUID fileId = UUID.randomUUID();
         String key = fileId + "_" + file.getOriginalFilename();
-        String mimetype = Objects.requireNonNull(file.getContentType());
 
         Path tempFile = Files.createTempFile("upload-", "-" + file.getOriginalFilename());
+        FileValidator.Result validated;
         try {
             file.transferTo(tempFile);
+            validated = fileValidator.validate(tempFile);
             s3Client.putObject(
                     PutObjectRequest.builder()
                             .bucket(bucket).key(key)
-                            .contentType(mimetype)
+                            .contentType(validated.mimetype())
                             .contentLength(file.getSize())
                             .metadata(Map.of("user-id", user.id())) // stamp owner (x-amz-meta-user-id)
                             .build(),
@@ -61,9 +63,9 @@ public class FileUploadController {
         // TODO(week 5+): reconcile orphans via the same S3 cleanup job as soft-deleted files.
         metadataRepository.save(FileMetadata.builder()
                 .fileId(fileId).objectKey(key).userId(user.id())
-                .originalName(file.getOriginalFilename()).mimetype(mimetype)
-                .sizeBytes(file.getSize()).build());
+                .originalName(file.getOriginalFilename()).mimetype(validated.mimetype())
+                .sizeBytes(file.getSize()).durationSeconds(validated.durationSeconds()).build());
 
-        return new FileUploadResponse(fileId.toString(), key, file.getSize(), mimetype);
+        return new FileUploadResponse(fileId.toString(), key, file.getSize(), validated.mimetype());
     }
 }

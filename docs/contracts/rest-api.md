@@ -18,6 +18,11 @@ Authorization: Bearer <token>
 Body: file=@<file>
 ```
 
+Two-stage validation (magic bytes via Tika, then `ffprobe`) runs before the file
+is stored; `mimetype` is the **detected** type, not the client-supplied one.
+Rejections: `413` (over the 500 MB limit), `422` (not a whitelisted A/V container —
+MP4/MOV/AVI/WAV/MP3/FLAC). `422` body uses code `INVALID_FILE`.
+
 Response `200 OK`:
 
 ```json
