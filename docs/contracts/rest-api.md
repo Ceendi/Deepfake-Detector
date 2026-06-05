@@ -34,6 +34,24 @@ Response `200 OK`:
 }
 ```
 
+### `GET /api/files/{id}/metadata`
+
+Metadata for an uploaded file. Returns `200 OK`; `404 Not Found` if the file does
+not exist, was soft-deleted, OR `userId != jwt.sub` (IDOR guard — never `403`).
+
+```json
+{
+  "fileId": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "test.mp4",
+  "size": 10485760,
+  "duration": 12.5,
+  "mimetype": "video/mp4"
+}
+```
+
+`duration` is the media length in seconds (from `ffprobe`); `null` if unknown.
+`name` is the original upload filename and may be `null`.
+
 ## Orchestrator
 
 ### `POST /api/analysis`
