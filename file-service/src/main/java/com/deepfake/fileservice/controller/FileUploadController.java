@@ -6,6 +6,8 @@ import com.deepfake.fileservice.repository.FileMetadataRepository;
 import com.deepfake.fileservice.security.AuthenticatedUser;
 import com.deepfake.fileservice.security.CurrentUser;
 import com.deepfake.fileservice.validation.FileValidator;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -34,6 +36,10 @@ public class FileUploadController {
     private final FileValidator fileValidator;
     @Value("${storage.bucket}") String bucket;
 
+    @Operation(summary = "Upload a media file for analysis")
+    @ApiResponse(responseCode = "200", description = "Stored; returns fileId, fileKey, size, detected mimetype")
+    @ApiResponse(responseCode = "413", description = "File exceeds the 500 MB limit")
+    @ApiResponse(responseCode = "422", description = "Not a whitelisted A/V container (magic bytes + ffprobe)")
     @PostMapping("/upload")
     public FileUploadResponse upload(@CurrentUser AuthenticatedUser user,
                                      @RequestParam MultipartFile file) throws IOException {

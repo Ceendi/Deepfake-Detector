@@ -6,6 +6,8 @@ import com.deepfake.orchestrator.dto.response.AnalysisSummary;
 import com.deepfake.orchestrator.security.AuthenticatedUser;
 import com.deepfake.orchestrator.security.CurrentUser;
 import com.deepfake.orchestrator.service.AnalysisService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -25,6 +27,8 @@ import java.util.UUID;
 public class AnalysisController {
     private final AnalysisService service;
 
+    @Operation(summary = "Start an analysis for an uploaded file")
+    @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AnalysisResponse create(@CurrentUser AuthenticatedUser user,
@@ -33,6 +37,7 @@ public class AnalysisController {
     }
 
     // PagedModel, not the raw Page/PageImpl whose JSON shape is unstable across versions.
+    @Operation(summary = "List the caller's analyses (paginated, newest first)")
     @GetMapping
     public PagedModel<AnalysisSummary> list(
             @CurrentUser AuthenticatedUser user,
@@ -41,6 +46,9 @@ public class AnalysisController {
         return new PagedModel<>(service.list(user.id(), pageable));
     }
 
+    @Operation(summary = "Get one analysis by id")
+    @ApiResponse(responseCode = "200", description = "The owned analysis")
+    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
     @GetMapping("/{id}")
     public AnalysisResponse get(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return service.get(id, user.id());
