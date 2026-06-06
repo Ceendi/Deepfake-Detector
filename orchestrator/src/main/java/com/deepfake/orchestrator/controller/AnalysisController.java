@@ -63,4 +63,13 @@ public class AnalysisController {
     public SseEmitter stream(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return service.openStream(id, user.id());
     }
+
+    @Operation(summary = "Cancel an in-progress analysis")
+    @ApiResponse(responseCode = "200", description = "Cancelled")
+    @ApiResponse(responseCode = "409", description = "Already finished (COMPLETED/FAILED)")
+    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
+    @DeleteMapping("/{id}")
+    public AnalysisResponse cancel(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
+        return service.cancel(id, user.id());
+    }
 }

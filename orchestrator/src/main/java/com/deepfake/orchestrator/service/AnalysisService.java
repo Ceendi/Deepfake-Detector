@@ -128,6 +128,40 @@ public class AnalysisService {
         return repository.findByUserId(currentUserId, pageable);
     }
 
+    /**
+     * Soft-cancel an in-progress analysis. IDOR -> 404 (like get()). Idempotent on CANCELLED;
+     * a finished analysis (COMPLETED/FAILED) -> 409. Frees the in-flight slot, publishes
+     * analysis.cancel (forward-compat for detectors), and closes the SSE stream as CANCELLED.
+     */
+    public AnalysisResponse cancel(UUID id, String currentUserId) {
+        Analysis a = repository.findById(id)
+                .filter(found -> found.getUserId().equals(currentUserId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        if (a.getStatus() == AnalysisStatus.CANCELLED) {
+            return AnalysisResponse.from(a); // idempotent — slot already released on first cancel
+        }
+        if (a.getStatus() == AnalysisStatus.COMPLETED || a.getStatus() == AnalysisStatus.FAILED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "analysis already finished");
+        }
+
+        // TODO(week 6, D6 race fix): this read-modify-write isn't atomic — a detector result could
+        // land between findById and save. Replace with an atomic UPDATE ... WHERE status IN
+        // ('PENDING','PROCESSING') RETURNING *. With dummy ML the window is large but low-risk.
+        a.setStatus(AnalysisStatus.CANCELLED);
+        repository.save(a);
+        cache.evictById(id);
+        backpressure.release();
+
+        String correlationId = MDC.get("correlationId");
+        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_CANCEL,
+                Map.of("analysis_id", id.toString(),
+                        "correlation_id", correlationId != null ? correlationId : ""));
+
+        pushTerminal(id, a); // SSE: {status: CANCELLED} + close the stream
+        return AnalysisResponse.from(a);
+    }
+
     public void handleResult(Map<String, Object> payload) {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
         String source = (String) payload.get("source"); // "video" | "audio"
@@ -135,9 +169,10 @@ public class AnalysisService {
 
         Analysis a = repository.findById(id).orElseThrow();
 
-        // Idempotency — late or duplicate delivery on already-finalized analysis is ignored.
-        if (a.getStatus() == AnalysisStatus.COMPLETED || a.getStatus() == AnalysisStatus.FAILED) {
-            log.warn("Late/duplicate result for {} (source={}), ignoring", id, source);
+        // Idempotency — a late/duplicate result on an already-terminal analysis (incl. CANCELLED) is
+        // ignored, so it can neither overwrite the state nor double-release the backpressure slot.
+        if (a.getStatus().isTerminal()) {
+            log.warn("Late/duplicate result for {} (status={}, source={}), ignoring", id, a.getStatus(), source);
             return;
         }
 
