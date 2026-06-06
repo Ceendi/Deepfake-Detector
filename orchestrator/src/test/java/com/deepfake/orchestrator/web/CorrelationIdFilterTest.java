@@ -14,7 +14,7 @@ class CorrelationIdFilterTest {
     private final CorrelationIdFilter filter = new CorrelationIdFilter();
 
     @Test
-    void bindsProvidedHeaderToMdcAndEchoesIt() throws Exception {
+    void bindsProvidedHeaderToMdcForTheRequest() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader(CorrelationIdFilter.HEADER, "cid-123");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -24,7 +24,6 @@ class CorrelationIdFilterTest {
         filter.doFilter(request, response, chain);
 
         assertThat(seenInChain[0]).isEqualTo("cid-123");
-        assertThat(response.getHeader(CorrelationIdFilter.HEADER)).isEqualTo("cid-123");
         assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull(); // cleared once the request ends
     }
 
@@ -38,7 +37,6 @@ class CorrelationIdFilterTest {
         filter.doFilter(request, response, chain);
 
         assertThat(seenInChain[0]).isNotBlank();
-        assertThat(response.getHeader(CorrelationIdFilter.HEADER)).isEqualTo(seenInChain[0]);
         assertThat(MDC.get(CorrelationIdFilter.MDC_KEY)).isNull();
     }
 }

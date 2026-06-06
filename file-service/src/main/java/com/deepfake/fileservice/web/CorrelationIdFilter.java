@@ -16,8 +16,10 @@ import jakarta.servlet.http.HttpServletResponse;
 
 /**
  * Binds X-Correlation-ID (from the gateway, or generated here for direct/IDE calls) to the MDC so
- * every log line and the ErrorResponse carry it. Ordered before the security chain so 401/403 logs
- * are correlated too. Conscious duplicate of orchestrator's filter (see CLAUDE.md).
+ * every log line and the ErrorResponse carry it. The client-facing response echo is owned by the
+ * gateway (the sole ingress), so this filter deliberately does not set the response header.
+ * Ordered before the security chain so 401/403 logs are correlated too. Conscious duplicate of
+ * orchestrator's filter (see CLAUDE.md).
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -33,7 +35,6 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         String correlationId = (header == null || header.isBlank())
                 ? UUID.randomUUID().toString() : header;
         MDC.put(MDC_KEY, correlationId);
-        response.setHeader(HEADER, correlationId);
         try {
             chain.doFilter(request, response);
         } finally {
