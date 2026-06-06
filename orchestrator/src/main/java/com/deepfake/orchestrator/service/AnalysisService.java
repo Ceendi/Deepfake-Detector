@@ -5,6 +5,7 @@ import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent;
 import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
@@ -142,6 +143,7 @@ public class AnalysisService {
             a.setErrorMessage(extractError(payload));
             repository.save(a);
             cache.evictById(id);
+            pushTerminal(id, a);
             return;
         }
 
@@ -165,6 +167,9 @@ public class AnalysisService {
         repository.save(a);
         // Evict so a GET right after completion returns the new state, not the cached PENDING.
         cache.evictById(id);
+        if (done) {
+            pushTerminal(id, a);
+        }
 
         // TODO(week 5, D6 race fix): replace findById + save with an atomic
         // UPDATE ... WHERE id = :id AND status IN ('PENDING','PROCESSING') RETURNING *.
@@ -173,9 +178,21 @@ public class AnalysisService {
     }
 
     public void handleProgress(Map<String, Object> payload) {
-        String id = (String) payload.get("analysis_id");
+        UUID id = UUID.fromString((String) payload.get("analysis_id"));
         Integer progress = (Integer) payload.get("progress");
+        // Keep the Redis snapshot for catch-up (GET / reconnect); the SSE push only supplements it.
         redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1));
+        streams.sendProgress(id, new AnalysisProgressEvent(
+                id.toString(), (String) payload.get("source"), progress,
+                (String) payload.get("stage"), "PROCESSING"));
+    }
+
+    // Push the terminal result then close the stream. No-op when no client has it open (registry
+    // empty for this id) — the state still lives in DB/Redis. Push order matters: result before
+    // complete, since complete() closes the emitters.
+    private void pushTerminal(UUID id, Analysis a) {
+        streams.sendResult(id, AnalysisResultEvent.of(a));
+        streams.complete(id);
     }
 
     private BigDecimal aggregate(BigDecimal videoProb, BigDecimal audioProb) {
