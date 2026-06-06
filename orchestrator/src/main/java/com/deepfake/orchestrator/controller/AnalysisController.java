@@ -15,8 +15,10 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.UUID;
 
@@ -29,6 +31,7 @@ public class AnalysisController {
 
     @Operation(summary = "Start an analysis for an uploaded file")
     @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
+    @ApiResponse(responseCode = "429", description = "Backpressure — in-flight analysis limit reached")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AnalysisResponse create(@CurrentUser AuthenticatedUser user,
@@ -52,5 +55,22 @@ public class AnalysisController {
     @GetMapping("/{id}")
     public AnalysisResponse get(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return service.get(id, user.id());
+    }
+
+    @Operation(summary = "Stream progress + final result for one analysis (SSE)")
+    @ApiResponse(responseCode = "200", description = "text/event-stream")
+    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
+    @GetMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
+        return service.openStream(id, user.id());
+    }
+
+    @Operation(summary = "Cancel an in-progress analysis")
+    @ApiResponse(responseCode = "200", description = "Cancelled")
+    @ApiResponse(responseCode = "409", description = "Already finished (COMPLETED/FAILED)")
+    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
+    @DeleteMapping("/{id}")
+    public AnalysisResponse cancel(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
+        return service.cancel(id, user.id());
     }
 }

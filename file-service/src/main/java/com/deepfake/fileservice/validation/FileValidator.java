@@ -7,6 +7,8 @@ import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
 import org.springframework.stereotype.Component;
 
+import com.deepfake.fileservice.exception.InvalidFileException;
+
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Set;

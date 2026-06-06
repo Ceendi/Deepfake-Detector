@@ -28,6 +28,7 @@ import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
  * Security regression with real Redis: the IDOR guard runs after the cache read, so once user A's
@@ -55,7 +56,8 @@ class AnalysisServiceCacheIdorTest {
 
         repository = mock(AnalysisRepository.class);
         service = new AnalysisService(repository, mock(RabbitTemplate.class), template,
-                new AnalysisCache(template));
+                new AnalysisCache(template), mock(AnalysisStreamRegistry.class),
+                mock(BackpressureGuard.class));
     }
 
     @Test

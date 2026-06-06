@@ -1,4 +1,4 @@
-package com.deepfake.fileservice.validation;
+package com.deepfake.fileservice.exception;
 
 /** Rejected upload (wrong magic bytes / not a real media container) -> 422 in GlobalExceptionHandler. */
 public class InvalidFileException extends RuntimeException {

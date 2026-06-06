@@ -41,10 +41,17 @@ spring:
       simple:
         acknowledge-mode: auto
         prefetch: 1
+        # Spans (traceId in MDC) for the consumer thread; reads traceparent off the message.
+        observation-enabled: true
 eureka:
   client:
     service-url:
       defaultZone: http://eureka-server:8761/eureka/
+backpressure:
+  # Max concurrent in-flight analyses before POST /api/analysis returns 429 (counts analyses, not
+  # detector tasks). Env-overridable so load tests can trip it (e.g. =2 with dummy ML).
+  max-inflight: ${BACKPRESSURE_MAX_INFLIGHT:20}
+  retry-after-seconds: ${BACKPRESSURE_RETRY_AFTER_SECONDS:5}
 management:
   endpoints:
     web:
@@ -53,6 +60,26 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0          # dev: sample everything; prod → ~0.1
+    # Gate EXPORT only. Tracer + Micrometer bridge stay ON, so traceId/spanId
+    # reach MDC/logs (D2). The OTLP collector (Tempo) lands with the monitoring
+    # profile (week 5); until then export is off so it can't spam a dead endpoint.
+    export:
+      enabled: ${OTEL_TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_OTLP_ENDPOINT:http://tempo:4318/v1/traces}
+  otlp:
+    metrics:
+      export:
+        # Metrics ship via Prometheus scrape (/actuator/prometheus, D3). The OTLP meter registry
+        # arrives transitively with the OpenTelemetry starter and is unused here — disabled so it
+        # doesn't push to (and fail against) a non-existent OTLP collector every minute.
+        enabled: false
 logging:
   pattern:
-    console: '%d{ISO8601} %-5level [%X{correlationId:-},%X{traceId:-}] %logger{36} - %msg%n'
+    console: '%d{ISO8601} %-5level [%X{correlationId:-},%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n'

@@ -28,10 +28,19 @@ Required arguments for `analysis.video` and `analysis.audio`:
 DLQ queues (`analysis.video.dlq`, `analysis.audio.dlq`) are bound to
 `analysis.dlx` with a routing key equal to the queue name.
 
+`analysis.progress`, `analysis.results`, and `analysis.cancel` are `durable: true`
+with no further arguments (no DLX).
+
 ## Message formats
 
 Convention: **snake_case** for AMQP payloads (Python-friendly). All fields
 are required unless explicitly marked optional.
+
+Beyond the JSON body, the Java services propagate the W3C `traceparent` header on
+publish and consume (Micrometer observation → distributed tracing). `correlation_id`
+lives in the body and is the cross-language correlation id — detectors echo it on
+every progress/result. Python detectors do not yet propagate `traceparent` (planned:
+`opentelemetry-instrumentation-pika`).
 
 ### Task — Orchestrator → Detector
 
@@ -93,3 +102,17 @@ Success:
 ```
 
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
+
+### Cancel — Orchestrator → Detector
+
+Published to `analysis.cancel` when a user cancels an analysis (`DELETE
+/api/analysis/{id}`). The queue is declared so the event isn't dropped by the topic
+exchange, but has no consumer yet — detectors consume it in V2 to stop in-progress
+work early.
+
+```json
+{
+  "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+  "correlation_id": "corr-uuid"
+}
+```
