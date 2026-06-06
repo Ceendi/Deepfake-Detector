@@ -42,6 +42,13 @@ x-jwt-env: &jwt-env
   JWT_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/deepfake
   JWK_SET_URI: http://keycloak:8080/realms/deepfake/protocol/openid-connect/certs
 
+# Tracing shared by every Java service. The tracer is always on (traceId/spanId in
+# logs = D2); only OTLP *export* is gated, so it stays off until the monitoring
+# profile (Tempo) exists — otherwise the exporter spams a dead tempo:4318.
+x-otel-env: &otel-env
+  OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
+  OTEL_OTLP_ENDPOINT: ${OTEL_OTLP_ENDPOINT:-http://tempo:4318/v1/traces}
+
 services:
   postgres:
     image: postgres:18.4-alpine
@@ -424,7 +431,7 @@ services:
         condition: service_healthy
     ports: ["8080:8080"]
     environment:
-      <<: *jwt-env
+      <<: [*jwt-env, *otel-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks: [deepfake]
@@ -438,7 +445,7 @@ services:
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
     environment:
-      <<: *jwt-env
+      <<: [*jwt-env, *otel-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
       FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
@@ -462,7 +469,7 @@ services:
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     environment:
-      <<: *jwt-env
+      <<: [*jwt-env, *otel-env]
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

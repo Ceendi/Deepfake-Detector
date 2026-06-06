@@ -79,3 +79,17 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0          # dev: sample everything; prod → ~0.1
+    # Gate EXPORT only — see orchestrator/application.yaml for the rationale.
+    export:
+      enabled: ${OTEL_TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_OTLP_ENDPOINT:http://tempo:4318/v1/traces}
+logging:
+  pattern:
+    console: '%d{ISO8601} %-5level [%X{correlationId:-},%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n'
