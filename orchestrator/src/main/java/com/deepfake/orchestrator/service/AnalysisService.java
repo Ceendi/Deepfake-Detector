@@ -5,10 +5,12 @@ import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -20,6 +22,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -42,6 +45,7 @@ public class AnalysisService {
     private final RabbitTemplate rabbitTemplate;
     private final StringRedisTemplate redis;
     private final AnalysisCache cache;
+    private final AnalysisStreamRegistry streams;
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         Analysis analysis = Analysis.builder()
@@ -92,6 +96,26 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         return a;
+    }
+
+    /**
+     * Open an SSE stream for one analysis. The IDOR guard at open time is the whole channel
+     * authorization: only the owner can register an emitter, so the push side (commit 4) can target
+     * by analysisId without re-resolving the owner. An already-finished analysis gets its terminal
+     * result immediately and the stream closes, so the client never hangs.
+     */
+    @Transactional(readOnly = true)
+    public SseEmitter openStream(UUID id, String currentUserId) {
+        Analysis a = repository.findById(id)
+                .filter(found -> found.getUserId().equals(currentUserId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        SseEmitter emitter = streams.register(id);
+        if (a.getStatus().isTerminal()) {
+            streams.sendResult(id, AnalysisResultEvent.of(a));
+            streams.complete(id);
+        }
+        return emitter;
     }
 
     @Transactional(readOnly = true)
