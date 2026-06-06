@@ -96,10 +96,13 @@ Body:
 
 `type`: `VIDEO` | `AUDIO` | `FULL`. Response `201 Created`: `Analysis` (see below).
 
-When the per-user rate limit or backpressure threshold is exceeded, the
-gateway / orchestrator returns `429 Too Many Requests` with body
-`{ "queuePosition": <int> | null, "retryAfterSeconds": <int> }` and a
-`Retry-After` header.
+Two distinct `429 Too Many Requests` can occur:
+
+- **Orchestrator backpressure** (in-flight analysis limit): body
+  `{ "queuePosition": <int>, "retryAfterSeconds": <int> }` plus a `Retry-After`
+  header. `queuePosition` is the in-flight analysis count at the moment of rejection.
+- **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
+  carried in `X-RateLimit-*` headers (Spring Cloud Gateway default).
 
 ### `GET /api/analysis/{id}`
 
@@ -136,6 +139,15 @@ Paginated history for the authenticated user. Query params: `page` (default `0`)
 `confidence`, `createdAt`, `updatedAt`) follow the same types and nullability as
 the matching `Analysis` fields below.
 
+### `DELETE /api/analysis/{id}`
+
+Soft-cancels an in-progress analysis. `200 OK` with the `Analysis` (now
+`status: CANCELLED`). Idempotent: cancelling an already-`CANCELLED` analysis also
+returns `200`. `409 Conflict` (code `CONFLICT`) if the analysis already finished
+(`COMPLETED`/`FAILED`). `404 Not Found` for a missing or non-owned analysis (IDOR —
+never `403`). Any open SSE stream (below) receives a `result` event with
+`status: CANCELLED` and is then closed.
+
 ## `Analysis` shape
 
 ```json
@@ -159,7 +171,7 @@ the matching `Analysis` fields below.
 
 | Field          | Type                                                           | Nullable when                                  |
 |----------------|----------------------------------------------------------------|------------------------------------------------|
-| `status`       | `PENDING` \| `PROCESSING` \| `COMPLETED` \| `FAILED`           | never                                          |
+| `status`       | `PENDING` \| `PROCESSING` \| `COMPLETED` \| `FAILED` \| `CANCELLED` | never                                     |
 | `verdict`      | `FAKE` \| `REAL` \| `null`                                     | `status != COMPLETED`                          |
 | `confidence`   | `number` (0..1) \| `null`                                      | `status != COMPLETED`                          |
 | `videoProb`    | `number` (0..1) \| `null`                                      | source not analyzed                            |
@@ -167,32 +179,43 @@ the matching `Analysis` fields below.
 | `details`      | `object` \| `null`                                             | MVP; later: Grad-CAM URLs and metadata         |
 | `errorMessage` | `string` \| `null`                                             | `status != FAILED`                             |
 
-## WebSocket (STOMP)
+## Realtime progress (SSE)
 
-Endpoint: `ws://<gateway>/ws`. Subscription topic: `/topic/analysis/{id}`.
+### `GET /api/analysis/{id}/stream`
 
-Progress message:
+Server-Sent Events stream of progress + final result for one analysis (replaces the
+earlier, unimplemented STOMP topic).
 
-```json
-{
-  "analysisId": "uuid",
-  "source": "video",
-  "progress": 50,
-  "stage": "INFERENCE",
-  "status": "PROCESSING"
-}
+```
+Accept: text/event-stream
+Authorization: Bearer <token>
 ```
 
-Final result message:
+`200 OK` (`text/event-stream`) for the owner. `404 Not Found` at open time if the
+analysis does not exist OR `userId != jwt.sub` (IDOR guard — never `403`). This open
+check is the entire channel authorization; events are then pushed by `analysisId`.
 
-```json
-{
-  "analysisId": "uuid",
-  "status": "COMPLETED",
-  "verdict": "FAKE",
-  "confidence": 0.74
-}
+Events:
+
 ```
+event: progress
+data: {"analysisId":"uuid","source":"video","progress":50,"stage":"INFERENCE","status":"PROCESSING"}
+
+event: result
+data: {"analysisId":"uuid","status":"COMPLETED","verdict":"FAKE","confidence":0.74}
+```
+
+- `progress` fires per detector update; `source` is `video` | `audio`.
+- `result` carries the terminal state (`COMPLETED` | `FAILED` | `CANCELLED`; `verdict`
+  and `confidence` are `null` unless `COMPLETED`); the server closes the stream right
+  after sending it. Opening a stream for an already-finished analysis delivers `result`
+  immediately, then closes.
+- Comment lines (`: ...`) are sent ~every 15 s as a heartbeat to keep idle connections
+  alive through proxies; clients ignore them.
+
+**Client:** use a fetch-based SSE client (e.g. `@microsoft/fetch-event-source`) so the
+`Authorization` header can be set — the native `EventSource` cannot send headers, and a
+token in the query string would leak into logs.
 
 ## HTTP status codes
 
@@ -203,6 +226,7 @@ Final result message:
 | 400  | Bad Request (validation)                                   |
 | 401  | Unauthorized (missing/invalid token)                       |
 | 404  | Not Found (also IDOR — we never return 403)                |
+| 409  | Conflict (e.g. cancel on an already-finished analysis)     |
 | 413  | Payload Too Large (file exceeds limit)                     |
 | 422  | Unprocessable Entity (e.g. invalid file format)            |
 | 429  | Too Many Requests (rate limit / queue backpressure)        |

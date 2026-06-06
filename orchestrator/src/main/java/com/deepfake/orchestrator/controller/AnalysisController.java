@@ -31,6 +31,7 @@ public class AnalysisController {
 
     @Operation(summary = "Start an analysis for an uploaded file")
     @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
+    @ApiResponse(responseCode = "429", description = "Backpressure — in-flight analysis limit reached")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AnalysisResponse create(@CurrentUser AuthenticatedUser user,
