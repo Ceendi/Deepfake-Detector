@@ -13,6 +13,8 @@ import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import com.deepfake.orchestrator.exception.TooManyAnalysesException;
+
 class BackpressureGuardTest {
 
     private static final String KEY = "analyses:inflight";

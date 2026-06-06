@@ -22,6 +22,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
+import com.deepfake.orchestrator.exception.TooManyAnalysesException;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;

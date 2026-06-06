@@ -1,6 +1,6 @@
-package com.deepfake.orchestrator.service;
+package com.deepfake.orchestrator.exception;
 
-/** Raised by {@link BackpressureGuard} when the in-flight analysis limit is hit — mapped to 429. */
+/** Raised by BackpressureGuard when the in-flight analysis limit is hit — mapped to 429. */
 public class TooManyAnalysesException extends RuntimeException {
 
     private final int queuePosition;

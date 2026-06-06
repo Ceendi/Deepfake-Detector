@@ -17,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.deepfake.fileservice.exception.InvalidFileException;
 import com.deepfake.fileservice.validation.MediaProbe.ProbeResult;
 
 /**
