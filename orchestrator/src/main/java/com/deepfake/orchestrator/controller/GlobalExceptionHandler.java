@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.deepfake.orchestrator.dto.response.ErrorResponse;
+import com.deepfake.orchestrator.service.TooManyAnalysesException;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -52,6 +54,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         return body(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied", null);
+    }
+
+    // Backpressure 429 has its own body shape per docs/contracts/rest-api.md (queuePosition +
+    // retryAfterSeconds + Retry-After header), not the uniform ErrorResponse.
+    @ExceptionHandler(TooManyAnalysesException.class)
+    public ResponseEntity<Map<String, Object>> handleBackpressure(TooManyAnalysesException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.retryAfterSeconds()))
+                .body(Map.of("queuePosition", ex.queuePosition(),
+                        "retryAfterSeconds", ex.retryAfterSeconds()));
     }
 
     @ExceptionHandler(AuthenticationException.class)

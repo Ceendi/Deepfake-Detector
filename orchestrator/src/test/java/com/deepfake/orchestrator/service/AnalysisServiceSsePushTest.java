@@ -51,6 +51,8 @@ class AnalysisServiceSsePushTest {
     AnalysisCache cache;
     @Mock
     AnalysisStreamRegistry streams;
+    @Mock
+    BackpressureGuard backpressure;
     @InjectMocks
     AnalysisService service;
 

@@ -47,8 +47,11 @@ public class AnalysisService {
     private final StringRedisTemplate redis;
     private final AnalysisCache cache;
     private final AnalysisStreamRegistry streams;
+    private final BackpressureGuard backpressure;
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
+        backpressure.acquire(); // 429 here -> nothing persisted or published
+
         Analysis analysis = Analysis.builder()
                 .userId(userId)
                 .fileId(req.fileId())
@@ -143,6 +146,7 @@ public class AnalysisService {
             a.setErrorMessage(extractError(payload));
             repository.save(a);
             cache.evictById(id);
+            backpressure.release();
             pushTerminal(id, a);
             return;
         }
@@ -168,6 +172,7 @@ public class AnalysisService {
         // Evict so a GET right after completion returns the new state, not the cached PENDING.
         cache.evictById(id);
         if (done) {
+            backpressure.release();
             pushTerminal(id, a);
         }
 
