@@ -68,6 +68,13 @@ management:
       export:
         otlp:
           endpoint: ${OTEL_OTLP_ENDPOINT:http://tempo:4318/v1/traces}
+  otlp:
+    metrics:
+      export:
+        # Metrics ship via Prometheus scrape (/actuator/prometheus, D3). The OTLP meter registry
+        # arrives transitively with the OpenTelemetry starter and is unused here — disabled so it
+        # doesn't push to (and fail against) a non-existent OTLP collector every minute.
+        enabled: false
 logging:
   pattern:
     console: '%d{ISO8601} %-5level [%X{correlationId:-},%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n'
