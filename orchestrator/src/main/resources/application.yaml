@@ -41,6 +41,8 @@ spring:
       simple:
         acknowledge-mode: auto
         prefetch: 1
+        # Spans (traceId in MDC) for the consumer thread; reads traceparent off the message.
+        observation-enabled: true
 eureka:
   client:
     service-url:

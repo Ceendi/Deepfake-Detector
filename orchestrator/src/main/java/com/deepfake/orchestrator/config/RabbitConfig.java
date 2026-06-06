@@ -56,6 +56,9 @@ public class RabbitConfig {
     public RabbitTemplate rabbitTemplate(ConnectionFactory cf, MessageConverter c) {
         RabbitTemplate t = new RabbitTemplate(cf);
         t.setMessageConverter(c);
+        // Own template bean opts out of Boot's auto-observation, so enable it by hand to inject the
+        // W3C traceparent on publish. The listener side is enabled via application.yaml.
+        t.setObservationEnabled(true);
         return t;
     }
 }

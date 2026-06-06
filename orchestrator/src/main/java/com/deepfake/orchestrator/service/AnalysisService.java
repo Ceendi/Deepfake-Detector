@@ -11,6 +11,7 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -52,11 +53,17 @@ public class AnalysisService {
 
         analysis = repository.save(analysis);
 
+        // Carry the request's correlation_id onto the task so detectors echo it and the whole
+        // chain (HTTP -> AMQP -> detector -> result) shares one id. Fallback for non-HTTP callers.
+        String correlationId = MDC.get("correlationId");
+        if (correlationId == null) {
+            correlationId = UUID.randomUUID().toString();
+        }
         Map<String, Object> payload = Map.of(
                 "analysis_id",   analysis.getId().toString(),
                 "file_bucket",   "deepfake-uploads",
                 "file_key",      req.fileKey(),
-                "correlation_id", UUID.randomUUID().toString(),
+                "correlation_id", correlationId,
                 "timestamp",     Instant.now().toString()
         );
 
