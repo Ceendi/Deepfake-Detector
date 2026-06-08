@@ -36,13 +36,20 @@ spring:
     publisher-confirm-type: correlated
     publisher-returns: true
     listener:
-      # auto-ack: Spring acks on successful listener return, nacks on exception.
-      # TODO(week 5, D6): switch to manual ack (Channel + DELIVERY_TAG) after tx commit.
+      # AUTO = container acks after the listener returns (after the @Transactional commit), not
+      # RabbitMQ auto-ack — required so retry + recoverer compose (MANUAL would never auto-ack).
       simple:
         acknowledge-mode: auto
         prefetch: 1
         # Spans (traceId in MDC) for the consumer thread; reads traceparent off the message.
         observation-enabled: true
+        # Exhausted retries -> RepublishMessageRecoverer (RabbitConfig) -> analysis.results.dlq.
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 1s
+          multiplier: 4
+          max-interval: 15s
 eureka:
   client:
     service-url:

@@ -22,6 +22,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -158,7 +160,7 @@ public class AnalysisService {
                 Map.of("analysis_id", id.toString(),
                         "correlation_id", correlationId != null ? correlationId : ""));
 
-        pushTerminal(id, a); // SSE: {status: CANCELLED} + close the stream
+        pushTerminalAfterCommit(id, a); // SSE: {status: CANCELLED} + close the stream
         return AnalysisResponse.from(a);
     }
 
@@ -182,7 +184,7 @@ public class AnalysisService {
             repository.save(a);
             cache.evictById(id);
             backpressure.release();
-            pushTerminal(id, a);
+            pushTerminalAfterCommit(id, a);
             return;
         }
 
@@ -208,10 +210,10 @@ public class AnalysisService {
         cache.evictById(id);
         if (done) {
             backpressure.release();
-            pushTerminal(id, a);
+            pushTerminalAfterCommit(id, a);
         }
 
-        // TODO(week 5, D6 race fix): replace findById + save with an atomic
+        // TODO(week 6, D6 race fix): replace findById + save with an atomic
         // UPDATE ... WHERE id = :id AND status IN ('PENDING','PROCESSING') RETURNING *.
         // With dummy ML (~2s sleep) the race is unlikely; with real ML both replies arrive
         // within ms and last-write-wins drops one of videoProb/audioProb.
@@ -227,12 +229,21 @@ public class AnalysisService {
                 (String) payload.get("stage"), "PROCESSING"));
     }
 
-    // Push the terminal result then close the stream. No-op when no client has it open (registry
-    // empty for this id) — the state still lives in DB/Redis. Push order matters: result before
-    // complete, since complete() closes the emitters.
-    private void pushTerminal(UUID id, Analysis a) {
-        streams.sendResult(id, AnalysisResultEvent.of(a));
-        streams.complete(id);
+    // Push the terminal result after commit, so a rollback can't leak a state the DB discards. Build
+    // the event now while the entity is managed (open-in-view:false closes the session at commit).
+    private void pushTerminalAfterCommit(UUID id, Analysis a) {
+        AnalysisResultEvent ev = AnalysisResultEvent.of(a);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() {
+                    streams.sendResult(id, ev);
+                    streams.complete(id);
+                }
+            });
+        } else {
+            streams.sendResult(id, ev);
+            streams.complete(id);
+        }
     }
 
     private BigDecimal aggregate(BigDecimal videoProb, BigDecimal audioProb) {
