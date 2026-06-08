@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -261,21 +262,35 @@ public class AnalysisService {
     }
 
     public void handleProgress(Map<String, Object> payload) {
-        UUID id = UUID.fromString((String) payload.get("analysis_id"));
-        Integer progress = (Integer) payload.get("progress");
+        try {
+            UUID id = UUID.fromString((String) payload.get("analysis_id"));
+            Integer progress = (Integer) payload.get("progress");
 
-        // Atomic flip-or-heartbeat; 0 rows means the analysis is already terminal/unknown, so a late
-        // progress ping is dropped (no stale PROCESSING push, no resurrecting a cancelled analysis).
-        if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now()) == 0) {
-            return;
+            // Atomic flip-or-heartbeat; 0 rows means the analysis is already terminal/unknown, so a
+            // late progress ping is dropped (no stale PROCESSING push, no resurrecting a cancelled one).
+            if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now()) == 0) {
+                return;
+            }
+            cache.evictById(id); // status may have flipped PENDING->PROCESSING; keep GET fresh
+            snapshotProgress(id, progress);
+            streams.sendProgress(id, new AnalysisProgressEvent(
+                    id.toString(), (String) payload.get("source"), progress,
+                    (String) payload.get("stage"), "PROCESSING"));
+        } catch (Exception e) {
+            // A progress ping is advisory: losing one must never fail the analysis (the shared
+            // retry/recoverer would otherwise dead-letter it as if it were a failed result).
+            log.warn("progress ping dropped for {}: {}", payload.get("analysis_id"), e.toString());
         }
-        cache.evictById(id); // status may have flipped PENDING->PROCESSING; keep GET fresh
+    }
 
-        // Keep the Redis snapshot for catch-up (GET / reconnect); the SSE push only supplements it.
-        redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1));
-        streams.sendProgress(id, new AnalysisProgressEvent(
-                id.toString(), (String) payload.get("source"), progress,
-                (String) payload.get("stage"), "PROCESSING"));
+    // Redis snapshot for catch-up (GET / reconnect). Fail-open so a Redis outage degrades the
+    // snapshot only — the live SSE push (the primary path) must still run, hence the inner catch.
+    private void snapshotProgress(UUID id, Integer progress) {
+        try {
+            redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1));
+        } catch (DataAccessException e) {
+            log.warn("progress snapshot skipped (Redis down): {}", e.getMessage());
+        }
     }
 
     // Push the terminal result after commit, so a rollback can't leak a state the DB discards. Build
