@@ -35,6 +35,9 @@ docker compose --profile core --profile auth up -d
 `.env` is gitignored. Values in `.env.example` are clearly marked dev-only
 and unsafe outside localhost.
 
+Add `--profile ml` to also start the detectors and run a full analysis
+(upload → analysis → progress → verdict) end to end.
+
 ### Verify
 
 ```bash
@@ -45,12 +48,12 @@ All services should report `healthy` within ~60 seconds.
 
 ## Profiles
 
-| Profile      | Services                                                    | Use when                  |
-| ------------ | ----------------------------------------------------------- | ------------------------- |
-| `core`       | postgres, redis, rabbitmq, seaweedfs (+ two init one-shots) | any backend/frontend dev  |
-| `auth`       | keycloak + dedicated keycloak-db (Postgres)                 | login flow needed         |
-| `ml`         | video-detector, audio-detector (later phase)                | working on ML pipeline    |
-| `monitoring` | prometheus, loki, tempo, grafana (later phase)              | production-like debugging |
+| Profile      | Services                                                                                        | Use when                       |
+| ------------ | ----------------------------------------------------------------------------------------------- | ------------------------------ |
+| `core`       | eureka, gateway, orchestrator, file-service + postgres, redis, rabbitmq, seaweedfs (+ 2 inits)  | any backend/frontend dev       |
+| `auth`       | keycloak + dedicated keycloak-db (Postgres) + realm config one-shot                             | login flow needed              |
+| `ml`         | video-detector, audio-detector (dummy inference for now, full pipeline otherwise)               | running the analysis pipeline  |
+| `monitoring` | prometheus, loki, tempo, grafana                                                                | planned — not yet in compose   |
 
 ## URLs (dev)
 
@@ -95,10 +98,18 @@ fetch must target Keycloak directly. The frontend uses the public
 Frontend ──► Gateway ──► File Service ──► SeaweedFS (S3)
                     └──► Orchestrator ──► PostgreSQL + Redis
                                   │
-                                  ├─AMQP─► RabbitMQ ──► Video Detector
-                                  │                  └─► Audio Detector
-                                  └─WS─► Frontend (progress, result)
+                                  ├─AMQP──► RabbitMQ ──► Video Detector
+                                  │             ▲    └─► Audio Detector
+                                  │             └─ progress + results ─┘
+                                  └─SSE──► Frontend (progress, verdict)
 ```
+
+Service discovery is via Eureka; the Gateway routes by `lb://SERVICE-NAME`.
+Realtime updates use SSE (`GET /api/analysis/{id}/stream`), not WebSocket.
+
+The async pipeline is built for resilience (D6): manual ack / ack-after-commit,
+retry with a dead-letter queue + DLQ consumer, Redis-backed idempotency, stuck-job
+recovery, and graceful degradation when Redis is down.
 
 Queue/exchange topology is declared by application code at startup (Spring
 AMQP `@Bean` in the Orchestrator, `pika queue_declare` in detectors). The

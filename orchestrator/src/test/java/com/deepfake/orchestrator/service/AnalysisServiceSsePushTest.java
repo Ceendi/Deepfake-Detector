@@ -53,6 +53,8 @@ class AnalysisServiceSsePushTest {
     AnalysisStreamRegistry streams;
     @Mock
     BackpressureGuard backpressure;
+    @Mock
+    IdempotencyGuard idempotency;
     @InjectMocks
     AnalysisService service;
 
@@ -60,6 +62,7 @@ class AnalysisServiceSsePushTest {
 
     @Test
     void handleProgressPushesProgressEvent() {
+        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any())).thenReturn(1);
         @SuppressWarnings("unchecked")
         ValueOperations<String, String> ops = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(ops);

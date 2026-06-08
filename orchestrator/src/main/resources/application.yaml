@@ -36,13 +36,20 @@ spring:
     publisher-confirm-type: correlated
     publisher-returns: true
     listener:
-      # auto-ack: Spring acks on successful listener return, nacks on exception.
-      # TODO(week 5, D6): switch to manual ack (Channel + DELIVERY_TAG) after tx commit.
+      # AUTO = container acks after the listener returns (after the @Transactional commit), not
+      # RabbitMQ auto-ack — required so retry + recoverer compose (MANUAL would never auto-ack).
       simple:
         acknowledge-mode: auto
         prefetch: 1
         # Spans (traceId in MDC) for the consumer thread; reads traceparent off the message.
         observation-enabled: true
+        # Exhausted retries -> RepublishMessageRecoverer (RabbitConfig) -> analysis.results.dlq.
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 1s
+          multiplier: 4
+          max-interval: 15s
 eureka:
   client:
     service-url:
@@ -52,6 +59,15 @@ backpressure:
   # detector tasks). Env-overridable so load tests can trip it (e.g. =2 with dummy ML).
   max-inflight: ${BACKPRESSURE_MAX_INFLIGHT:20}
   retry-after-seconds: ${BACKPRESSURE_RETRY_AFTER_SECONDS:5}
+reliability:
+  idempotency:
+    # TTL of the per-result dedup key (dedup:{id}:{source}); long enough to cover broker redeliveries.
+    ttl-seconds: ${RELIABILITY_IDEMPOTENCY_TTL_SECONDS:900}
+  stuck-job:
+    # An active analysis with no progress for this long is auto-failed. Lower it (e.g. =10) and kill a
+    # detector after POST to demo recovery; with dummy ML (~2s) nothing reaches it normally.
+    threshold-seconds: ${RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS:600}
+    scan-interval-ms: ${RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS:300000}
 management:
   endpoints:
     web:

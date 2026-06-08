@@ -16,19 +16,24 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -41,6 +46,8 @@ public class AnalysisService {
     private static final BigDecimal W_AUDIO   = new BigDecimal("0.4");
     private static final BigDecimal THRESHOLD = new BigDecimal("0.5");
     private static final BigDecimal TWO       = new BigDecimal("2");
+    private static final Set<AnalysisStatus> ACTIVE =
+            EnumSet.of(AnalysisStatus.PENDING, AnalysisStatus.PROCESSING);
 
     private final AnalysisRepository repository;
     private final RabbitTemplate rabbitTemplate;
@@ -48,6 +55,7 @@ public class AnalysisService {
     private final AnalysisCache cache;
     private final AnalysisStreamRegistry streams;
     private final BackpressureGuard backpressure;
+    private final IdempotencyGuard idempotency;
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         backpressure.acquire(); // 429 here -> nothing persisted or published
@@ -158,7 +166,7 @@ public class AnalysisService {
                 Map.of("analysis_id", id.toString(),
                         "correlation_id", correlationId != null ? correlationId : ""));
 
-        pushTerminal(id, a); // SSE: {status: CANCELLED} + close the stream
+        pushTerminalAfterCommit(id, a); // SSE: {status: CANCELLED} + close the stream
         return AnalysisResponse.from(a);
     }
 
@@ -166,6 +174,12 @@ public class AnalysisService {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
         String source = (String) payload.get("source"); // "video" | "audio"
         String status = (String) payload.get("status"); // "COMPLETED" | "FAILED"
+
+        if (idempotency.alreadyProcessed(id, source)) {
+            log.info("Duplicate result for {}/{}, skipping (idempotency)", id, source);
+            return;
+        }
+        markProcessedAfterCommit(id, source); // recorded only if this tx commits — retry-safe
 
         Analysis a = repository.findById(id).orElseThrow();
 
@@ -182,7 +196,7 @@ public class AnalysisService {
             repository.save(a);
             cache.evictById(id);
             backpressure.release();
-            pushTerminal(id, a);
+            pushTerminalAfterCommit(id, a);
             return;
         }
 
@@ -208,31 +222,102 @@ public class AnalysisService {
         cache.evictById(id);
         if (done) {
             backpressure.release();
-            pushTerminal(id, a);
+            pushTerminalAfterCommit(id, a);
         }
 
-        // TODO(week 5, D6 race fix): replace findById + save with an atomic
+        // TODO(week 6, D6 race fix): replace findById + save with an atomic
         // UPDATE ... WHERE id = :id AND status IN ('PENDING','PROCESSING') RETURNING *.
         // With dummy ML (~2s sleep) the race is unlikely; with real ML both replies arrive
         // within ms and last-write-wins drops one of videoProb/audioProb.
     }
 
-    public void handleProgress(Map<String, Object> payload) {
-        UUID id = UUID.fromString((String) payload.get("analysis_id"));
-        Integer progress = (Integer) payload.get("progress");
-        // Keep the Redis snapshot for catch-up (GET / reconnect); the SSE push only supplements it.
-        redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1));
-        streams.sendProgress(id, new AnalysisProgressEvent(
-                id.toString(), (String) payload.get("source"), progress,
-                (String) payload.get("stage"), "PROCESSING"));
+    // Dead-lettered message: the DLQ consumer asks us to fail the analysis.
+    public void failFromDlq(UUID id, String reason) {
+        transitionToFailed(id, "dead-letter: " + reason);
     }
 
-    // Push the terminal result then close the stream. No-op when no client has it open (registry
-    // empty for this id) — the state still lives in DB/Redis. Push order matters: result before
-    // complete, since complete() closes the emitters.
-    private void pushTerminal(UUID id, Analysis a) {
-        streams.sendResult(id, AnalysisResultEvent.of(a));
-        streams.complete(id);
+    // Stuck-job recovery asks us to fail an analysis that hasn't progressed past its threshold.
+    public void failStuck(UUID id, long thresholdSeconds) {
+        transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery");
+    }
+
+    // Shared terminal-failure transition. The isTerminal() guard makes it idempotent and ensures
+    // exactly one release() per analysis even if (e.g.) a late result and recovery both fire.
+    private void transitionToFailed(UUID id, String errorMessage) {
+        Analysis a = repository.findById(id).orElse(null);
+        if (a == null) {
+            log.warn("fail requested for unknown analysis {}", id);
+            return;
+        }
+        if (a.getStatus().isTerminal()) {
+            log.info("fail requested for already-terminal {} ({}), ignoring", id, a.getStatus());
+            return;
+        }
+        a.setStatus(AnalysisStatus.FAILED);
+        a.setErrorMessage(errorMessage);
+        repository.save(a);
+        cache.evictById(id);
+        backpressure.release();
+        pushTerminalAfterCommit(id, a);
+    }
+
+    public void handleProgress(Map<String, Object> payload) {
+        try {
+            UUID id = UUID.fromString((String) payload.get("analysis_id"));
+            Integer progress = (Integer) payload.get("progress");
+
+            // Atomic flip-or-heartbeat; 0 rows means the analysis is already terminal/unknown, so a
+            // late progress ping is dropped (no stale PROCESSING push, no resurrecting a cancelled one).
+            if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now()) == 0) {
+                return;
+            }
+            cache.evictById(id); // status may have flipped PENDING->PROCESSING; keep GET fresh
+            snapshotProgress(id, progress);
+            streams.sendProgress(id, new AnalysisProgressEvent(
+                    id.toString(), (String) payload.get("source"), progress,
+                    (String) payload.get("stage"), "PROCESSING"));
+        } catch (Exception e) {
+            // A progress ping is advisory: losing one must never fail the analysis (the shared
+            // retry/recoverer would otherwise dead-letter it as if it were a failed result).
+            log.warn("progress ping dropped for {}: {}", payload.get("analysis_id"), e.toString());
+        }
+    }
+
+    // Redis snapshot for catch-up (GET / reconnect). Fail-open so a Redis outage degrades the
+    // snapshot only — the live SSE push (the primary path) must still run, hence the inner catch.
+    private void snapshotProgress(UUID id, Integer progress) {
+        try {
+            redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1));
+        } catch (DataAccessException e) {
+            log.warn("progress snapshot skipped (Redis down): {}", e.getMessage());
+        }
+    }
+
+    // Push the terminal result after commit, so a rollback can't leak a state the DB discards. Build
+    // the event now while the entity is managed (open-in-view:false closes the session at commit).
+    private void markProcessedAfterCommit(UUID id, String source) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { idempotency.markProcessed(id, source); }
+            });
+        } else {
+            idempotency.markProcessed(id, source);
+        }
+    }
+
+    private void pushTerminalAfterCommit(UUID id, Analysis a) {
+        AnalysisResultEvent ev = AnalysisResultEvent.of(a);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() {
+                    streams.sendResult(id, ev);
+                    streams.complete(id);
+                }
+            });
+        } else {
+            streams.sendResult(id, ev);
+            streams.complete(id);
+        }
     }
 
     private BigDecimal aggregate(BigDecimal videoProb, BigDecimal audioProb) {
