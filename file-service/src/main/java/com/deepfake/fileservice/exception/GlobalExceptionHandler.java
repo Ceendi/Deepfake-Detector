@@ -7,6 +7,7 @@ import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -38,6 +39,13 @@ public class GlobalExceptionHandler {
         HttpStatusCode status = ex.getStatusCode();
         String message = ex.getReason() != null ? ex.getReason() : codeOf(status);
         return body(status, codeOf(status), message, null);
+    }
+
+    // Unparseable/malformed request body -> 400, not the catch-all 500. Generic message: the parser
+    // detail (offset, field) stays in logs, never echoed to the client.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex) {
+        return body(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "Malformed request body", null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

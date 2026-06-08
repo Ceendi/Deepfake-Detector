@@ -10,6 +10,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -48,6 +49,13 @@ public class GlobalExceptionHandler {
         ex.getBindingResult().getFieldErrors()
                 .forEach(fe -> fields.putIfAbsent(fe.getField(), fe.getDefaultMessage()));
         return body(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Validation failed", fields);
+    }
+
+    // Unparseable/malformed request body -> 400, not the catch-all 500. Generic message: the parser
+    // detail (offset, field) stays in logs, never echoed to the client.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex) {
+        return body(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "Malformed request body", null);
     }
 
     @ExceptionHandler(AccessDeniedException.class)

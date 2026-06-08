@@ -223,7 +223,7 @@ token in the query string would leak into logs.
 |------|------------------------------------------------------------|
 | 200  | OK                                                         |
 | 201  | Created                                                    |
-| 400  | Bad Request (validation)                                   |
+| 400  | Bad Request (validation `VALIDATION_FAILED`, or malformed body `MALFORMED_REQUEST`) |
 | 401  | Unauthorized (missing/invalid token)                       |
 | 404  | Not Found (also IDOR — we never return 403)                |
 | 409  | Conflict (e.g. cancel on an already-finished analysis)     |
