@@ -174,7 +174,7 @@ services:
     networks: [deepfake]
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.30
+    image: chrislusf/seaweedfs:4.32
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # volume server flushes outstanding writes on SIGTERM
@@ -272,7 +272,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.34.58
+    image: amazon/aws-cli:2.34.63
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -326,7 +326,7 @@ services:
     networks: [deepfake]
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.2
+    image: quay.io/keycloak/keycloak:26.6.3
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s # let in-flight HTTP / DB connections drain
@@ -376,7 +376,7 @@ services:
   keycloak-config-cli:
     # Version pin: cli was built/tested against KC 26.5.4; our KC is 26.6.1.
     # Forward-compatible for the API surface we use — see ADR-0001 §Consequences.
-    image: adorsys/keycloak-config-cli:6.5.0-26.5.4
+    image: adorsys/keycloak-config-cli:6.5.1-26.5.5
     profiles: ["auth"]
     restart: "no"
     security_opt: *default-security
