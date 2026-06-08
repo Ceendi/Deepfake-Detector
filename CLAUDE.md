@@ -166,11 +166,14 @@ Broker startuje pusty. **Topologia (exchanges, queues, bindings) deklarowana w k
 
 ### Niezawodność — must-have
 
-- Consumer AMQP: **manual ack**, publisher confirms, idempotentność (Redis `SET NX processing:{id}`)
-- Race condition na agregacji V+A: atomowy `UPDATE ... WHERE status = 'PENDING' RETURNING *`
-- Stuck job recovery: `@Scheduled` co 5 min, jobs > 10 min w `PROCESSING` → `FAILED`
+- Manual ack: literalny `MANUAL` na detektorach + DLQ consumerze (`@RabbitListener(ackMode="MANUAL")`). Główne listenery `analysis.results`/`progress` używają `AUTO` (= container ack **po commit** `@Transactional`, NIE RabbitMQ auto-ack) — wymagane do kompozycji z retry+recoverer. Publisher confirms po stronie detektorów.
+- Retry: property-based exp backoff (4 próby, 1s/4s/15s) na listenerach Orchestratora; po wyczerpaniu `RepublishMessageRecoverer` → `analysis.results.dlq` (kolejka `analysis.results` zostaje bez DLX args → detektory nie dostają `PRECONDITION_FAILED`)
+- Idempotentność: Redis dedup `dedup:{analysis_id}:{source}` (per-source — FULL = 2 wyniki), ustawiany **po commit** (klucz istnieje ⟺ TX zacommitował → retry-safe), fail-open; guard DB `isTerminal()` to autorytet poprawności
+- Race condition na agregacji V+A: atomowy `UPDATE ... WHERE status IN ('PENDING','PROCESSING') RETURNING *` (tydzień 6)
+- Stuck job recovery: `@Scheduled` skan `idx_analysis_active`, jobs `PENDING/PROCESSING` starsze niż próg (domyślnie 600s) → `FAILED` + release (gauge reconcile) + SSE. `PROCESSING` realny od start-pingu `0/LOADING`; każdy progress = heartbeat `updated_at`
 - Python consumer: reconnect loop z 5s backoff
-- DLQ consumer: każda kolejka ma swoją DLQ, konsumer DLQ → status FAILED + notyfikacja WS
+- DLQ consumer: każda kolejka ma swoją DLQ (`results/video/audio.dlq`), konsumer DLQ (MANUAL ack) → status FAILED + notyfikacja SSE + release slotu
+- Redis graceful degradation: każdy dotyk Redisa fail-open (cache→DB, gauge→admit, dedup→DB-guard, progress snapshot→skip)
 
 ### Observability — must-have
 
