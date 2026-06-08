@@ -4,6 +4,28 @@ server:
 spring:
   application:
     name: file-service
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri validates the iss claim (public URL in the token); jwk-set-uri is where
+          # keys are actually fetched (internal URL in docker, so no host-gateway hacks needed).
+          issuer-uri: ${JWT_ISSUER_URI:http://localhost:8180/realms/deepfake}
+          jwk-set-uri: ${JWK_SET_URI:http://localhost:8180/realms/deepfake/protocol/openid-connect/certs}
+  # Own database + own least-privilege user (database-per-service), separate from the
+  # orchestrator's DB in the same Postgres container — so each service has its own
+  # flyway_schema_history and no cross-service SQL access.
+  datasource:
+    url: jdbc:postgresql://postgres:5432/${FILE_SERVICE_DB_NAME:fileservice}
+    username: ${FILE_SERVICE_DB_USER}
+    password: ${FILE_SERVICE_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
   servlet:
     multipart:
       max-file-size: 500MB
@@ -14,6 +36,9 @@ eureka:
       defaultZone: http://eureka-server:8761/eureka/
 storage:
   endpoint: http://seaweedfs:8333
+  # Browser-reachable host baked into presigned URLs (the internal endpoint is not resolvable
+  # outside the docker network). Dev: localhost:8333; prod: public domain / via gateway.
+  public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:8333}
   region: us-east-1
   access-key: ${S3_FILE_SERVICE_KEY}
   secret-key: ${S3_FILE_SERVICE_SECRET}
@@ -26,3 +51,24 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0          # dev: sample everything; prod → ~0.1
+    # Gate EXPORT only — see orchestrator/application.yaml for the rationale.
+    export:
+      enabled: ${OTEL_TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_OTLP_ENDPOINT:http://tempo:4318/v1/traces}
+  otlp:
+    metrics:
+      export:
+        # Metrics ship via Prometheus scrape (/actuator/prometheus, D3). The OTLP meter registry
+        # arrives transitively with the OpenTelemetry starter and is unused here — disabled so it
+        # doesn't push to (and fail against) a non-existent OTLP collector every minute.
+        enabled: false
+logging:
+  pattern:
+    console: '%d{ISO8601} %-5level [%X{correlationId:-},%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n'

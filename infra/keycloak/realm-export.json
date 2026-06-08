@@ -21,20 +21,84 @@
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
   "offlineSessionIdleTimeout": 2592000,
+  "defaultRole": {
+    "name": "default-roles-deepfake",
+    "description": "${role_default-roles}",
+    "composite": true,
+    "clientRole": false,
+    "containerId": "deepfake"
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "USER",
+        "description": "Standard application user — can upload files and run analyses"
+      },
+      {
+        "name": "default-roles-deepfake",
+        "description": "${role_default-roles}",
+        "composite": true,
+        "composites": {
+          "realm": ["USER"]
+        },
+        "clientRole": false
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "deepfake-web",
       "publicClient": true,
-      "redirectUris": ["http://localhost:5173/*"],
-      "webOrigins": ["http://localhost:5173"],
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:4173/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:4173"
+      ],
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:5173/*"
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:4173/*"
       }
+    }
+  ],
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "alice@deepfake.local",
+      "firstName": "Alice",
+      "lastName": "Tester",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Test1234!@",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["USER"]
+    },
+    {
+      "username": "bob",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "bob@deepfake.local",
+      "firstName": "Bob",
+      "lastName": "Tester",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Test1234!@",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["USER"]
     }
   ]
 }

@@ -34,9 +34,24 @@ x-pg-hardening: &pg-hardening
     - /tmp:rw,noexec,nosuid,size=64m
     - /run/postgresql:rw,noexec,nosuid,size=32m
 
+# OIDC resource-server config shared by every JWT-validating Java service.
+# iss is validated against the public URL the token carries (KC_HOSTNAME), but the
+# signing keys are fetched from Keycloak over the docker network — `localhost` inside
+# a container is the container itself, so it can't reach the host's published port.
+x-jwt-env: &jwt-env
+  JWT_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/deepfake
+  JWK_SET_URI: http://keycloak:8080/realms/deepfake/protocol/openid-connect/certs
+
+# Tracing shared by every Java service. The tracer is always on (traceId/spanId in
+# logs = D2); only OTLP *export* is gated, so it stays off until the monitoring
+# profile (Tempo) exists — otherwise the exporter spams a dead tempo:4318.
+x-otel-env: &otel-env
+  OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
+  OTEL_OTLP_ENDPOINT: ${OTEL_OTLP_ENDPOINT:-http://tempo:4318/v1/traces}
+
 services:
   postgres:
-    image: postgres:18.3-alpine
+    image: postgres:18.4-alpine
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # let Postgres flush WAL on shutdown
@@ -53,11 +68,18 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: /var/lib/postgresql/data
+      # Consumed by the init script to create the file-service DB + least-privilege user.
+      FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
+      FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
+      FILE_SERVICE_DB_PASSWORD: ${FILE_SERVICE_DB_PASSWORD}
     ports:
       # 127.0.0.1 prefix: don't expose dev creds to LAN.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # initdb runs *.sh here ONLY on an empty pgdata (first start). On an existing volume,
+      # create the fileservice DB/user by hand or `docker volume rm` the pgdata volume.
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -67,7 +89,7 @@ services:
     networks: [deepfake]
 
   redis:
-    image: redis:8.6.3-alpine
+    image: redis:8.8.0-alpine
     profiles: ["core"]
     restart: unless-stopped
     security_opt: *default-security
@@ -115,7 +137,7 @@ services:
     networks: [deepfake]
 
   rabbitmq:
-    image: rabbitmq:4.3.0-management-alpine
+    image: rabbitmq:4.3.1-management-alpine
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # flush queues to disk before exit
@@ -152,7 +174,7 @@ services:
     networks: [deepfake]
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.23
+    image: chrislusf/seaweedfs:4.32
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # volume server flushes outstanding writes on SIGTERM
@@ -216,15 +238,16 @@ services:
     # Phase 1 (pre-start): renders /etc/seaweedfs/s3.json from the template
     # using env vars, populated into the shared `seaweedconfig` volume.
     # Runs before the main seaweedfs service starts (via depends_on).
+    # Runs as root: the seaweedfs image entrypoint also runs as root, so a
+    # 0644 file written here is readable downstream regardless of ownership.
     image: alpine:3.23
     profiles: ["core"]
-    # user must match SeaweedFS uid (1000) so files in the shared seaweedconfig
-    # volume are owned by the same user that SeaweedFS runs as. Without this,
-    # cap_drop:ALL strips CAP_DAC_OVERRIDE and root can't write to a 755 dir
-    # owned by uid 1000.
-    user: "1000:1000"
     security_opt: *default-security
     cap_drop: [ALL]
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     deploy:
       resources:
         limits:
@@ -249,7 +272,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.34.45
+    image: amazon/aws-cli:2.34.63
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -275,7 +298,7 @@ services:
     # Dedicated Postgres for Keycloak. Without this, start-dev would fall back
     # to in-memory H2 — every `compose down` would wipe users created in dev,
     # which is annoying when testing login flows. Postgres from day one.
-    image: postgres:18.3-alpine
+    image: postgres:18.4-alpine
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s
@@ -303,7 +326,7 @@ services:
     networks: [deepfake]
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.1
+    image: quay.io/keycloak/keycloak:26.6.3
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s # let in-flight HTTP / DB connections drain
@@ -320,7 +343,8 @@ services:
       keycloak-db:
         condition: service_healthy
     # DEV-ONLY: start-dev disables HTTPS and skips the provider build cache.
-    command: ["start-dev", "--import-realm"]
+    # Realm import owned by keycloak-config-cli (idempotent) — see ADR-0001.
+    command: ["start-dev"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
@@ -337,8 +361,6 @@ services:
       KC_METRICS_ENABLED: "true"
     ports:
       - "127.0.0.1:${KEYCLOAK_PORT:-8180}:8080"
-    volumes:
-      - ./infra/keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
     healthcheck:
       # KC UBI image has no curl/wget — raw bash /dev/tcp probe against the
       # management port (9000, internal) where /health/ready lives.
@@ -349,6 +371,44 @@ services:
       timeout: 5s
       retries: 15
       start_period: 60s
+    networks: [deepfake]
+
+  keycloak-config-cli:
+    # Version pin: cli was built/tested against KC 26.5.4; our KC is 26.6.1.
+    # Forward-compatible for the API surface we use — see ADR-0001 §Consequences.
+    image: adorsys/keycloak-config-cli:6.5.1-26.5.5
+    profiles: ["auth"]
+    restart: "no"
+    security_opt: *default-security
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.5"
+          pids: 200
+    logging: *default-logging
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    environment:
+      # Admin REST API, not OIDC — uses the internal hostname, not the
+      # localhost issuer URL the Java services need via extra_hosts.
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_USER: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KEYCLOAK_AVAILABILITYCHECK_ENABLED: "true"
+      KEYCLOAK_AVAILABILITYCHECK_TIMEOUT: 120s
+      IMPORT_FILES_LOCATIONS: /config/*.json
+      IMPORT_VARSUBSTITUTION_ENABLED: "true"
+      # Default for everything else is `full`; users get `no-delete` so UI-created
+      # accounts survive sync. See ADR-0001 §Consequences.
+      IMPORT_MANAGED_USER: no-delete
+    volumes:
+      - ./infra/keycloak/realm-export.json:/config/realm-export.json:ro
     networks: [deepfake]
 
   eureka-server:
@@ -367,22 +427,33 @@ services:
     depends_on:
       eureka-server:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports: ["8080:8080"]
     environment:
+      <<: [*jwt-env, *otel-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks: [deepfake]
 
   file-service:
     build: ./file-service
     profiles: ["core"]
     depends_on:
+      postgres: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
     environment:
+      <<: [*jwt-env, *otel-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
+      FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
+      FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
+      FILE_SERVICE_DB_PASSWORD: ${FILE_SERVICE_DB_PASSWORD}
       S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
+      # Host baked into presigned URLs — must be browser-reachable, not the internal endpoint.
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://localhost:8333}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health"]
       interval: 15s
@@ -398,12 +469,14 @@ services:
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     environment:
+      <<: [*jwt-env, *otel-env]
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      BACKPRESSURE_MAX_INFLIGHT: ${BACKPRESSURE_MAX_INFLIGHT:-20}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
       interval: 15s

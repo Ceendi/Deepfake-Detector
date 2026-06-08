@@ -35,6 +35,9 @@ docker compose --profile core --profile auth up -d
 `.env` is gitignored. Values in `.env.example` are clearly marked dev-only
 and unsafe outside localhost.
 
+Add `--profile ml` to also start the detectors and run a full analysis
+(upload → analysis → progress → verdict) end to end.
+
 ### Verify
 
 ```bash
@@ -45,12 +48,12 @@ All services should report `healthy` within ~60 seconds.
 
 ## Profiles
 
-| Profile      | Services                                                    | Use when                  |
-| ------------ | ----------------------------------------------------------- | ------------------------- |
-| `core`       | postgres, redis, rabbitmq, seaweedfs (+ two init one-shots) | any backend/frontend dev  |
-| `auth`       | keycloak + dedicated keycloak-db (Postgres)                 | login flow needed         |
-| `ml`         | video-detector, audio-detector (later phase)                | working on ML pipeline    |
-| `monitoring` | prometheus, loki, tempo, grafana (later phase)              | production-like debugging |
+| Profile      | Services                                                                                        | Use when                       |
+| ------------ | ----------------------------------------------------------------------------------------------- | ------------------------------ |
+| `core`       | eureka, gateway, orchestrator, file-service + postgres, redis, rabbitmq, seaweedfs (+ 2 inits)  | any backend/frontend dev       |
+| `auth`       | keycloak + dedicated keycloak-db (Postgres) + realm config one-shot                             | login flow needed              |
+| `ml`         | video-detector, audio-detector (dummy inference for now, full pipeline otherwise)               | running the analysis pipeline  |
+| `monitoring` | prometheus, loki, tempo, grafana                                                                | planned — not yet in compose   |
 
 ## URLs (dev)
 
@@ -82,11 +85,12 @@ product decision, and the email-verification setup deferred until SMTP).
 
 `KC_HOSTNAME` is forced to `http://localhost:8180` in dev, so JWTs always
 carry the same `iss` claim regardless of which network the request
-originated from. Both frontend and backend services use the single
-`JWT_ISSUER_URI=http://localhost:8180/realms/deepfake` from the env —
-backend services running inside the docker network reach it via
-`extra_hosts: host.docker.internal:host-gateway` (configured per-service
-in their own compose entries when they exist).
+originated from. Backend services validate that `iss` against
+`JWT_ISSUER_URI=http://localhost:8180/realms/deepfake` but fetch the signing
+keys from `JWK_SET_URI=http://keycloak:8080/.../certs` over the docker
+network — `localhost` inside a container is the container itself, so the key
+fetch must target Keycloak directly. The frontend uses the public
+`localhost:8180` URL for the login redirect.
 
 ## Architecture
 
@@ -94,10 +98,18 @@ in their own compose entries when they exist).
 Frontend ──► Gateway ──► File Service ──► SeaweedFS (S3)
                     └──► Orchestrator ──► PostgreSQL + Redis
                                   │
-                                  ├─AMQP─► RabbitMQ ──► Video Detector
-                                  │                  └─► Audio Detector
-                                  └─WS─► Frontend (progress, result)
+                                  ├─AMQP──► RabbitMQ ──► Video Detector
+                                  │             ▲    └─► Audio Detector
+                                  │             └─ progress + results ─┘
+                                  └─SSE──► Frontend (progress, verdict)
 ```
+
+Service discovery is via Eureka; the Gateway routes by `lb://SERVICE-NAME`.
+Realtime updates use SSE (`GET /api/analysis/{id}/stream`), not WebSocket.
+
+The async pipeline is built for resilience (D6): manual ack / ack-after-commit,
+retry with a dead-letter queue + DLQ consumer, Redis-backed idempotency, stuck-job
+recovery, and graceful degradation when Redis is down.
 
 Queue/exchange topology is declared by application code at startup (Spring
 AMQP `@Bean` in the Orchestrator, `pika queue_declare` in detectors). The
