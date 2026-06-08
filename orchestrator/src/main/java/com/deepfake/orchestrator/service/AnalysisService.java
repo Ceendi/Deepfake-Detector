@@ -30,7 +30,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Slf4j
@@ -43,6 +45,8 @@ public class AnalysisService {
     private static final BigDecimal W_AUDIO   = new BigDecimal("0.4");
     private static final BigDecimal THRESHOLD = new BigDecimal("0.5");
     private static final BigDecimal TWO       = new BigDecimal("2");
+    private static final Set<AnalysisStatus> ACTIVE =
+            EnumSet.of(AnalysisStatus.PENDING, AnalysisStatus.PROCESSING);
 
     private final AnalysisRepository repository;
     private final RabbitTemplate rabbitTemplate;
@@ -226,20 +230,30 @@ public class AnalysisService {
         // within ms and last-write-wins drops one of videoProb/audioProb.
     }
 
-    // Called by the DLQ consumer for a dead-lettered message. The isTerminal() guard makes it
-    // idempotent and ensures exactly one release() per analysis even if a late result also arrives.
+    // Dead-lettered message: the DLQ consumer asks us to fail the analysis.
     public void failFromDlq(UUID id, String reason) {
+        transitionToFailed(id, "dead-letter: " + reason);
+    }
+
+    // Stuck-job recovery asks us to fail an analysis that hasn't progressed past its threshold.
+    public void failStuck(UUID id, long thresholdSeconds) {
+        transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery");
+    }
+
+    // Shared terminal-failure transition. The isTerminal() guard makes it idempotent and ensures
+    // exactly one release() per analysis even if (e.g.) a late result and recovery both fire.
+    private void transitionToFailed(UUID id, String errorMessage) {
         Analysis a = repository.findById(id).orElse(null);
         if (a == null) {
-            log.warn("DLQ for unknown analysis {}", id);
+            log.warn("fail requested for unknown analysis {}", id);
             return;
         }
         if (a.getStatus().isTerminal()) {
-            log.info("DLQ for already-terminal {} ({}), ignoring", id, a.getStatus());
+            log.info("fail requested for already-terminal {} ({}), ignoring", id, a.getStatus());
             return;
         }
         a.setStatus(AnalysisStatus.FAILED);
-        a.setErrorMessage("dead-letter: " + reason);
+        a.setErrorMessage(errorMessage);
         repository.save(a);
         cache.evictById(id);
         backpressure.release();
@@ -249,6 +263,14 @@ public class AnalysisService {
     public void handleProgress(Map<String, Object> payload) {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
         Integer progress = (Integer) payload.get("progress");
+
+        // Atomic flip-or-heartbeat; 0 rows means the analysis is already terminal/unknown, so a late
+        // progress ping is dropped (no stale PROCESSING push, no resurrecting a cancelled analysis).
+        if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now()) == 0) {
+            return;
+        }
+        cache.evictById(id); // status may have flipped PENDING->PROCESSING; keep GET fresh
+
         // Keep the Redis snapshot for catch-up (GET / reconnect); the SSE push only supplements it.
         redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1));
         streams.sendProgress(id, new AnalysisProgressEvent(

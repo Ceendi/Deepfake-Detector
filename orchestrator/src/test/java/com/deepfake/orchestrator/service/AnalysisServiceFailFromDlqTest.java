@@ -55,6 +55,20 @@ class AnalysisServiceFailFromDlqTest {
     }
 
     @Test
+    void failStuckUsesStuckMessage() {
+        Analysis a = analysis(AnalysisStatus.PROCESSING);
+        when(repository.findById(id)).thenReturn(Optional.of(a));
+
+        service.failStuck(id, 600);
+
+        ArgumentCaptor<Analysis> saved = ArgumentCaptor.forClass(Analysis.class);
+        verify(repository).save(saved.capture());
+        assertThat(saved.getValue().getStatus()).isEqualTo(AnalysisStatus.FAILED);
+        assertThat(saved.getValue().getErrorMessage()).contains("stuck > 600s");
+        verify(backpressure).release();
+    }
+
+    @Test
     void terminalAnalysisIsNoOp() {
         when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.COMPLETED)));
 

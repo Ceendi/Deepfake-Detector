@@ -63,6 +63,11 @@ reliability:
   idempotency:
     # TTL of the per-result dedup key (dedup:{id}:{source}); long enough to cover broker redeliveries.
     ttl-seconds: ${RELIABILITY_IDEMPOTENCY_TTL_SECONDS:900}
+  stuck-job:
+    # An active analysis with no progress for this long is auto-failed. Lower it (e.g. =10) and kill a
+    # detector after POST to demo recovery; with dummy ML (~2s) nothing reaches it normally.
+    threshold-seconds: ${RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS:600}
+    scan-interval-ms: ${RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS:300000}
 management:
   endpoints:
     web:

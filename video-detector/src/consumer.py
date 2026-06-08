@@ -76,7 +76,16 @@ def _handle_message(ch, method, properties, body):
     )
     try:
         log.info("processing_started")
-        # TODO D6: idempotency check via Redis SETNX(processing:{analysis_id}) before publishing results.
+        # Start-ping: lets the Orchestrator flip PENDING->PROCESSING the moment the task is picked up
+        # (not just at 50%). Lives outside process(), so swapping in the real model keeps it.
+        _publish(ch, "analysis.progress", {
+            "analysis_id": analysis_id,
+            "correlation_id": correlation_id,
+            "source": SOURCE,
+            "progress": 0,
+            "stage": "LOADING",
+        })
+        # TODO D6: idempotency check via Redis SETNX(processing:{analysis_id}:{source}) before publishing results.
         _publish(ch, "analysis.progress", {
             "analysis_id": analysis_id,
             "correlation_id": correlation_id,
