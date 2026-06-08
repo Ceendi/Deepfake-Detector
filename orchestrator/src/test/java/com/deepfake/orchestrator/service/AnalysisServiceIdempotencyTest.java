@@ -1,13 +1,10 @@
 package com.deepfake.orchestrator.service;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,16 +21,18 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
-import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
-/** The terminal SSE push must fire on afterCommit, not inside the tx — a rollback can't leak it. */
+/**
+ * Idempotency: a result flagged as already-processed is skipped before any DB work; a fresh result
+ * records the dedup key only on afterCommit, so a rollback-then-retry isn't mistaken for a duplicate.
+ */
 @ExtendWith(MockitoExtension.class)
-class AnalysisServicePushAfterCommitTest {
+class AnalysisServiceIdempotencyTest {
 
     @Mock AnalysisRepository repository;
     @Mock RabbitTemplate rabbitTemplate;
@@ -54,43 +53,32 @@ class AnalysisServicePushAfterCommitTest {
     }
 
     @Test
-    void pushesOnlyAfterCommit() {
-        givenAnalysis();
-        TransactionSynchronizationManager.initSynchronization();
+    void duplicateIsSkippedBeforeAnyDbWork() {
+        when(idempotency.alreadyProcessed(id, "video")).thenReturn(true);
 
         service.handleResult(completedVideo());
 
-        verifyNoInteractions(streams); // registered, not yet fired
-
-        fireAfterCommit();
-
-        verify(streams).sendResult(eq(id), any(AnalysisResultEvent.class));
-        verify(streams).complete(id);
+        verify(repository, never()).findById(any());
+        verify(repository, never()).save(any());
+        verify(backpressure, never()).release();
+        verify(idempotency, never()).markProcessed(any(), any());
     }
 
     @Test
-    void doesNotPushOnRollback() {
-        givenAnalysis();
+    void freshResultMarksOnlyAfterCommit() {
+        Analysis a = Analysis.builder().id(id).userId("alice").type(AnalysisType.VIDEO)
+                .status(AnalysisStatus.PENDING).build();
+        when(repository.findById(id)).thenReturn(Optional.of(a));
         TransactionSynchronizationManager.initSynchronization();
 
         service.handleResult(completedVideo());
 
-        TransactionSynchronizationManager.clearSynchronization(); // rollback: cleared, afterCommit never runs
+        verify(idempotency, never()).markProcessed(any(), any()); // not until the tx commits
 
-        verify(streams, never()).sendResult(any(), any());
-        verify(streams, never()).complete(any());
-    }
+        TransactionSynchronizationManager.getSynchronizations()
+                .forEach(TransactionSynchronization::afterCommit);
 
-    private void fireAfterCommit() {
-        List<TransactionSynchronization> syncs =
-                TransactionSynchronizationManager.getSynchronizations();
-        syncs.forEach(TransactionSynchronization::afterCommit);
-    }
-
-    private void givenAnalysis() {
-        Analysis a = Analysis.builder().id(id).userId("alice").type(AnalysisType.VIDEO)
-                .status(AnalysisStatus.PENDING).build();
-        when(repository.findById(id)).thenReturn(Optional.of(a));
+        verify(idempotency).markProcessed(id, "video");
     }
 
     private Map<String, Object> completedVideo() {

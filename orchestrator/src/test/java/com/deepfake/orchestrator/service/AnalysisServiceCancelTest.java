@@ -52,6 +52,8 @@ class AnalysisServiceCancelTest {
     AnalysisStreamRegistry streams;
     @Mock
     BackpressureGuard backpressure;
+    @Mock
+    IdempotencyGuard idempotency;
     @InjectMocks
     AnalysisService service;
 

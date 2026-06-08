@@ -50,6 +50,7 @@ public class AnalysisService {
     private final AnalysisCache cache;
     private final AnalysisStreamRegistry streams;
     private final BackpressureGuard backpressure;
+    private final IdempotencyGuard idempotency;
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         backpressure.acquire(); // 429 here -> nothing persisted or published
@@ -169,6 +170,12 @@ public class AnalysisService {
         String source = (String) payload.get("source"); // "video" | "audio"
         String status = (String) payload.get("status"); // "COMPLETED" | "FAILED"
 
+        if (idempotency.alreadyProcessed(id, source)) {
+            log.info("Duplicate result for {}/{}, skipping (idempotency)", id, source);
+            return;
+        }
+        markProcessedAfterCommit(id, source); // recorded only if this tx commits — retry-safe
+
         Analysis a = repository.findById(id).orElseThrow();
 
         // Idempotency — a late/duplicate result on an already-terminal analysis (incl. CANCELLED) is
@@ -251,6 +258,16 @@ public class AnalysisService {
 
     // Push the terminal result after commit, so a rollback can't leak a state the DB discards. Build
     // the event now while the entity is managed (open-in-view:false closes the session at commit).
+    private void markProcessedAfterCommit(UUID id, String source) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { idempotency.markProcessed(id, source); }
+            });
+        } else {
+            idempotency.markProcessed(id, source);
+        }
+    }
+
     private void pushTerminalAfterCommit(UUID id, Analysis a) {
         AnalysisResultEvent ev = AnalysisResultEvent.of(a);
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
