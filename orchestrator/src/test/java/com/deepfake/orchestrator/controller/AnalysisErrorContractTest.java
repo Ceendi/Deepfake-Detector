@@ -98,6 +98,16 @@ class AnalysisErrorContractTest {
     }
 
     @Test
+    void malformedJsonReturns400NotInternalError() throws Exception {
+        mvc.perform(post("/api/analysis")
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"fileId\":\"x\",\"fileKey\":")) // truncated -> unparseable
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
+    }
+
+    @Test
     void idorReturns404WithErrorCode() throws Exception {
         UUID id = UUID.randomUUID();
         when(service.get(eq(id), eq("user-a")))
