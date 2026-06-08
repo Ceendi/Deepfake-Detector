@@ -219,6 +219,26 @@ public class AnalysisService {
         // within ms and last-write-wins drops one of videoProb/audioProb.
     }
 
+    // Called by the DLQ consumer for a dead-lettered message. The isTerminal() guard makes it
+    // idempotent and ensures exactly one release() per analysis even if a late result also arrives.
+    public void failFromDlq(UUID id, String reason) {
+        Analysis a = repository.findById(id).orElse(null);
+        if (a == null) {
+            log.warn("DLQ for unknown analysis {}", id);
+            return;
+        }
+        if (a.getStatus().isTerminal()) {
+            log.info("DLQ for already-terminal {} ({}), ignoring", id, a.getStatus());
+            return;
+        }
+        a.setStatus(AnalysisStatus.FAILED);
+        a.setErrorMessage("dead-letter: " + reason);
+        repository.save(a);
+        cache.evictById(id);
+        backpressure.release();
+        pushTerminalAfterCommit(id, a);
+    }
+
     public void handleProgress(Map<String, Object> payload) {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
         Integer progress = (Integer) payload.get("progress");
