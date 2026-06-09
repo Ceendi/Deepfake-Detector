@@ -169,8 +169,13 @@ services:
     ports:
       - "127.0.0.1:${RABBITMQ_AMQP_PORT:-5672}:5672"
       - "127.0.0.1:${RABBITMQ_UI_PORT:-15672}:15672"
+      - "127.0.0.1:${RABBITMQ_PROM_PORT:-15692}:15692" # rabbitmq_prometheus /metrics
     volumes:
       - rabbitmqdata:/var/lib/rabbitmq
+      # Enable the prometheus plugin alongside management (replaces the image default).
+      - ./infra/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      # Per-queue prometheus metrics (queue label).
+      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s

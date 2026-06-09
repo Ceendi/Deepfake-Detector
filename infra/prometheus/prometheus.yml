@@ -22,6 +22,11 @@ scrape_configs:
     static_configs:
       - targets: ['file-service:8081']
 
+  # RabbitMQ broker metrics (rabbitmq_prometheus plugin, port 15692) — queue depth, etc.
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ['rabbitmq:15692']
+
   # Python detectors expose prometheus_client metrics at /metrics (profile ml; DOWN otherwise).
   - job_name: video-detector
     metrics_path: /metrics
