@@ -30,6 +30,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import com.deepfake.orchestrator.config.SecurityConfig;
 import com.deepfake.orchestrator.config.WebConfig;
+import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -43,7 +44,8 @@ import com.deepfake.orchestrator.service.AnalysisService;
  * 400 body with per-field errors, an IDOR 404 carries the NOT_FOUND error code.
  */
 @WebMvcTest(AnalysisController.class)
-@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class})
+@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class,
+        ReportPdfService.class})
 class AnalysisErrorContractTest {
 
     @Autowired

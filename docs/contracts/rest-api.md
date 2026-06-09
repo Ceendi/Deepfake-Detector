@@ -109,6 +109,15 @@ Two distinct `429 Too Many Requests` can occur:
 Returns `200 OK` with the full `Analysis` (see below). Returns `404 Not Found`
 if the resource does not exist OR `userId != jwt.sub` (IDOR guard — never `403`).
 
+### `GET /api/analysis/{id}/report.pdf`
+
+Downloads the analysis report as a PDF (`Content-Type: application/pdf`,
+`Content-Disposition: attachment; filename="report-<id>.pdf"`). `200 OK` for the owner of a
+`COMPLETED` analysis. `409 Conflict` if the analysis is not `COMPLETED` (report not ready).
+`404 Not Found` for a missing or non-owned analysis (IDOR guard — never `403`). `401` without a
+token. Semester 1: verdict/confidence/probabilities/timestamps as text + a table; Grad-CAM heatmap
+embeds land in semester 2.
+
 ### `GET /api/analysis`
 
 Paginated history for the authenticated user. Query params: `page` (default `0`),

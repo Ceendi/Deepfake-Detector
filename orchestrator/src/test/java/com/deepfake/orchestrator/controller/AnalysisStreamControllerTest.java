@@ -27,6 +27,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.deepfake.orchestrator.config.SecurityConfig;
 import com.deepfake.orchestrator.config.WebConfig;
+import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
@@ -36,7 +37,8 @@ import com.deepfake.orchestrator.service.AnalysisService;
  * (IDOR, raised by the service); anonymous → 401.
  */
 @WebMvcTest(AnalysisController.class)
-@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class})
+@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class,
+        ReportPdfService.class})
 class AnalysisStreamControllerTest {
 
     @Autowired
