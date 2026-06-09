@@ -31,6 +31,7 @@ import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
@@ -56,6 +57,8 @@ class AnalysisServiceSsePushTest {
     BackpressureGuard backpressure;
     @Mock
     IdempotencyGuard idempotency;
+    @Mock
+    AnalysisMetrics metrics;
     @InjectMocks
     AnalysisService service;
 

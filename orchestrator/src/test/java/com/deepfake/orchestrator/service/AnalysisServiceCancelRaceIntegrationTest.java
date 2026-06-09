@@ -34,6 +34,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -72,6 +73,7 @@ class AnalysisServiceCancelRaceIntegrationTest {
     @MockitoBean AnalysisStreamRegistry streams;
     @MockitoBean RabbitTemplate rabbitTemplate;
     @MockitoBean StringRedisTemplate redis;
+    @MockitoBean AnalysisMetrics metrics;
 
     private TransactionTemplate requiresNew;
 

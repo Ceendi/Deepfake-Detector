@@ -10,8 +10,10 @@ import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
+import io.opentelemetry.api.trace.Span;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -33,6 +35,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -56,6 +59,7 @@ public class AnalysisService {
     private final AnalysisStreamRegistry streams;
     private final BackpressureGuard backpressure;
     private final IdempotencyGuard idempotency;
+    private final AnalysisMetrics metrics;
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         backpressure.acquire(); // 429 here -> nothing persisted or published
@@ -68,6 +72,11 @@ public class AnalysisService {
                 .build();
 
         analysis = repository.save(analysis);
+
+        // Business attributes on the current (HTTP) span -> searchable in Tempo. Span-level cardinality
+        // is fine here (a span is one event, unlike a metric series). No-op if no span is active.
+        Span.current().setAttribute("analysis.id", analysis.getId().toString());
+        Span.current().setAttribute("analysis.type", analysis.getType().name());
 
         // Carry the request's correlation_id onto the task so detectors echo it and the whole
         // chain (HTTP -> AMQP -> detector -> result) shares one id. Fallback for non-HTTP callers.
@@ -95,7 +104,9 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public AnalysisResponse get(UUID id, String currentUserId) {
-        AnalysisResponse a = cache.getById(id).orElseGet(() -> {
+        Optional<AnalysisResponse> cached = cache.getById(id);
+        metrics.cache(cached.isPresent()); // Redis-down -> empty -> counted as a miss (cache_requests_total)
+        AnalysisResponse a = cached.orElseGet(() -> {
             AnalysisResponse loaded = repository.findById(id).map(AnalysisResponse::from).orElse(null);
             if (loaded != null) {
                 cache.putById(loaded);
@@ -164,15 +175,11 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "analysis already finished");
         }
 
-        cache.evictById(id);
-        backpressure.release();
+        Analysis fresh = onTerminal(id); // evict + release + metric + SSE {status: CANCELLED} after commit
         String correlationId = MDC.get("correlationId");
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_CANCEL,
                 Map.of("analysis_id", id.toString(),
                         "correlation_id", correlationId != null ? correlationId : ""));
-
-        Analysis fresh = repository.findById(id).orElseThrow();
-        pushTerminalAfterCommit(id, fresh); // SSE: {status: CANCELLED} + close the stream
         return AnalysisResponse.from(fresh);
     }
 
@@ -180,6 +187,9 @@ public class AnalysisService {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
         String source = (String) payload.get("source"); // "video" | "audio"
         String status = (String) payload.get("status"); // "COMPLETED" | "FAILED"
+
+        // Tie the AMQP consumer span to the analysis (HTTP -> publish -> detector -> result chain).
+        Span.current().setAttribute("analysis.id", id.toString());
 
         if (idempotency.alreadyProcessed(id, source)) {
             log.info("Duplicate result for {}/{}, skipping (idempotency)", id, source);
@@ -250,12 +260,18 @@ public class AnalysisService {
     }
 
     // Side effects shared by every terminal transition (status already CAS-written). Re-reads because
-    // the @Modifying CAS cleared the PC.
-    private void onTerminal(UUID id) {
+    // the @Modifying CAS cleared the PC; that fresh row also carries the status/type/createdAt the
+    // metrics need, so every terminal path (result, fail, DLQ, stuck, cancel) is counted here once.
+    private Analysis onTerminal(UUID id) {
         cache.evictById(id);
         backpressure.release();
         Analysis a = repository.findById(id).orElseThrow();
+        metrics.terminal(a.getStatus(), a.getType());
+        if (a.getStatus() == AnalysisStatus.COMPLETED) {
+            metrics.duration(a.getType(), Duration.between(a.getCreatedAt(), Instant.now()));
+        }
         pushTerminalAfterCommit(id, a);
+        return a;
     }
 
     public void handleProgress(Map<String, Object> payload) {

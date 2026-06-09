@@ -29,6 +29,7 @@ import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
@@ -54,6 +55,8 @@ class AnalysisServiceCancelTest {
     BackpressureGuard backpressure;
     @Mock
     IdempotencyGuard idempotency;
+    @Mock
+    AnalysisMetrics metrics;
     @InjectMocks
     AnalysisService service;
 

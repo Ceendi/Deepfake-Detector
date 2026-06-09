@@ -35,8 +35,12 @@ import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
 /**
  * With a real Postgres + Redis, killing Redis mid-flight must not stop processing (D6): every Redis
@@ -47,7 +51,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
 @Import({AnalysisService.class, AnalysisCache.class, BackpressureGuard.class, IdempotencyGuard.class,
-        AnalysisStreamRegistry.class, RedisDownDegradationIntegrationTest.RedisConfig.class})
+        AnalysisStreamRegistry.class, AnalysisMetrics.class, RedisDownDegradationIntegrationTest.RedisConfig.class})
 @Testcontainers
 class RedisDownDegradationIntegrationTest {
 
@@ -92,6 +96,11 @@ class RedisDownDegradationIntegrationTest {
 
     @TestConfiguration
     static class RedisConfig {
+        @Bean
+        MeterRegistry meterRegistry() {
+            return new SimpleMeterRegistry();
+        }
+
         @Bean
         StringRedisTemplate redisTemplate() {
             // Short command timeout so ops against the stopped Redis fail fast (fail-open) instead of
