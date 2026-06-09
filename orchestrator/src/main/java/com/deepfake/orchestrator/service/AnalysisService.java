@@ -13,6 +13,7 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
+import io.opentelemetry.api.trace.Span;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -71,6 +72,11 @@ public class AnalysisService {
                 .build();
 
         analysis = repository.save(analysis);
+
+        // Business attributes on the current (HTTP) span -> searchable in Tempo. Span-level cardinality
+        // is fine here (a span is one event, unlike a metric series). No-op if no span is active.
+        Span.current().setAttribute("analysis.id", analysis.getId().toString());
+        Span.current().setAttribute("analysis.type", analysis.getType().name());
 
         // Carry the request's correlation_id onto the task so detectors echo it and the whole
         // chain (HTTP -> AMQP -> detector -> result) shares one id. Fallback for non-HTTP callers.
@@ -181,6 +187,9 @@ public class AnalysisService {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
         String source = (String) payload.get("source"); // "video" | "audio"
         String status = (String) payload.get("status"); // "COMPLETED" | "FAILED"
+
+        // Tie the AMQP consumer span to the analysis (HTTP -> publish -> detector -> result chain).
+        Span.current().setAttribute("analysis.id", id.toString());
 
         if (idempotency.alreadyProcessed(id, source)) {
             log.info("Duplicate result for {}/{}, skipping (idempotency)", id, source);
