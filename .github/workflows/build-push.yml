@@ -1,0 +1,73 @@
+name: build-push
+
+# Builds the 6 backend images and pushes to GHCR. Frontend has no Dockerfile yet (nginx image is
+# Osoba 2's), so it is not built here.
+#
+# DISABLED for now — we don't publish images yet. It only runs on manual dispatch; to enable
+# automatic publishing in production, add back the `push: branches: [main]` trigger:
+#   on:
+#     push:
+#       branches: [main]
+#     workflow_dispatch:
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-push-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: image (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          [
+            gateway,
+            eureka-server,
+            orchestrator,
+            file-service,
+            video-detector,
+            audio-detector,
+          ]
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR image names must be lowercase; the repo owner has an uppercase letter.
+      - name: image namespace
+        id: ns
+        run: echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ${{ steps.ns.outputs.repo }}/${{ matrix.service }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # Each service Dockerfile is self-contained (own mvnw / pyproject); context is the service dir.
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
