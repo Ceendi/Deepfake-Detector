@@ -1,0 +1,61 @@
+// Grafana Alloy: tail container stdout via the Docker socket and ship to Loki. Self-contained
+// (no host plugin like the Loki Docker driver, no EOL Promtail) so it works on a clean machine.
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+// Label each stream with its compose service name (low cardinality) — this is what
+// `{service="orchestrator"}` matches. The docker label is reliable regardless of log format.
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+}
+
+loki.source.docker "containers" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.relabel.containers.output
+	relabel_rules = discovery.relabel.containers.rules
+	forward_to    = [loki.process.parse.receiver]
+}
+
+loki.process "parse" {
+	// JSON logs (Java ECS in-container + Python structlog). Non-JSON lines (plain local-dev logs)
+	// pass through with these fields empty — the pipeline never breaks on them.
+	// NOTE(#G6): verify the real field paths against `docker logs orchestrator` once the Java stack
+	// runs; raw lines reach Loki regardless, so `{service="..."} | json` always works as a fallback.
+	stage.json {
+		expressions = {
+			level          = "level",
+			correlation_id = "correlation_id",
+			trace_id       = "trace_id",
+		}
+	}
+
+	// Low-cardinality label only.
+	stage.labels {
+		values = {
+			level = "",
+		}
+	}
+
+	// High-cardinality ids as structured metadata, NOT labels (avoids Loki stream explosion).
+	stage.structured_metadata {
+		values = {
+			correlation_id = "",
+			trace_id       = "",
+		}
+	}
+
+	forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}
