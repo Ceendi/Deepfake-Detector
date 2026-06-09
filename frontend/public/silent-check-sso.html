@@ -1,0 +1,13 @@
+<!doctype html>
+<!--
+  Cichy check-SSO dla keycloak-js. Keycloak ładuje ten plik w ukrytym <iframe>,
+  żeby sprawdzić sesję bez pełnego przeładowania strony (i bez migotania logowania).
+  iframe odsyła wynik do okna nadrzędnego — to cały kontrakt, nic więcej tu nie potrzeba.
+-->
+<html>
+  <body>
+    <script>
+      parent.postMessage(location.href, location.origin)
+    </script>
+  </body>
+</html>
