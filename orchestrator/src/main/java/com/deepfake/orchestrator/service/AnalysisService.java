@@ -153,21 +153,27 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "analysis already finished");
         }
 
-        // TODO(week 6, D6 race fix): this read-modify-write isn't atomic — a detector result could
-        // land between findById and save. Replace with an atomic UPDATE ... WHERE status IN
-        // ('PENDING','PROCESSING') RETURNING *. With dummy ML the window is large but low-risk.
-        a.setStatus(AnalysisStatus.CANCELLED);
-        repository.save(a);
+        // CAS: a detector result may complete the analysis between findById and here. Only the winner
+        // releases / publishes / pushes; the loser re-reads and answers truthfully.
+        if (repository.cancelIfActive(id, AnalysisStatus.CANCELLED, ACTIVE, Instant.now()) == 0) {
+            Analysis fresh = repository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+            if (fresh.getStatus() == AnalysisStatus.CANCELLED) {
+                return AnalysisResponse.from(fresh); // a concurrent duplicate cancel won; idempotent
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "analysis already finished");
+        }
+
         cache.evictById(id);
         backpressure.release();
-
         String correlationId = MDC.get("correlationId");
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_CANCEL,
                 Map.of("analysis_id", id.toString(),
                         "correlation_id", correlationId != null ? correlationId : ""));
 
-        pushTerminalAfterCommit(id, a); // SSE: {status: CANCELLED} + close the stream
-        return AnalysisResponse.from(a);
+        Analysis fresh = repository.findById(id).orElseThrow();
+        pushTerminalAfterCommit(id, fresh); // SSE: {status: CANCELLED} + close the stream
+        return AnalysisResponse.from(fresh);
     }
 
     public void handleResult(Map<String, Object> payload) {
