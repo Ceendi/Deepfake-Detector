@@ -59,6 +59,15 @@ class BackpressureGuardTest {
     }
 
     @Test
+    void acquireOverLimitStill429WhenRollbackFails() {
+        when(ops.increment(KEY)).thenReturn(3L); // > limit
+        when(ops.decrement(KEY)).thenThrow(new RedisConnectionFailureException("down mid-rollback"));
+
+        assertThatThrownBy(guard::acquire) // 429, not 500 — fail-open on the rollback
+                .isInstanceOf(TooManyAnalysesException.class);
+    }
+
+    @Test
     void releaseDecrements() {
         when(ops.decrement(KEY)).thenReturn(1L);
 

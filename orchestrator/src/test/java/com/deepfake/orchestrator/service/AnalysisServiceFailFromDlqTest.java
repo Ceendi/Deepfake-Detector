@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -22,6 +23,7 @@ import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
@@ -35,58 +37,48 @@ class AnalysisServiceFailFromDlqTest {
     @Mock AnalysisCache cache;
     @Mock AnalysisStreamRegistry streams;
     @Mock BackpressureGuard backpressure;
+    @Mock AnalysisMetrics metrics;
     @InjectMocks AnalysisService service;
 
     private final UUID id = UUID.randomUUID();
 
     @Test
     void activeAnalysisFailsAndReleasesOnce() {
-        Analysis a = analysis(AnalysisStatus.PROCESSING);
-        when(repository.findById(id)).thenReturn(Optional.of(a));
+        when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
+        when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
 
         service.failFromDlq(id, "boom");
 
-        ArgumentCaptor<Analysis> saved = ArgumentCaptor.forClass(Analysis.class);
-        verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(AnalysisStatus.FAILED);
-        assertThat(saved.getValue().getErrorMessage()).isEqualTo("dead-letter: boom");
+        ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
+        verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
+        assertThat(msg.getValue()).isEqualTo("dead-letter: boom");
         verify(backpressure).release();
         verify(streams).complete(id);
     }
 
     @Test
     void failStuckUsesStuckMessage() {
-        Analysis a = analysis(AnalysisStatus.PROCESSING);
-        when(repository.findById(id)).thenReturn(Optional.of(a));
+        when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
+        when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
 
         service.failStuck(id, 600);
 
-        ArgumentCaptor<Analysis> saved = ArgumentCaptor.forClass(Analysis.class);
-        verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo(AnalysisStatus.FAILED);
-        assertThat(saved.getValue().getErrorMessage()).contains("stuck > 600s");
+        ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
+        verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
+        assertThat(msg.getValue()).contains("stuck > 600s");
         verify(backpressure).release();
     }
 
+    // CAS returns 0 for both already-terminal and unknown ids (the mock default), so the transition
+    // is a no-op without re-reading or releasing.
     @Test
-    void terminalAnalysisIsNoOp() {
-        when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.COMPLETED)));
-
+    void nonActiveAnalysisIsNoOp() {
         service.failFromDlq(id, "boom");
 
-        verify(repository, never()).save(any());
+        verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any());
+        verify(repository, never()).findById(any());
         verify(backpressure, never()).release();
         verify(streams, never()).sendResult(any(), any());
-    }
-
-    @Test
-    void unknownAnalysisIsNoOp() {
-        when(repository.findById(id)).thenReturn(Optional.empty());
-
-        service.failFromDlq(id, "boom");
-
-        verify(repository, never()).save(any());
-        verify(backpressure, never()).release();
     }
 
     private Analysis analysis(AnalysisStatus status) {

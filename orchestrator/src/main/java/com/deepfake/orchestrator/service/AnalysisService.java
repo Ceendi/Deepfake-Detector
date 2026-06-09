@@ -10,8 +10,10 @@ import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
+import io.opentelemetry.api.trace.Span;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -33,6 +35,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -56,6 +59,7 @@ public class AnalysisService {
     private final AnalysisStreamRegistry streams;
     private final BackpressureGuard backpressure;
     private final IdempotencyGuard idempotency;
+    private final AnalysisMetrics metrics;
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         backpressure.acquire(); // 429 here -> nothing persisted or published
@@ -68,6 +72,11 @@ public class AnalysisService {
                 .build();
 
         analysis = repository.save(analysis);
+
+        // Business attributes on the current (HTTP) span -> searchable in Tempo. Span-level cardinality
+        // is fine here (a span is one event, unlike a metric series). No-op if no span is active.
+        Span.current().setAttribute("analysis.id", analysis.getId().toString());
+        Span.current().setAttribute("analysis.type", analysis.getType().name());
 
         // Carry the request's correlation_id onto the task so detectors echo it and the whole
         // chain (HTTP -> AMQP -> detector -> result) shares one id. Fallback for non-HTTP callers.
@@ -95,7 +104,9 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public AnalysisResponse get(UUID id, String currentUserId) {
-        AnalysisResponse a = cache.getById(id).orElseGet(() -> {
+        Optional<AnalysisResponse> cached = cache.getById(id);
+        metrics.cache(cached.isPresent()); // Redis-down -> empty -> counted as a miss (cache_requests_total)
+        AnalysisResponse a = cached.orElseGet(() -> {
             AnalysisResponse loaded = repository.findById(id).map(AnalysisResponse::from).orElse(null);
             if (loaded != null) {
                 cache.putById(loaded);
@@ -153,21 +164,23 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "analysis already finished");
         }
 
-        // TODO(week 6, D6 race fix): this read-modify-write isn't atomic — a detector result could
-        // land between findById and save. Replace with an atomic UPDATE ... WHERE status IN
-        // ('PENDING','PROCESSING') RETURNING *. With dummy ML the window is large but low-risk.
-        a.setStatus(AnalysisStatus.CANCELLED);
-        repository.save(a);
-        cache.evictById(id);
-        backpressure.release();
+        // CAS: a detector result may complete the analysis between findById and here. Only the winner
+        // releases / publishes / pushes; the loser re-reads and answers truthfully.
+        if (repository.cancelIfActive(id, AnalysisStatus.CANCELLED, ACTIVE, Instant.now()) == 0) {
+            Analysis fresh = repository.findById(id)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+            if (fresh.getStatus() == AnalysisStatus.CANCELLED) {
+                return AnalysisResponse.from(fresh); // a concurrent duplicate cancel won; idempotent
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "analysis already finished");
+        }
 
+        Analysis fresh = onTerminal(id); // evict + release + metric + SSE {status: CANCELLED} after commit
         String correlationId = MDC.get("correlationId");
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_CANCEL,
                 Map.of("analysis_id", id.toString(),
                         "correlation_id", correlationId != null ? correlationId : ""));
-
-        pushTerminalAfterCommit(id, a); // SSE: {status: CANCELLED} + close the stream
-        return AnalysisResponse.from(a);
+        return AnalysisResponse.from(fresh);
     }
 
     public void handleResult(Map<String, Object> payload) {
@@ -175,60 +188,55 @@ public class AnalysisService {
         String source = (String) payload.get("source"); // "video" | "audio"
         String status = (String) payload.get("status"); // "COMPLETED" | "FAILED"
 
+        // Tie the AMQP consumer span to the analysis (HTTP -> publish -> detector -> result chain).
+        Span.current().setAttribute("analysis.id", id.toString());
+
         if (idempotency.alreadyProcessed(id, source)) {
             log.info("Duplicate result for {}/{}, skipping (idempotency)", id, source);
             return;
         }
         markProcessedAfterCommit(id, source); // recorded only if this tx commits — retry-safe
 
-        Analysis a = repository.findById(id).orElseThrow();
-
-        // Idempotency — a late/duplicate result on an already-terminal analysis (incl. CANCELLED) is
-        // ignored, so it can neither overwrite the state nor double-release the backpressure slot.
-        if (a.getStatus().isTerminal()) {
-            log.warn("Late/duplicate result for {} (status={}, source={}), ignoring", id, a.getStatus(), source);
-            return;
-        }
-
         if ("FAILED".equals(status)) {
-            a.setStatus(AnalysisStatus.FAILED);
-            a.setErrorMessage(extractError(payload));
-            repository.save(a);
-            cache.evictById(id);
-            backpressure.release();
-            pushTerminalAfterCommit(id, a);
+            // TODO(sem2): partial-failure fallback — a FAILED source in FULL fails the whole analysis,
+            // dropping the healthy source's prob. Needs a per-source failed flag (migration) + aggregation change.
+            if (repository.failIfActive(id, AnalysisStatus.FAILED, extractError(payload), ACTIVE, Instant.now()) == 1) {
+                onTerminal(id);
+            } else {
+                log.warn("Late/duplicate FAILED for {} ({}), ignoring", id, source);
+            }
             return;
         }
 
         @SuppressWarnings("unchecked")
         Map<String, Object> result = (Map<String, Object>) payload.get("result");
         BigDecimal prob = new BigDecimal(result.get("prob_fake").toString());
-        if ("video".equals(source)) a.setVideoProb(prob);
-        if ("audio".equals(source)) a.setAudioProb(prob);
 
+        int rows = "video".equals(source)
+                ? repository.writeVideoProb(id, prob, ACTIVE, Instant.now())
+                : repository.writeAudioProb(id, prob, ACTIVE, Instant.now());
+        if (rows == 0) {
+            log.warn("Result for terminal/unknown analysis {} ({}), ignoring", id, source);
+            return;
+        }
+
+        // Fresh read (the @Modifying above cleared the PC): sees BOTH probs when the other source committed.
+        Analysis a = repository.findById(id).orElseThrow();
         boolean needV = a.getType() == AnalysisType.VIDEO || a.getType() == AnalysisType.FULL;
         boolean needA = a.getType() == AnalysisType.AUDIO || a.getType() == AnalysisType.FULL;
-        boolean done = (!needV || a.getVideoProb() != null)
-                    && (!needA || a.getAudioProb() != null);
-
-        if (done) {
-            BigDecimal finalProb = aggregate(a.getVideoProb(), a.getAudioProb()); // 0.6V + 0.4A
-            a.setStatus(AnalysisStatus.COMPLETED);
-            a.setVerdict(finalProb.compareTo(THRESHOLD) > 0 ? "FAKE" : "REAL");
-            a.setConfidence(finalProb.subtract(THRESHOLD).abs().multiply(TWO));
-        }
-        repository.save(a);
-        // Evict so a GET right after completion returns the new state, not the cached PENDING.
-        cache.evictById(id);
-        if (done) {
-            backpressure.release();
-            pushTerminalAfterCommit(id, a);
+        if ((needV && a.getVideoProb() == null) || (needA && a.getAudioProb() == null)) {
+            cache.evictById(id);
+            return; // wait for the other source
         }
 
-        // TODO(week 6, D6 race fix): replace findById + save with an atomic
-        // UPDATE ... WHERE id = :id AND status IN ('PENDING','PROCESSING') RETURNING *.
-        // With dummy ML (~2s sleep) the race is unlikely; with real ML both replies arrive
-        // within ms and last-write-wins drops one of videoProb/audioProb.
+        BigDecimal finalProb = aggregate(a.getVideoProb(), a.getAudioProb()); // 0.6V + 0.4A
+        String verdict = finalProb.compareTo(THRESHOLD) > 0 ? "FAKE" : "REAL";
+        BigDecimal confidence = finalProb.subtract(THRESHOLD).abs().multiply(TWO);
+
+        // CAS completion: only the winner runs onTerminal, so a concurrent cancel can't double-release.
+        if (repository.complete(id, AnalysisStatus.COMPLETED, verdict, confidence, ACTIVE, Instant.now()) == 1) {
+            onTerminal(id);
+        }
     }
 
     // Dead-lettered message: the DLQ consumer asks us to fail the analysis.
@@ -241,24 +249,29 @@ public class AnalysisService {
         transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery");
     }
 
-    // Shared terminal-failure transition. The isTerminal() guard makes it idempotent and ensures
-    // exactly one release() per analysis even if (e.g.) a late result and recovery both fire.
+    // Shared terminal-failure transition. The CAS is the guard: a late result and recovery firing
+    // together still release the slot exactly once (only one gets 1 row).
     private void transitionToFailed(UUID id, String errorMessage) {
-        Analysis a = repository.findById(id).orElse(null);
-        if (a == null) {
-            log.warn("fail requested for unknown analysis {}", id);
-            return;
+        if (repository.failIfActive(id, AnalysisStatus.FAILED, errorMessage, ACTIVE, Instant.now()) == 1) {
+            onTerminal(id);
+        } else {
+            log.info("fail requested for non-active analysis {}, ignoring", id);
         }
-        if (a.getStatus().isTerminal()) {
-            log.info("fail requested for already-terminal {} ({}), ignoring", id, a.getStatus());
-            return;
-        }
-        a.setStatus(AnalysisStatus.FAILED);
-        a.setErrorMessage(errorMessage);
-        repository.save(a);
+    }
+
+    // Side effects shared by every terminal transition (status already CAS-written). Re-reads because
+    // the @Modifying CAS cleared the PC; that fresh row also carries the status/type/createdAt the
+    // metrics need, so every terminal path (result, fail, DLQ, stuck, cancel) is counted here once.
+    private Analysis onTerminal(UUID id) {
         cache.evictById(id);
         backpressure.release();
+        Analysis a = repository.findById(id).orElseThrow();
+        metrics.terminal(a.getStatus(), a.getType());
+        if (a.getStatus() == AnalysisStatus.COMPLETED) {
+            metrics.duration(a.getType(), Duration.between(a.getCreatedAt(), Instant.now()));
+        }
         pushTerminalAfterCommit(id, a);
+        return a;
     }
 
     public void handleProgress(Map<String, Object> payload) {

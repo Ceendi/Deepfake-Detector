@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +31,7 @@ import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
@@ -55,6 +57,8 @@ class AnalysisServiceSsePushTest {
     BackpressureGuard backpressure;
     @Mock
     IdempotencyGuard idempotency;
+    @Mock
+    AnalysisMetrics metrics;
     @InjectMocks
     AnalysisService service;
 
@@ -83,7 +87,9 @@ class AnalysisServiceSsePushTest {
 
     @Test
     void completedResultPushesResultThenCompletes() {
-        givenAnalysis(AnalysisType.VIDEO);
+        givenAnalysis(AnalysisType.VIDEO, new BigDecimal("0.8"), null);
+        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of(
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
@@ -96,7 +102,8 @@ class AnalysisServiceSsePushTest {
 
     @Test
     void failedResultPushesResultThenCompletes() {
-        givenAnalysis(AnalysisType.VIDEO);
+        givenAnalysis(AnalysisType.VIDEO, null, null);
+        when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of(
                 "analysis_id", id.toString(), "source", "video", "status", "FAILED",
@@ -109,19 +116,22 @@ class AnalysisServiceSsePushTest {
 
     @Test
     void partialResultDoesNotPushUntilDone() {
-        givenAnalysis(AnalysisType.FULL); // needs both video + audio
+        givenAnalysis(AnalysisType.FULL, new BigDecimal("0.7"), null); // needs both, only video so far
+        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of( // only video arrives so far
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
                 "result", Map.of("prob_fake", "0.7")));
 
+        verify(repository, never()).complete(any(), any(), any(), any(), any(), any());
         verify(streams, never()).sendResult(any(), any());
         verify(streams, never()).complete(any());
     }
 
-    private void givenAnalysis(AnalysisType type) {
+    // The CAS write/complete is mocked, so seed the probs the post-write fresh read would observe.
+    private void givenAnalysis(AnalysisType type, BigDecimal videoProb, BigDecimal audioProb) {
         Analysis a = Analysis.builder().id(id).userId("alice").type(type)
-                .status(AnalysisStatus.PENDING).build();
+                .status(AnalysisStatus.PROCESSING).videoProb(videoProb).audioProb(audioProb).build();
         when(repository.findById(id)).thenReturn(Optional.of(a));
     }
 }

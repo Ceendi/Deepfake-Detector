@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +29,7 @@ import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
@@ -42,6 +44,7 @@ class AnalysisServicePushAfterCommitTest {
     @Mock AnalysisStreamRegistry streams;
     @Mock BackpressureGuard backpressure;
     @Mock IdempotencyGuard idempotency;
+    @Mock AnalysisMetrics metrics;
     @InjectMocks AnalysisService service;
 
     private final UUID id = UUID.randomUUID();
@@ -89,8 +92,10 @@ class AnalysisServicePushAfterCommitTest {
 
     private void givenAnalysis() {
         Analysis a = Analysis.builder().id(id).userId("alice").type(AnalysisType.VIDEO)
-                .status(AnalysisStatus.PENDING).build();
+                .status(AnalysisStatus.PROCESSING).videoProb(new BigDecimal("0.8")).build();
         when(repository.findById(id)).thenReturn(Optional.of(a));
+        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
     }
 
     private Map<String, Object> completedVideo() {
