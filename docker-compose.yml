@@ -49,6 +49,12 @@ x-otel-env: &otel-env
   OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
   OTEL_OTLP_ENDPOINT: ${OTEL_OTLP_ENDPOINT:-http://tempo:4318/v1/traces}
 
+# Native Spring Boot 4 structured logging (ECS JSON on stdout) — only in containers, so Alloy can
+# parse fields into Loki. Local IDE runs (no env) keep the human-readable pattern. NB: this makes
+# `docker logs <svc>` JSON in every profile, not just monitoring.
+x-logging-env: &logging-env
+  LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+
 services:
   postgres:
     image: postgres:18.4-alpine
@@ -415,6 +421,8 @@ services:
     build: ./eureka-server
     profiles: ["core"]
     ports: ["8761:8761"]
+    environment:
+      <<: *logging-env
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
       interval: 10s
@@ -431,7 +439,7 @@ services:
         condition: service_healthy
     ports: ["8080:8080"]
     environment:
-      <<: [*jwt-env, *otel-env]
+      <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks: [deepfake]
@@ -445,7 +453,7 @@ services:
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
     environment:
-      <<: [*jwt-env, *otel-env]
+      <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
       FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
@@ -469,7 +477,7 @@ services:
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     environment:
-      <<: [*jwt-env, *otel-env]
+      <<: [*jwt-env, *otel-env, *logging-env]
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
