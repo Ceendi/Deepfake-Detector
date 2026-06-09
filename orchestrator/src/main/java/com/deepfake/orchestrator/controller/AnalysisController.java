@@ -3,6 +3,8 @@ package com.deepfake.orchestrator.controller;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.entity.AnalysisStatus;
+import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.AuthenticatedUser;
 import com.deepfake.orchestrator.security.CurrentUser;
 import com.deepfake.orchestrator.service.AnalysisService;
@@ -14,10 +16,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.data.web.PagedModel;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.UUID;
@@ -28,6 +33,7 @@ import java.util.UUID;
 @PreAuthorize("hasRole('USER')")
 public class AnalysisController {
     private final AnalysisService service;
+    private final ReportPdfService reportPdfService;
 
     @Operation(summary = "Start an analysis for an uploaded file")
     @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
@@ -63,6 +69,22 @@ public class AnalysisController {
     @GetMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return service.openStream(id, user.id());
+    }
+
+    @Operation(summary = "Download the analysis report as PDF (COMPLETED only)")
+    @ApiResponse(responseCode = "200", description = "application/pdf")
+    @ApiResponse(responseCode = "409", description = "Report not ready (analysis not COMPLETED)")
+    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
+    @GetMapping(value = "/{id}/report.pdf", produces = MediaType.APPLICATION_PDF_VALUE)
+    public ResponseEntity<byte[]> report(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
+        AnalysisResponse a = service.get(id, user.id()); // reuses the IDOR 404 guard
+        if (a.status() != AnalysisStatus.COMPLETED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "report available only for COMPLETED analyses");
+        }
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"report-" + id + ".pdf\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(reportPdfService.render(a));
     }
 
     @Operation(summary = "Cancel an in-progress analysis")
