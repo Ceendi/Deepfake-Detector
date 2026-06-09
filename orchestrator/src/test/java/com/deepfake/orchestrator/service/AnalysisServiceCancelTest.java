@@ -122,14 +122,13 @@ class AnalysisServiceCancelTest {
 
     @Test
     void lateResultOnCancelledIsIgnored() {
-        Analysis a = analysis("alice", AnalysisStatus.CANCELLED, AnalysisType.VIDEO);
-        when(repository.findById(id)).thenReturn(Optional.of(a));
-
+        // writeVideoProb's CAS matches 0 rows on a terminal analysis (the mock default), so the late
+        // result is ignored without re-reading, completing, or releasing the slot.
         service.handleResult(Map.of(
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
                 "result", Map.of("prob_fake", "0.8")));
 
-        verify(repository, never()).save(any());
+        verify(repository, never()).complete(any(), any(), any(), any(), any(), any());
         verify(backpressure, never()).release();
         verify(streams, never()).sendResult(any(), any());
     }
