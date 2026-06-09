@@ -39,22 +39,22 @@ jobs:
             audio-detector,
           ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # GHCR image names must be lowercase; the repo owner has an uppercase letter.
       - name: image namespace
         id: ns
         run: echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v5
+      - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ steps.ns.outputs.repo }}/${{ matrix.service }}
@@ -63,7 +63,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       # Each service Dockerfile is self-contained (own mvnw / pyproject); context is the service dir.
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: ./${{ matrix.service }}
           push: true
