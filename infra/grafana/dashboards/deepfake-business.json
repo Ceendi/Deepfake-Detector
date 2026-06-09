@@ -57,7 +57,7 @@
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Analysis duration p95 (by type)",
+      "title": "Analysis duration avg (by type)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
@@ -65,7 +65,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le, type) (rate(analysis_duration_seconds_bucket[5m])))",
+          "expr": "sum by (type) (rate(analysis_duration_seconds_sum[5m])) / sum by (type) (rate(analysis_duration_seconds_count[5m]))",
           "legendFormat": "{{type}}"
         }
       ]
@@ -73,7 +73,7 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "HTTP server p95 (Actuator)",
+      "title": "HTTP server latency avg (Actuator)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
@@ -81,8 +81,8 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket[5m])))",
-          "legendFormat": "p95"
+          "expr": "sum(rate(http_server_requests_seconds_sum{job=\"orchestrator\"}[5m])) / sum(rate(http_server_requests_seconds_count{job=\"orchestrator\"}[5m]))",
+          "legendFormat": "orchestrator"
         }
       ]
     }
