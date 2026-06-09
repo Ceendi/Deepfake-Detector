@@ -59,7 +59,7 @@ samp {
 /* Spójny focus dla klawiatury (a11y / WCAG) */
 :focus-visible {
   outline: 3px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
-  outline-offset: 2px;
+  outline-offset: 1px;
 }
 
 ::selection {

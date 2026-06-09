@@ -1,0 +1,84 @@
+.button {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+
+  gap: var(--spacing-1);
+  padding: var(--spacing-2) var(--spacing-4);
+
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.button [role='status'] {
+  color: currentColor;
+  --spinner-size: 16px;
+}
+
+a.button,
+a.button:hover {
+  text-decoration: none;
+}
+
+.sm {
+  font-size: var(--font-size-sm);
+}
+
+.md {
+  font-size: var(--font-size-md);
+}
+
+.primary {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.primary:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+  color: var(--color-on-accent);
+}
+
+.danger {
+  background-color: var(--color-danger);
+  color: var(--color-on-danger);
+}
+
+.danger:hover:not(:disabled) {
+  background-color: var(--color-danger-hover);
+  color: var(--color-on-danger);
+}
+
+/* Focus dopasowany do wariantu — nadpisuje tylko kolor; grubość/styl (3px solid) zostają z global.css */
+.danger:focus-visible {
+  outline-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
+}
+
+.ghost {
+  background-color: var(--color-background);
+  color: var(--color-text-primary);
+  border-color: var(--color-border-strong);
+}
+
+.ghost:hover:not(:disabled) {
+  background-color: var(--color-surface);
+  border-color: var(--color-text-muted);
+  color: var(--color-text-primary);
+}
+
+/* Ghost jest neutralny → ring z currentColor (= text-primary, adaptuje się w dark mode) */
+.ghost:focus-visible {
+  outline-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

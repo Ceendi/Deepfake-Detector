@@ -14,6 +14,7 @@ const LazyUpload = lazy(() => import('@/pages/Upload/Upload'))
 const LazyAnalysisResult = lazy(() => import('@/pages/AnalysisResult/AnalysisResult'))
 const LazyHistory = lazy(() => import('@/pages/History/History'))
 const LazyProfile = lazy(() => import('@/pages/Profile/Profile'))
+const LazyPlayground = lazy(() => import('@/pages/Playground/Playground'))
 
 const router = createBrowserRouter([
   {
@@ -62,6 +63,20 @@ const router = createBrowserRouter([
     ),
     errorElement: <RouteError />,
   },
+  // Publiczny podgląd prymitywów — tylko w dev (znika z prod buildu).
+  ...(import.meta.env.DEV
+    ? [
+        {
+          path: '/playground',
+          element: (
+            <Suspense fallback={<Spinner />}>
+              <LazyPlayground />
+            </Suspense>
+          ),
+          errorElement: <RouteError />,
+        },
+      ]
+    : []),
   {
     path: '*',
     element: <PageNotFound />,

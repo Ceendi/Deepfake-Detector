@@ -1,0 +1,22 @@
+.frame,
+.heat {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* wypełnia box bez deformacji (przytnie nadmiar) */
+}
+.heat {
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+/* Dark: multiply na ciemnym tle „znika" — trzeba screen (rozjaśnia). */
+:global([data-theme='dark']) .heat {
+  mix-blend-mode: screen;
+}
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme='light'])) .heat {
+    mix-blend-mode: screen;
+  }
+}

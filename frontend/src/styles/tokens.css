@@ -26,6 +26,7 @@
   --color-primary-700: #4338ca;
   --color-primary-800: #3730a3;
   --color-primary-900: #312e81;
+  --color-primary-950: #1e1b4b; /* przyciemnione tło accent (dark) */
 
   /* Secondary (Violet) */
   --color-secondary-50: #f5f3ff;
@@ -37,6 +38,7 @@
   /* Danger / Error (Red) */
   --color-danger-50: #fef2f2;
   --color-danger-100: #fee2e2;
+  --color-danger-300: #fca5a5; /* lekko jaśniejszy niż 400 — hover na ciemnym tle */
   --color-danger-400: #f87171; /* jaśniejszy — tekst/ikona na ciemnym tle */
   --color-danger-500: #ef4444;
   --color-danger-600: #dc2626;
@@ -61,13 +63,6 @@
   --color-warning-700: #b45309;
   --color-warning-950: #2a2008; /* przyciemnione tło warning (dark) */
 
-  /* "on-*" — kolor tekstu/ikon NA wypełnieniu danego koloru (kontrast AA) */
-  --color-on-primary: #ffffff;
-  --color-on-secondary: #ffffff;
-  --color-on-danger: #ffffff;
-  --color-on-success: #ffffff;
-  --color-on-warning: #1c1917; /* ciemny tekst — amber jest jasny */
-
   /* ============================================================
      SEMANTIC TOKENS — role (TO podmieniamy w dark mode niżej)
      ============================================================ */
@@ -78,14 +73,17 @@
   --color-background: #ffffff;
   --color-surface: var(--color-neutral-50);
   --color-border: var(--color-neutral-200);
+  --color-border-strong: var(--color-neutral-300); /* mocniejsza obwódka — outline button */
 
   /* Akcent / marka */
   --color-accent: var(--color-primary-600); /* #4f46e5 */
   --color-accent-hover: var(--color-primary-700); /* #4338ca */
-  --color-on-accent: var(--color-on-primary);
+  --color-on-accent: var(--color-neutral-50); /* akcent jest ciemny w obu motywach → jasny tekst */
+  --color-accent-surface: var(--color-primary-50); /* #eef2ff — soft tło / banner brandowy */
 
   /* Stany — foreground (tekst / ikona / obwódka badge'a) */
   --color-danger: var(--color-danger-600); /* #dc2626 */
+  --color-danger-hover: var(--color-danger-700);
   --color-success: var(--color-success-700); /* #15803d */
   --color-warning: var(--color-warning-700); /* #b45309 */
 
@@ -94,11 +92,18 @@
   --color-success-surface: var(--color-success-50); /* #f0fdf4 */
   --color-warning-surface: var(--color-warning-50); /* #fffbeb */
 
+  /* "on-*" — kolor tekstu/ikon NA wypełnieniu danego koloru (kontrast AA) */
+  --color-on-secondary: var(--color-neutral-50);
+  --color-on-danger: var(--color-neutral-50);
+  --color-on-success: var(--color-neutral-50);
+  --color-on-warning: var(--color-neutral-50);
+
   color-scheme: light dark;
 
   /* ============================================================
      SPACING — skala 4-bazowa
      ============================================================ */
+  --spacing-0: 0.125rem; /* 4px  */
   --spacing-1: 0.25rem; /* 4px  */
   --spacing-2: 0.5rem; /* 8px  */
   --spacing-3: 0.75rem; /* 12px */
@@ -169,11 +174,15 @@
     --color-background: var(--color-neutral-900);
     --color-surface: var(--color-neutral-800);
     --color-border: var(--color-neutral-700);
+    --color-border-strong: var(--color-neutral-600); /* w dark jaśniejsza = bardziej widoczna */
 
     --color-accent: var(--color-primary-500); /* #6366f1 */
     --color-accent-hover: var(--color-primary-400); /* #818cf8 */
+    --color-on-accent: var(--color-neutral-900);
+    --color-accent-surface: var(--color-primary-950);
 
     --color-danger: var(--color-danger-400); /* #f87171 */
+    --color-danger-hover: var(--color-danger-300); /* #ef4444 */
     --color-success: var(--color-success-400); /* #4ade80 */
     --color-warning: var(--color-warning-400); /* #fbbf24 */
 
@@ -182,8 +191,10 @@
     --color-warning-surface: var(--color-warning-950);
 
     /* na jasnych odcieniach stanów ciemny tekst daje lepszy kontrast */
+    --color-on-secondary: var(--color-neutral-900);
     --color-on-danger: var(--color-neutral-900);
     --color-on-success: var(--color-neutral-900);
+    --color-on-warning: var(--color-neutral-900);
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);
@@ -196,11 +207,15 @@
   --color-background: var(--color-neutral-900);
   --color-surface: var(--color-neutral-800);
   --color-border: var(--color-neutral-700);
+  --color-border-strong: var(--color-neutral-600);
 
   --color-accent: var(--color-primary-500);
   --color-accent-hover: var(--color-primary-400);
+  --color-on-accent: var(--color-neutral-900);
+  --color-accent-surface: var(--color-primary-950);
 
   --color-danger: var(--color-danger-400);
+  --color-danger-hover: var(--color-danger-300);
   --color-success: var(--color-success-400);
   --color-warning: var(--color-warning-400);
 
@@ -208,8 +223,10 @@
   --color-success-surface: var(--color-success-950);
   --color-warning-surface: var(--color-warning-950);
 
+  --color-on-secondary: var(--color-neutral-900);
   --color-on-danger: var(--color-neutral-900);
   --color-on-success: var(--color-neutral-900);
+  --color-on-warning: var(--color-neutral-900);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.55);

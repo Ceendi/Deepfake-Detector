@@ -1,0 +1,80 @@
+.alert {
+  display: grid;
+  grid-template-columns: auto minmax(200px, 250px) auto;
+
+  align-items: center;
+
+  column-gap: var(--spacing-3);
+  row-gap: var(--spacing-0);
+  padding: var(--spacing-3) var(--spacing-4);
+
+  border-radius: var(--radius-md);
+}
+
+.title,
+.text {
+  font-size: var(--font-size-sm);
+}
+
+.title {
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+
+.text {
+  grid-row: 2 / 3;
+  grid-column: 2 / 3;
+  line-height: var(--line-height-snug);
+  color: var(--color-text-primary);
+}
+
+.success {
+  color: var(--color-success);
+  background-color: var(--color-success-surface);
+  border: 1px solid var(--color-success);
+}
+
+.danger {
+  color: var(--color-danger);
+  background-color: var(--color-danger-surface);
+  border: 1px solid var(--color-danger);
+}
+
+.warning {
+  color: var(--color-warning);
+  background-color: var(--color-warning-surface);
+  border: 1px solid var(--color-warning);
+}
+
+.info {
+  color: var(--color-accent);
+  background-color: var(--color-accent-surface);
+  border: 1px solid var(--color-accent);
+}
+
+/* Przycisk zamknięcia — przezroczysty, dziedziczy kolor wariantu (currentColor) */
+.close {
+  grid-row: 1 / 2;
+  grid-column: 3 / 4;
+  align-self: start;
+
+  display: inline-flex;
+  padding: var(--spacing-1);
+
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+
+  transition: background-color var(--transition-fast);
+}
+
+.close:hover {
+  background-color: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* Ring dopasowany do wariantu — currentColor = kolor wariantu (przez color: inherit z .alert) */
+.close:focus-visible {
+  outline-color: color-mix(in srgb, currentColor 45%, transparent);
+}

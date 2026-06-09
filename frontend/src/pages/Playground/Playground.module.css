@@ -1,0 +1,139 @@
+.page {
+  max-width: var(--container-max);
+  min-height: 100dvh;
+  margin-inline: auto;
+  padding: var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+}
+
+.title {
+  margin: 0;
+}
+
+.subtitle {
+  margin: var(--spacing-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Przełącznik motywu — segmentowany pigułkowy toggle */
+.themeSwitch {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+.themeButton,
+.themeButtonActive {
+  border: 0;
+  cursor: pointer;
+  padding: var(--spacing-1) var(--spacing-3);
+  border-radius: var(--radius-full);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-transform: capitalize;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.themeButton {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.themeButton:hover {
+  color: var(--color-text-primary);
+}
+
+.themeButtonActive {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/* Responsywna siatka kart — sekcje układają się same wg dostępnej szerokości */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fitt, minmax(260px, 1fr));
+  gap: var(--spacing-5);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  padding: var(--spacing-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Demo karty — wygląd DOMENOWY (układ treści), nie część prymitywu Card */
+.cardMeta {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* Tytuł + Badge w jednej linii (tytuł lewo, badge prawo) */
+.cardRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+
+/* Placeholder media gdy brak klatki — pasiaste tło + wyśrodkowany mono-tekst */
+.cardPlaceholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--color-text-primary) 6%, transparent) 0 9px,
+      transparent 9px 18px
+    ),
+    var(--color-background);
+}
+
+/* Płótno: tło = --color-background, by odciąć komponent od karty (--color-surface) */
+.canvas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-height: var(--spacing-8);
+  padding: var(--spacing-4);
+  background: var(--color-background);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+}
