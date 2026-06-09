@@ -38,6 +38,11 @@ and unsafe outside localhost.
 Add `--profile ml` to also start the detectors and run a full analysis
 (upload → analysis → progress → verdict) end to end.
 
+Add `--profile monitoring` for the observability stack (Grafana at
+http://localhost:3000, admin / `GF_SECURITY_ADMIN_PASSWORD`); set
+`OTEL_TRACING_EXPORT_ENABLED=true` to ship traces to Tempo. See
+[docs/observability.md](docs/observability.md).
+
 ### Verify
 
 ```bash
@@ -53,7 +58,7 @@ All services should report `healthy` within ~60 seconds.
 | `core`       | eureka, gateway, orchestrator, file-service + postgres, redis, rabbitmq, seaweedfs (+ 2 inits)  | any backend/frontend dev       |
 | `auth`       | keycloak + dedicated keycloak-db (Postgres) + realm config one-shot                             | login flow needed              |
 | `ml`         | video-detector, audio-detector (dummy inference for now, full pipeline otherwise)               | running the analysis pipeline  |
-| `monitoring` | prometheus, loki, tempo, grafana                                                                | planned — not yet in compose   |
+| `monitoring` | prometheus, loki, tempo, grafana, alloy                                                         | metrics + logs + traces (D2/D3)|
 
 ## URLs (dev)
 
