@@ -1,10 +1,12 @@
 package com.deepfake.orchestrator.service;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -67,8 +69,10 @@ class AnalysisServiceIdempotencyTest {
     @Test
     void freshResultMarksOnlyAfterCommit() {
         Analysis a = Analysis.builder().id(id).userId("alice").type(AnalysisType.VIDEO)
-                .status(AnalysisStatus.PENDING).build();
+                .status(AnalysisStatus.PROCESSING).videoProb(new BigDecimal("0.8")).build();
         when(repository.findById(id)).thenReturn(Optional.of(a));
+        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
         TransactionSynchronizationManager.initSynchronization();
 
         service.handleResult(completedVideo());

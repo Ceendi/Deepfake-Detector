@@ -61,17 +61,33 @@ class AnalysisServiceCancelTest {
 
     @Test
     void ownerCancelsProcessingAnalysis() {
-        Analysis a = analysis("alice", AnalysisStatus.PROCESSING, AnalysisType.VIDEO);
-        when(repository.findById(id)).thenReturn(Optional.of(a));
+        Analysis processing = analysis("alice", AnalysisStatus.PROCESSING, AnalysisType.VIDEO);
+        Analysis cancelled = analysis("alice", AnalysisStatus.CANCELLED, AnalysisType.VIDEO);
+        when(repository.findById(id)).thenReturn(Optional.of(processing), Optional.of(cancelled));
+        when(repository.cancelIfActive(eq(id), eq(AnalysisStatus.CANCELLED), any(), any())).thenReturn(1);
 
         AnalysisResponse response = service.cancel(id, "alice");
 
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
-        verify(repository).save(a);
         verify(backpressure).release();
         verify(rabbitTemplate).convertAndSend(eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_CANCEL), any(Map.class));
         verify(streams).sendResult(eq(id), any());
         verify(streams).complete(id);
+    }
+
+    @Test
+    void lostRaceToCompletingResultConflicts409() {
+        // cancelIfActive matches 0 rows because a result completed the analysis first; cancel must 409.
+        Analysis processing = analysis("alice", AnalysisStatus.PROCESSING, AnalysisType.VIDEO);
+        Analysis completed = analysis("alice", AnalysisStatus.COMPLETED, AnalysisType.VIDEO);
+        when(repository.findById(id)).thenReturn(Optional.of(processing), Optional.of(completed));
+        when(repository.cancelIfActive(eq(id), eq(AnalysisStatus.CANCELLED), any(), any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.cancel(id, "alice"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
+        verify(backpressure, never()).release();
+        verifyNoInteractions(rabbitTemplate, streams);
     }
 
     @Test
@@ -82,7 +98,7 @@ class AnalysisServiceCancelTest {
         assertThatThrownBy(() -> service.cancel(id, "bob"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
-        verify(repository, never()).save(any());
+        verify(repository, never()).cancelIfActive(any(), any(), any(), any());
         verifyNoInteractions(backpressure, rabbitTemplate, streams);
     }
 
@@ -94,7 +110,7 @@ class AnalysisServiceCancelTest {
         assertThatThrownBy(() -> service.cancel(id, "alice"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
-        verify(repository, never()).save(any());
+        verify(repository, never()).cancelIfActive(any(), any(), any(), any());
         verify(backpressure, never()).release();
     }
 
@@ -106,7 +122,7 @@ class AnalysisServiceCancelTest {
         AnalysisResponse response = service.cancel(id, "alice");
 
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
-        verify(repository, never()).save(any());
+        verify(repository, never()).cancelIfActive(any(), any(), any(), any());
         verify(backpressure, never()).release();
         verifyNoInteractions(rabbitTemplate, streams);
     }
@@ -122,14 +138,13 @@ class AnalysisServiceCancelTest {
 
     @Test
     void lateResultOnCancelledIsIgnored() {
-        Analysis a = analysis("alice", AnalysisStatus.CANCELLED, AnalysisType.VIDEO);
-        when(repository.findById(id)).thenReturn(Optional.of(a));
-
+        // writeVideoProb's CAS matches 0 rows on a terminal analysis (the mock default), so the late
+        // result is ignored without re-reading, completing, or releasing the slot.
         service.handleResult(Map.of(
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
                 "result", Map.of("prob_fake", "0.8")));
 
-        verify(repository, never()).save(any());
+        verify(repository, never()).complete(any(), any(), any(), any(), any(), any());
         verify(backpressure, never()).release();
         verify(streams, never()).sendResult(any(), any());
     }

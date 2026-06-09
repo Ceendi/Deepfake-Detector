@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -89,8 +90,10 @@ class AnalysisServicePushAfterCommitTest {
 
     private void givenAnalysis() {
         Analysis a = Analysis.builder().id(id).userId("alice").type(AnalysisType.VIDEO)
-                .status(AnalysisStatus.PENDING).build();
+                .status(AnalysisStatus.PROCESSING).videoProb(new BigDecimal("0.8")).build();
         when(repository.findById(id)).thenReturn(Optional.of(a));
+        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
     }
 
     private Map<String, Object> completedVideo() {
