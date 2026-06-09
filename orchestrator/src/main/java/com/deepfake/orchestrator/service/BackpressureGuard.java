@@ -44,7 +44,12 @@ public class BackpressureGuard {
             return;
         }
         if (inflight > maxInflight) {
-            redis.opsForValue().decrement(KEY); // undo our reservation
+            try {
+                redis.opsForValue().decrement(KEY); // undo our reservation
+            } catch (DataAccessException e) {
+                // Redis died after our increment: still answer 429 (the intent), accept a tiny +1 drift.
+                log.warn("backpressure rollback skipped (degraded): {}", e.getMessage());
+            }
             throw new TooManyAnalysesException((int) inflight, retryAfterSeconds);
         }
     }
