@@ -23,6 +23,7 @@ import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
@@ -36,6 +37,7 @@ class AnalysisServiceFailFromDlqTest {
     @Mock AnalysisCache cache;
     @Mock AnalysisStreamRegistry streams;
     @Mock BackpressureGuard backpressure;
+    @Mock AnalysisMetrics metrics;
     @InjectMocks AnalysisService service;
 
     private final UUID id = UUID.randomUUID();
