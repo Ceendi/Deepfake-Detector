@@ -38,18 +38,19 @@ loki.process "parse" {
 		}
 	}
 
-	// Coalesce to one value per field (prefer the structlog flat key, fall back to ECS).
+	// Coalesce to one value per field (prefer the structlog flat key, fall back to ECS). The final
+	// no-else branch yields "" when both are absent — avoids Go's literal "<no value>" on a missing key.
 	stage.template {
 		source   = "level"
-		template = "{{ if .level }}{{ .level }}{{ else }}{{ .ecs_level }}{{ end }}"
+		template = "{{ if .level }}{{ .level }}{{ else if .ecs_level }}{{ .ecs_level }}{{ end }}"
 	}
 	stage.template {
 		source   = "correlation_id"
-		template = "{{ if .correlation_id }}{{ .correlation_id }}{{ else }}{{ .ecs_cid }}{{ end }}"
+		template = "{{ if .correlation_id }}{{ .correlation_id }}{{ else if .ecs_cid }}{{ .ecs_cid }}{{ end }}"
 	}
 	stage.template {
 		source   = "trace_id"
-		template = "{{ if .trace_id }}{{ .trace_id }}{{ else }}{{ .ecs_tid }}{{ end }}"
+		template = "{{ if .trace_id }}{{ .trace_id }}{{ else if .ecs_tid }}{{ .ecs_tid }}{{ end }}"
 	}
 
 	// Low-cardinality label only.
