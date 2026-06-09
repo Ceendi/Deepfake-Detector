@@ -24,16 +24,32 @@ loki.source.docker "containers" {
 }
 
 loki.process "parse" {
-	// JSON logs (Java ECS in-container + Python structlog). Non-JSON lines (plain local-dev logs)
-	// pass through with these fields empty — the pipeline never breaks on them.
-	// NOTE(#G6): verify the real field paths against `docker logs orchestrator` once the Java stack
-	// runs; raw lines reach Loki regardless, so `{service="..."} | json` always works as a fallback.
+	// Extract both log shapes into distinct keys in one pass (Java ECS = nested log.level + top-level
+	// MDC keys traceId/correlationId; Python structlog = flat keys), verified against live logs.
+	// Non-JSON lines just leave everything empty.
 	stage.json {
 		expressions = {
+			ecs_level      = "log.level",
 			level          = "level",
+			ecs_cid        = "correlationId",
 			correlation_id = "correlation_id",
+			ecs_tid        = "traceId",
 			trace_id       = "trace_id",
 		}
+	}
+
+	// Coalesce to one value per field (prefer the structlog flat key, fall back to ECS).
+	stage.template {
+		source   = "level"
+		template = "{{ if .level }}{{ .level }}{{ else }}{{ .ecs_level }}{{ end }}"
+	}
+	stage.template {
+		source   = "correlation_id"
+		template = "{{ if .correlation_id }}{{ .correlation_id }}{{ else }}{{ .ecs_cid }}{{ end }}"
+	}
+	stage.template {
+		source   = "trace_id"
+		template = "{{ if .trace_id }}{{ .trace_id }}{{ else }}{{ .ecs_tid }}{{ end }}"
 	}
 
 	// Low-cardinality label only.
