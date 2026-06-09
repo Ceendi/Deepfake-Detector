@@ -1,0 +1,78 @@
+// Grafana Alloy: tail container stdout via the Docker socket and ship to Loki. Self-contained
+// (no host plugin like the Loki Docker driver, no EOL Promtail) so it works on a clean machine.
+
+discovery.docker "containers" {
+	host = "unix:///var/run/docker.sock"
+}
+
+// Label each stream with its compose service name (low cardinality) — this is what
+// `{service="orchestrator"}` matches. The docker label is reliable regardless of log format.
+discovery.relabel "containers" {
+	targets = discovery.docker.containers.targets
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+}
+
+loki.source.docker "containers" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.relabel.containers.output
+	relabel_rules = discovery.relabel.containers.rules
+	forward_to    = [loki.process.parse.receiver]
+}
+
+loki.process "parse" {
+	// Extract both log shapes into distinct keys in one pass (Java ECS = nested log.level + top-level
+	// MDC keys traceId/correlationId; Python structlog = flat keys), verified against live logs.
+	// Non-JSON lines just leave everything empty.
+	stage.json {
+		expressions = {
+			ecs_level      = "log.level",
+			level          = "level",
+			ecs_cid        = "correlationId",
+			correlation_id = "correlation_id",
+			ecs_tid        = "traceId",
+			trace_id       = "trace_id",
+		}
+	}
+
+	// Coalesce to one value per field (prefer the structlog flat key, fall back to ECS). The final
+	// no-else branch yields "" when both are absent — avoids Go's literal "<no value>" on a missing key.
+	stage.template {
+		source   = "level"
+		template = "{{ if .level }}{{ .level }}{{ else if .ecs_level }}{{ .ecs_level }}{{ end }}"
+	}
+	stage.template {
+		source   = "correlation_id"
+		template = "{{ if .correlation_id }}{{ .correlation_id }}{{ else if .ecs_cid }}{{ .ecs_cid }}{{ end }}"
+	}
+	stage.template {
+		source   = "trace_id"
+		template = "{{ if .trace_id }}{{ .trace_id }}{{ else if .ecs_tid }}{{ .ecs_tid }}{{ end }}"
+	}
+
+	// Low-cardinality label only.
+	stage.labels {
+		values = {
+			level = "",
+		}
+	}
+
+	// High-cardinality ids as structured metadata, NOT labels (avoids Loki stream explosion).
+	stage.structured_metadata {
+		values = {
+			correlation_id = "",
+			trace_id       = "",
+		}
+	}
+
+	forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+	endpoint {
+		url = "http://loki:3100/loki/api/v1/push"
+	}
+}

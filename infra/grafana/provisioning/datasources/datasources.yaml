@@ -1,0 +1,38 @@
+apiVersion: 1
+
+# Fixed UIDs (prometheus/loki/tempo) so provisioned dashboards can reference them by UID — provisioned
+# dashboards do NOT resolve the ${DS_*} input prompts that grafana.com exports use.
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      # Loki log -> Tempo trace: turn a trace_id field into a clickable link (D2 + OTel correlation).
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: tempo
+          url: '${__value.raw}'
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      # Tempo trace -> Loki logs for the same trace_id (the reverse jump).
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
