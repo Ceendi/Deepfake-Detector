@@ -1,0 +1,319 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+/* ---- Nagłówek strony --------------------------------------------------- */
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  flex-wrap: wrap;
+}
+.greeting h1 {
+  margin: 0;
+}
+.subtitle {
+  margin: var(--spacing-1) 0 0;
+  color: var(--color-text-muted);
+}
+
+/* ---- Karty statystyk --------------------------------------------------- */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-4);
+}
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  padding: var(--spacing-5);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.statTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+}
+.statLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+.statIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+/* Tony ikon — miękkie tło + foreground zgodne ze znaczeniem karty */
+.statIconAccent {
+  background: var(--color-accent-surface);
+  color: var(--color-accent);
+}
+.statIconDanger {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+}
+.statIconSuccess {
+  background: var(--color-success-surface);
+  color: var(--color-success);
+}
+.statIconWarning {
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+.statValue {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1;
+}
+.statValueDanger {
+  color: var(--color-danger);
+}
+.statValueSuccess {
+  color: var(--color-success);
+}
+.statMeta {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* ---- Panel „Ostatnie analizy" ----------------------------------------- */
+.panel {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-4) var(--spacing-5);
+}
+.panelHead h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.viewAll {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+/* ---- Wiersz analizy ---------------------------------------------------- */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-4) var(--spacing-5);
+  border-top: 1px solid var(--color-border);
+}
+.thumb {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 56px;
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+.thumbLabel {
+  font-family: var(--font-family-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+}
+.rowMain {
+  flex: 1;
+  min-width: 0;
+}
+.rowTitle {
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rowMeta {
+  margin-top: 2px;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.rowRight {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  flex-shrink: 0;
+}
+/* Werdykt + pewność trzymane razem (na mobile zjadą w jednej linii, status pod spodem) */
+.verdictGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-4);
+}
+.confidence {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.statusDanger {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-semibold);
+}
+.dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+}
+.dotSuccess {
+  background: var(--color-success);
+}
+.dotAccent {
+  background: var(--color-accent);
+}
+.dotDanger {
+  background: var(--color-danger);
+}
+.dotMuted {
+  background: var(--color-neutral-400);
+}
+.rowProgress {
+  width: 120px;
+}
+
+/* ---- Stan pusty (brak analiz) ----------------------------------------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-4);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--spacing-7) var(--spacing-5);
+  text-align: center;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.emptyIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-md);
+  border: 2px dashed var(--color-primary-300);
+  color: var(--color-accent);
+  background-color: var(--color-accent-surface);
+  /* ukośne paski (hatch) — accent na niskiej alfie nad miękkim tłem accent-surface */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--color-accent) 12%, transparent) 0,
+    color-mix(in srgb, var(--color-accent) 12%, transparent) 2px,
+    transparent 2px,
+    transparent 11px
+  );
+}
+.empty h2 {
+  margin: 0;
+}
+.emptyText {
+  max-width: 460px;
+  color: var(--color-text-muted);
+}
+.emptyHint {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  padding: 0; /* <ol> ma domyślne padding-inline-start: 40px — to ono spychało kroki w prawo */
+  list-style: none;
+}
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  font-size: var(--font-size-sm);
+}
+.stepNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+.stepSep {
+  color: var(--color-text-muted);
+}
+
+/* ---- Stany ładowania / błędu ------------------------------------------ */
+.center {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-8);
+}
+
+@media (max-width: 900px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .stats {
+    grid-template-columns: 1fr;
+  }
+  .row {
+    padding: var(--spacing-4);
+    gap: var(--spacing-3);
+  }
+  /* Prawa kolumna staje pionowa: werdykt+pewność u góry, status pod spodem — bez ucinania */
+  .rowRight {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--spacing-1);
+  }
+  .rowProgress {
+    width: 80px;
+  }
+}
