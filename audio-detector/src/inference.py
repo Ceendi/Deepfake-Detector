@@ -126,10 +126,14 @@ class AudioInference:
         return insights
     @INFERENCE_TIME.time()
     def analyze(self, file_path, progress_callback=None):
+        if progress_callback:
+            progress_callback(5, "EXTRACTING_AUDIO")
         path_16k = "/tmp/audio_16k.wav"
         path_22k = "/tmp/audio_22k.wav"
         self._extract_audio(file_path, 16000, path_16k)
         self._extract_audio(file_path, 22050, path_22k)
+        if progress_callback:
+            progress_callback(10, "PREPROCESSING_AUDIO")
         wav_16k, sr1 = torchaudio.load(path_16k)
         wav_22k, sr2 = torchaudio.load(path_22k)
         wav_16k = wav_16k.squeeze(0)
@@ -175,12 +179,14 @@ class AudioInference:
                 highest_fake_prob = final_prob
                 worst_chunk_22k = chunk_22
             if progress_callback:
-                progress_callback(int((i+1)/num_chunks * 90))
+                progress_callback(10 + int((i+1)/num_chunks * 80), "ANALYZING_SEGMENTS", {"chunk": i+1, "total_chunks": num_chunks})
         gradcam_path = "/tmp/gradcam.png"
         if worst_chunk_22k is not None:
+            if progress_callback:
+                progress_callback(95, "GENERATING_HEATMAP")
             self.generate_gradcam(worst_chunk_22k, gradcam_path)
         if progress_callback:
-            progress_callback(100)
+            progress_callback(100, "ANALYSIS_COMPLETED")
         if segment_predictions:
             overall_prob = sum(seg["prob_fake"] for seg in segment_predictions) / len(segment_predictions)
         else:
