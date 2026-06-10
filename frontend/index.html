@@ -5,6 +5,20 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>frontend</title>
+    <script>
+      // Ustaw motyw PRZED pierwszym malowaniem (anty-FOUC). Klucz zsync z ThemeContext.tsx.
+      (function () {
+        try {
+          var t = localStorage.getItem('deepfake-theme')
+          if (t !== 'light' && t !== 'dark') {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          }
+          document.documentElement.setAttribute('data-theme', t)
+        } catch (e) {
+          /* brak storage — zostaje domyślny (prefers-color-scheme) */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

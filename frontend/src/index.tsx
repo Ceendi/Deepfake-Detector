@@ -8,14 +8,17 @@ import '@/styles/global.css'
 import { AppRouter } from '@/routes/AppRouter'
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
 
+import { ThemeProvider } from './context/ThemeContext'
 import { AuthProvider } from './context/AuthContext'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <AuthProvider>
-        <AppRouter />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppRouter />
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,
 )
