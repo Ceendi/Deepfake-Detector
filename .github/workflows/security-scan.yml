@@ -107,7 +107,10 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload SARIF to Code Scanning
-        if: always()
+        # Fork PRs get a read-only GITHUB_TOKEN (security-events: write is denied regardless of the
+        # permissions block), so the SARIF upload only runs on push or same-repo PRs. The scan above
+        # still runs on fork PRs; only the Code Scanning upload is skipped.
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: trivy-${{ strategy.job-index }}.sarif
@@ -146,7 +149,8 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: Upload config SARIF to Code Scanning
-        if: always()
+        # Skip on fork PRs (read-only token can't write security-events); see scan-images job.
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: trivy-config.sarif
