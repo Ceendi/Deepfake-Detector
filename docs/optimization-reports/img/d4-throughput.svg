@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 300" font-family="system-ui,Segoe UI,sans-serif">
+<text x="260.0" y="22" text-anchor="middle" font-size="15" font-weight="600">Upload throughput (higher is better)</text>
+<line x1="60" y1="254" x2="500" y2="254" stroke="#888"/>
+<text x="14" y="147.0" text-anchor="middle" font-size="11" fill="#555" transform="rotate(-90 14 147.0)">requests / s</text>
+<rect x="115.0" y="156.2" width="110.0" height="97.8" fill="#5b8def" rx="3"/>
+<text x="170.0" y="150.2" text-anchor="middle" font-size="12" font-weight="600">4.47/s</text>
+<text x="170.0" y="272.0" text-anchor="middle" font-size="12">1 replica</text>
+<rect x="335.0" y="72.6" width="110.0" height="181.4" fill="#34a853" rx="3"/>
+<text x="390.0" y="66.6" text-anchor="middle" font-size="12" font-weight="600">8.29/s</text>
+<text x="390.0" y="272.0" text-anchor="middle" font-size="12">2 replicas</text>
+</svg>
