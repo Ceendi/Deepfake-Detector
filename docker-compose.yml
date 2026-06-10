@@ -449,6 +449,9 @@ services:
       <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # D4: upload rate-limit, env-tunable (raise for the load test). Defaults = prod values.
+      UPLOAD_RL_REPLENISH: ${UPLOAD_RL_REPLENISH:-1}
+      UPLOAD_RL_BURST: ${UPLOAD_RL_BURST:-10}
     networks: [deepfake]
 
   file-service:
