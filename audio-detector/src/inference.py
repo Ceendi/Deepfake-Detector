@@ -8,6 +8,14 @@ import matplotlib.pyplot as plt
 import math
 import time
 from prometheus_client import Histogram, Gauge
+import sys
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
+sys.path.append(PROJECT_ROOT)
+from training.train_mel import MelCNNLightningModule  # noqa: E402
+W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
+MEL_CKPT_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "last.ckpt")
+
 INFERENCE_TIME = Histogram(
     "audio_inference_duration_seconds",
     "Time taken to run inference on an audio file",
@@ -17,13 +25,6 @@ MODEL_LOAD_TIME = Gauge(
     "audio_model_load_duration_seconds",
     "Time taken to load the audio models into memory"
 )
-import sys
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.append(PROJECT_ROOT)
-from training.train_mel import MelCNNLightningModule
-W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
-MEL_CKPT_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "last.ckpt")
 class AudioInference:
     def __init__(self):
         start_load = time.time()
@@ -60,7 +61,6 @@ class AudioInference:
         mel_in = mel_spec.unsqueeze(0).unsqueeze(0)                               
         mel_in.requires_grad_(True)
         logits = self.mel_model(mel_in)
-        prob = torch.sigmoid(logits).item()
         logits.backward()
         h1.remove()
         h2.remove()

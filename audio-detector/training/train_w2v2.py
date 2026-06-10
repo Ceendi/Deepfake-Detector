@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
-from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2Config
+from transformers import Wav2Vec2ForSequenceClassification
 from datasets import ASVspoofDataModule
 class Wav2Vec2LightningModule(pl.LightningModule):
     def __init__(self, model_name="facebook/wav2vec2-xls-r-300m", lr_transformer=1e-5, lr_head=1e-3):
