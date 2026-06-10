@@ -418,6 +418,8 @@ services:
       # Default for everything else is `full`; users get `no-delete` so UI-created
       # accounts survive sync. See ADR-0001 §Consequences.
       IMPORT_MANAGED_USER: no-delete
+      # Substituted into realm-export.json as $(env:LOADTEST_CLIENT_SECRET) — the D4 load-test client secret.
+      LOADTEST_CLIENT_SECRET: ${LOADTEST_CLIENT_SECRET}
     volumes:
       - ./infra/keycloak/realm-export.json:/config/realm-export.json:ro
     networks: [deepfake]
@@ -447,11 +449,23 @@ services:
       <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # D4: upload rate-limit, env-tunable (raise for the load test). Defaults = prod values.
+      UPLOAD_RL_REPLENISH: ${UPLOAD_RL_REPLENISH:-1}
+      UPLOAD_RL_BURST: ${UPLOAD_RL_BURST:-10}
     networks: [deepfake]
 
   file-service:
     build: ./file-service
     profiles: ["core"]
+    # D4: scale 1<->2 via FILE_SERVICE_REPLICAS. Replicas only work here because the service has no
+    # host port (reached via Gateway lb://file-service) — do NOT add ports/container_name. The CPU
+    # cap is the point: 1 vCPU/replica, so a 2nd replica ~doubles the CPU-bound (ffprobe+Tika) capacity.
+    deploy:
+      replicas: ${FILE_SERVICE_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
     depends_on:
       postgres: { condition: service_healthy }
       eureka-server: { condition: service_healthy }

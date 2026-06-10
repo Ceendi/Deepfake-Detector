@@ -65,6 +65,16 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:4173/*"
       }
+    },
+    {
+      "clientId": "deepfake-loadtest",
+      "name": "Load-test client (DEV only): client_credentials grant for the D4 JMeter run",
+      "publicClient": false,
+      "secret": "$(env:LOADTEST_CLIENT_SECRET)",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": true
     }
   ],
   "users": [
@@ -98,6 +108,12 @@
           "temporary": false
         }
       ],
+      "realmRoles": ["USER"]
+    },
+    {
+      "username": "service-account-deepfake-loadtest",
+      "enabled": true,
+      "serviceAccountClientId": "deepfake-loadtest",
       "realmRoles": ["USER"]
     }
   ]

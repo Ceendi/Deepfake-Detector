@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 320" font-family="system-ui,Segoe UI,sans-serif">
+<text x="280.0" y="22" text-anchor="middle" font-size="15" font-weight="600">Upload response time percentiles (lower is better)</text>
+<line x1="64" y1="274" x2="544" y2="274" stroke="#888"/>
+<text x="14" y="157.0" text-anchor="middle" font-size="11" fill="#555" transform="rotate(-90 14 157.0)">response time (ms)</text>
+<rect x="93.6" y="164.0" width="48.0" height="110.0" fill="#5b8def" rx="2"/>
+<text x="117.6" y="159.0" text-anchor="middle" font-size="10">9998</text>
+<rect x="146.4" y="221.0" width="48.0" height="53.0" fill="#34a853" rx="2"/>
+<text x="170.4" y="216.0" text-anchor="middle" font-size="10">4818</text>
+<text x="144.0" y="292.0" text-anchor="middle" font-size="12">p50</text>
+<rect x="253.6" y="99.1" width="48.0" height="174.9" fill="#5b8def" rx="2"/>
+<text x="277.6" y="94.1" text-anchor="middle" font-size="10">15900</text>
+<rect x="306.4" y="129.9" width="48.0" height="144.1" fill="#34a853" rx="2"/>
+<text x="330.4" y="124.9" text-anchor="middle" font-size="10">13101</text>
+<text x="304.0" y="292.0" text-anchor="middle" font-size="12">p95</text>
+<rect x="413.6" y="70.5" width="48.0" height="203.5" fill="#5b8def" rx="2"/>
+<text x="437.6" y="65.5" text-anchor="middle" font-size="10">18501</text>
+<rect x="466.4" y="107.9" width="48.0" height="166.1" fill="#34a853" rx="2"/>
+<text x="490.4" y="102.9" text-anchor="middle" font-size="10">15101</text>
+<text x="464.0" y="292.0" text-anchor="middle" font-size="12">p99</text>
+<rect x="64" y="304" width="11" height="11" fill="#5b8def"/><text x="79" y="314" font-size="11">1 replica</text>
+<rect x="154" y="304" width="11" height="11" fill="#34a853"/><text x="169" y="314" font-size="11">2 replicas</text>
+</svg>

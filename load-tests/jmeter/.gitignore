@@ -1,0 +1,5 @@
+# Generated artifacts — never commit binaries or run output.
+*.mp4
+*.jtl
+report-*/
+jmeter.log
