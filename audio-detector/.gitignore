@@ -1,0 +1,35 @@
+# Środowiska wirtualne i IDE
+.venv/
+venv/
+env/
+.idea/
+
+# Pliki tymczasowe Pythona
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Datasety, pliki audio i cache
+training/data/
+training/cache*/
+*.parquet
+*.flac
+*.wav
+*.mp3
+*.zip
+training/ASVspoof*/
+training/WaveFake*/
+
+# Logi uczenia maszynowego (PyTorch Lightning itp.)
+training/lightning_logs/
+lightning_logs/
+
+# Modele wagowe i checkpointy (wielkie pliki)
+training/checkpoints/**/*.ckpt
+*.ckpt
+*.bin
+*.pth
+
+# Zmienne środowiskowe i klucze
+.env

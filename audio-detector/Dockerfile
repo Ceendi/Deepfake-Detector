@@ -3,7 +3,9 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    HF_HOME=/tmp/huggingface
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ffmpeg libgl1 libglib2.0-0 curl \
@@ -15,6 +17,7 @@ COPY --chown=app:app pyproject.toml ./
 RUN uv pip install --system --no-cache -r pyproject.toml
 
 COPY --chown=app:app src ./src
+COPY --chown=app:app training ./training
 
 USER app
 EXPOSE 8000
