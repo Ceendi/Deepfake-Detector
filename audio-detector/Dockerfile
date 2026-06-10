@@ -7,8 +7,10 @@ ENV PYTHONUNBUFFERED=1 \
     MPLCONFIGDIR=/tmp/matplotlib \
     HF_HOME=/tmp/huggingface
 
+# ffmpeg: audio extraction; libglib2.0-0: librosa/soundfile runtime dep; curl: healthcheck.
+# No libgl1 (OpenGL) — only OpenCV needs it, and this service has no cv2.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg libgl1 libglib2.0-0 curl \
+      ffmpeg libglib2.0-0 curl \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv==0.5.*
 RUN addgroup --system app && adduser --system --ingroup app app

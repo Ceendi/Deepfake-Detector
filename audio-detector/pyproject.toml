@@ -21,9 +21,9 @@ dependencies = [
     "soundfile>=0.12",
     "pandas>=2.0",
     "pyarrow>=14.0",
-    "torch",
-    "torchaudio",
-    "torchvision",
+    "torch==2.12.0",
+    "torchaudio==2.11.0",
+    "torchvision==0.27.0",
     "onnx",
     "onnxruntime",
     "transformers<4.44.0",
@@ -31,15 +31,18 @@ dependencies = [
     "matplotlib"
 ]
 
+# This image is inference-only and runs entirely on CPU (ONNX CPUExecutionProvider +
+# torch map_location='cpu'). Training is done on the host, outside the image. Pulling
+# CPU wheels instead of cu121 drops ~4.5 GB (nvidia/* CUDA libs + triton) from the image.
 [[tool.uv.index]]
-name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu121"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cuda" }
-torchaudio = { index = "pytorch-cuda" }
-torchvision = { index = "pytorch-cuda" }
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
