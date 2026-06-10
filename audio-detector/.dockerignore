@@ -9,6 +9,9 @@ training/data/
 training/lightning_logs/
 training/checkpoints/w2v2/*.ckpt
 training/checkpoints/mel_resnet/mel_model*.ckpt
+# Bake the fp32 w2v2 into the image; int8 (slower on non-VNNI CPUs) and broken fp16 stay out.
+training/checkpoints/w2v2/w2v2_int8.onnx
+training/checkpoints/w2v2/w2v2_fp16.onnx
 *.flac
 *.wav
 *.parquet

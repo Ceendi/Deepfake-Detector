@@ -523,8 +523,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1g
-          cpus: "1.5"
+          memory: 3g
           pids: 500
     logging: *default-logging
     depends_on:
@@ -555,8 +554,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1g
-          cpus: "1.5"
+          memory: 3g
           pids: 500
     logging: *default-logging
     depends_on:

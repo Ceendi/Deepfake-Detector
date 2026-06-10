@@ -3,6 +3,7 @@ import subprocess
 import torch
 import torchaudio
 import numpy as np
+import soundfile as sf
 import onnxruntime as ort
 import matplotlib.pyplot as plt
 import math
@@ -14,6 +15,8 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(PROJECT_ROOT)
 from training.train_mel import MelCNNLightningModule  # noqa: E402
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
+# Mini-batch size for the chunk loop; bounds peak memory on long clips. Override via env.
+_BATCH_SIZE = int(os.getenv("INFERENCE_BATCH_SIZE", "32"))
 MEL_CKPT_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "last.ckpt")
 
 INFERENCE_TIME = Histogram(
@@ -45,6 +48,11 @@ class AudioInference:
             "ffmpeg", "-y", "-i", input_path,
             "-ar", str(sr), "-ac", "1", out_path
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    def _load_wav(self, path):
+        # torchaudio 2.11 routes load() through torchcodec (not bundled); soundfile is already a
+        # dependency and backend-independent. ffmpeg wrote mono wavs, so take channel 0.
+        data, _ = sf.read(path, dtype="float32", always_2d=True)
+        return torch.from_numpy(data[:, 0])
     def generate_gradcam(self, audio_chunk_22k, out_png_path):
         self.mel_model.zero_grad()
         activations = []
@@ -132,12 +140,8 @@ class AudioInference:
         path_22k = "/tmp/audio_22k.wav"
         self._extract_audio(file_path, 16000, path_16k)
         self._extract_audio(file_path, 22050, path_22k)
-        if progress_callback:
-            progress_callback(10, "PREPROCESSING_AUDIO")
-        wav_16k, sr1 = torchaudio.load(path_16k)
-        wav_22k, sr2 = torchaudio.load(path_22k)
-        wav_16k = wav_16k.squeeze(0)
-        wav_22k = wav_22k.squeeze(0)
+        wav_16k = self._load_wav(path_16k)
+        wav_22k = self._load_wav(path_22k)
         duration_sec = len(wav_16k) / 16000.0
         chunk_len_16k = 16000
         step_16k = 8000
@@ -145,41 +149,42 @@ class AudioInference:
         step_22k = 11025
         num_chunks = math.floor((len(wav_16k) - chunk_len_16k) / step_16k) + 1
         if num_chunks < 1:
-            wav_16k = torch.nn.functional.pad(wav_16k, (0, chunk_len_16k - len(wav_16k)))
-            wav_22k = torch.nn.functional.pad(wav_22k, (0, chunk_len_22k - len(wav_22k)))
             num_chunks = 1
-        segment_predictions = []
-        highest_fake_prob = -1.0
-        worst_chunk_22k = None
-        for i in range(num_chunks):
-            start_16k = i * step_16k
-            end_16k = start_16k + chunk_len_16k
-            chunk_16 = wav_16k[start_16k:end_16k].unsqueeze(0).numpy()
-            start_22k = i * step_22k
-            end_22k = start_22k + chunk_len_22k
-            chunk_22 = wav_22k[start_22k:end_22k]
-            w2v2_outs = self.w2v2_session.run(None, {"input_values": chunk_16})
-            w2v2_logits = w2v2_outs[0][0][0]
+        # Pad so every window is full-length (the 16k/22k streams can round to a few samples
+        # apart), so chunks can be stacked into batches without ragged shapes.
+        need_16 = (num_chunks - 1) * step_16k + chunk_len_16k
+        need_22 = (num_chunks - 1) * step_22k + chunk_len_22k
+        if len(wav_16k) < need_16:
+            wav_16k = torch.nn.functional.pad(wav_16k, (0, need_16 - len(wav_16k)))
+        if len(wav_22k) < need_22:
+            wav_22k = torch.nn.functional.pad(wav_22k, (0, need_22 - len(wav_22k)))
+        # Pre-slice every chunk, then run both models in mini-batches: keeps the CPU cores busy
+        # and cuts per-call overhead vs. one session.run() / forward per chunk.
+        chunks_16 = np.stack([
+            wav_16k[i * step_16k: i * step_16k + chunk_len_16k].numpy() for i in range(num_chunks)
+        ])
+        chunks_22 = torch.stack([
+            wav_22k[i * step_22k: i * step_22k + chunk_len_22k] for i in range(num_chunks)
+        ])
+        probs = np.empty(num_chunks, dtype=np.float64)
+        for b0 in range(0, num_chunks, _BATCH_SIZE):
+            b1 = min(b0 + _BATCH_SIZE, num_chunks)
+            w2v2_logits = self.w2v2_session.run(
+                None, {"input_values": chunks_16[b0:b1]}
+            )[0].reshape(b1 - b0, -1)[:, 0]
             prob_b = 1.0 / (1.0 + np.exp(-w2v2_logits))
-            mel_spec = self.mel_transform(chunk_22)
-            mel_spec = self.db_transform(mel_spec)
-            mel_in = mel_spec.unsqueeze(0).unsqueeze(0)
+            mel_spec = self.db_transform(self.mel_transform(chunks_22[b0:b1]))
             with torch.no_grad():
-                mel_logits = self.mel_model(mel_in)
-                prob_a = torch.sigmoid(mel_logits).item()
-            final_prob = 0.4 * prob_a + 0.6 * float(prob_b)
-            start_time = i * 0.5
-            end_time = start_time + 1.0
-            segment_predictions.append({
-                "start_time": start_time,
-                "end_time": end_time,
-                "prob_fake": round(final_prob, 4)
-            })
-            if final_prob > highest_fake_prob:
-                highest_fake_prob = final_prob
-                worst_chunk_22k = chunk_22
+                mel_logits = self.mel_model(mel_spec.unsqueeze(1)).reshape(-1)
+                prob_a = torch.sigmoid(mel_logits).numpy()
+            probs[b0:b1] = 0.4 * prob_a + 0.6 * prob_b
             if progress_callback:
-                progress_callback(10 + int((i+1)/num_chunks * 80), "ANALYZING_SEGMENTS", {"chunk": i+1, "total_chunks": num_chunks})
+                progress_callback(int(b1 / num_chunks * 90))
+        segment_predictions = [
+            {"start_time": i * 0.5, "end_time": i * 0.5 + 1.0, "prob_fake": round(float(probs[i]), 4)}
+            for i in range(num_chunks)
+        ]
+        worst_chunk_22k = chunks_22[int(np.argmax(probs))]
         gradcam_path = "/tmp/gradcam.png"
         if worst_chunk_22k is not None:
             if progress_callback:
