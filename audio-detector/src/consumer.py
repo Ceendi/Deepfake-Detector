@@ -97,14 +97,17 @@ def _handle_message(ch, method, properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         redis_client.expire(f"processing:{analysis_id}", 3600)
-        def progress_callback(pct: int):
-            _publish(ch, "analysis.progress", {
+        def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
+            payload = {
                 "analysis_id": analysis_id,
                 "correlation_id": correlation_id,
                 "source": SOURCE,
                 "progress": pct,
-                "stage": "INFERENCE",
-            })
+                "stage": stage,
+            }
+            if details is not None:
+                payload["details"] = details
+            _publish(ch, "analysis.progress", payload)
         result = process(msg, progress_callback=progress_callback)
         _publish(ch, "analysis.results", {
             "analysis_id": analysis_id,
