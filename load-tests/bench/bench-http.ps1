@@ -31,9 +31,13 @@ $sql = "INSERT INTO analysis (id,user_id,file_id,file_key,type,status,verdict,co
        "ON CONFLICT (id) DO UPDATE SET user_id=EXCLUDED.user_id;"
 docker exec -i $Pg psql -U deepfake -d deepfake -c $sql | Out-Null
 
-# 3. wrk on the docker network -> orchestrator:8082 (no host port needed)
+# 3. wrk on the docker network -> orchestrator:8082 (no host port needed).
+# Args as an array + splat so the header (which contains spaces) survives as a single token.
 Write-Host "=== wrk $Label : c=$Concurrency d=${Duration}s ==="
-docker run --rm --network deepfake williamyeh/wrk `
-    -t4 -c$Concurrency -d"${Duration}s" --latency `
-    -H "Authorization: Bearer $tok" `
+$wrkArgs = @(
+    'run', '--rm', '--network', 'deepfake', 'williamyeh/wrk',
+    '-t4', "-c$Concurrency", "-d${Duration}s", '--latency',
+    '-H', "Authorization: Bearer $tok",
     "http://orchestrator:8082/api/analysis/$TargetId"
+)
+docker @wrkArgs
