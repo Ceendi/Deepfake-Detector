@@ -15,7 +15,31 @@ dependencies = [
     "prometheus-client==0.25.*",
     "structlog==25.*",
     "boto3==1.42.*",
+    "lightning==2.5.0",
+    "audiomentations>=0.37",
+    "librosa>=0.10",
+    "soundfile>=0.12",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "torch",
+    "torchaudio",
+    "torchvision",
+    "onnx",
+    "onnxruntime",
+    "transformers<4.44.0",
+    "redis",
+    "matplotlib"
 ]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cuda" }
+torchaudio = { index = "pytorch-cuda" }
+torchvision = { index = "pytorch-cuda" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]

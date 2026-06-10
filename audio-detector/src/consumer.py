@@ -2,78 +2,81 @@ import json
 import os
 import random
 import time
-
 import pika
 import structlog
-from prometheus_client import Counter, Histogram
-
+import boto3
+import redis
+from botocore.client import Config
+from prometheus_client import Counter
+from .inference import AudioInference
+PROCESSED_AUDIO_TOTAL = Counter(
+    "audio_processed_total",
+    "Total number of audio files processed",
+    ["status"]
+)
 RABBIT_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 RABBIT_USER = os.getenv("RABBITMQ_USER", "deepfake")
 RABBIT_PASS = os.getenv("RABBITMQ_PASSWORD", "changeme_dev")
 QUEUE       = os.getenv("QUEUE_NAME", "analysis.audio")
-SOURCE      = os.getenv("SOURCE_LABEL", "audio")   # "video" or "audio"
+SOURCE      = os.getenv("SOURCE_LABEL", "audio")                       
 EXCHANGE    = "analysis.exchange"
 DLX         = "analysis.dlx"
-
 log = structlog.get_logger(__name__)
-
-# --- Business metrics (starter; exposed at /metrics, see main.py) -------------------------------
-# TODO(Osoba 3/4): extend with per-stage timings (face-detect / inference / grad-cam), model_version
-# label, queue-wait, etc. Labelled by source so video + audio share one series name.
-INFERENCE_LATENCY = Histogram(
-    "inference_latency_seconds",
-    "Wall-clock time of one process() inference",
-    ["source"],
+s3_client = boto3.client(
+    "s3",
+    endpoint_url=os.environ.get("S3_ENDPOINT", "http://localhost:9000"),
+    aws_access_key_id=os.environ.get("S3_ACCESS_KEY", "minioadmin"),
+    aws_secret_access_key=os.environ.get("S3_SECRET_KEY", "minioadmin"),
+    region_name=os.environ.get("S3_REGION", "us-east-1"),
+    config=Config(s3={"addressing_style": "path"}),
 )
-DETECTOR_RESULTS = Counter(
-    "detector_results_total",
-    "Detector outcomes",
-    ["source", "outcome"],  # outcome: fake | real | failed
+redis_client = redis.Redis(
+    host=os.environ.get("REDIS_HOST", "localhost"),
+    port=int(os.environ.get("REDIS_PORT", 6379)),
+    password=os.environ.get("REDIS_PASSWORD"),
+    db=0,
+    decode_responses=True
 )
-
-# ============================================================
-# REPLACEMENT POINT — swap with the real ML pipeline.
-# Input:   msg (dict with analysis_id, file_bucket, file_key, correlation_id)
-# Output:  dict matching the contract in docs/contracts/amqp-messages.md
-# Scaffolding deps: prometheus-client, boto3 — ready to use, not yet imported.
-#
-# Fetching the input file from S3 (SeaweedFS) — env vars are set in docker-compose:
-#
-#     import boto3
-#     from botocore.client import Config
-#     s3 = boto3.client(
-#         "s3",
-#         endpoint_url=os.environ["S3_ENDPOINT"],
-#         aws_access_key_id=os.environ["S3_ACCESS_KEY"],
-#         aws_secret_access_key=os.environ["S3_SECRET_KEY"],
-#         region_name=os.environ.get("S3_REGION", "us-east-1"),
-#         config=Config(s3={"addressing_style": "path"}),  # SeaweedFS requires path-style addressing
-#     )
-#     s3.download_file(msg["file_bucket"], msg["file_key"], "/tmp/input")
-# ============================================================
-def process(msg: dict) -> dict:
-    time.sleep(2)  # inference simulation
-    prob = round(random.uniform(0.1, 0.95), 4)
-    return {
-        "prob_fake": prob,
-        "verdict": "FAKE" if prob > 0.5 else "REAL",
-        "confidence": round(abs(prob - 0.5) * 2, 4),
-        "model_version": "dummy-v0.1",
-        "gradcam_urls": [],
-        "metadata": {},
-    }
-
-
+try:
+    audio_inference = AudioInference()
+except Exception as e:
+    log.error("Failed to load AudioInference", error=str(e))
+    audio_inference = None
+def process(msg: dict, progress_callback=None) -> dict:
+    if not audio_inference:
+        raise RuntimeError("AudioInference module not initialized properly.")
+    input_path = f"/tmp/{msg['analysis_id']}_input"
+    log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"])
+    s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
+    result = audio_inference.analyze(input_path, progress_callback=progress_callback)
+    gradcam_url = None
+    if "local_gradcam_path" in result and os.path.exists(result["local_gradcam_path"]):
+        gradcam_key = f"{msg['analysis_id']}/gradcam.png"
+        try:
+            s3_client.upload_file(
+                result["local_gradcam_path"], 
+                "analysis-artifacts", 
+                gradcam_key,
+                ExtraArgs={"ContentType": "image/png"}
+            )
+            gradcam_url = f"minio://analysis-artifacts/{gradcam_key}"
+        except Exception as e:
+            log.error("gradcam_upload_failed", error=str(e))
+        finally:
+            os.remove(result["local_gradcam_path"])
+            del result["local_gradcam_path"]
+    if os.path.exists(input_path):
+        os.remove(input_path)
+    result["gradcam_url"] = gradcam_url
+    return result
 def _publish(ch, routing_key: str, payload: dict) -> None:
     ch.basic_publish(
         exchange=EXCHANGE,
         routing_key=routing_key,
         body=json.dumps(payload).encode(),
         properties=pika.BasicProperties(content_type="application/json", delivery_mode=2),
-        mandatory=True,  # with confirm_delivery: raises UnroutableError if no queue is bound to routing_key
+        mandatory=True,                                                                                     
     )
-
-
 def _handle_message(ch, method, properties, body):
     try:
         msg = json.loads(body)
@@ -83,7 +86,6 @@ def _handle_message(ch, method, properties, body):
         log.error("bad_message_to_dlq", error=str(e), error_type=type(e).__name__)
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
         return
-
     structlog.contextvars.bind_contextvars(
         analysis_id=analysis_id,
         correlation_id=correlation_id,
@@ -91,26 +93,20 @@ def _handle_message(ch, method, properties, body):
     )
     try:
         log.info("processing_started")
-        # Start-ping: lets the Orchestrator flip PENDING->PROCESSING the moment the task is picked up
-        # (not just at 50%). Lives outside process(), so swapping in the real model keeps it.
-        _publish(ch, "analysis.progress", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "progress": 0,
-            "stage": "LOADING",
-        })
-        # TODO D6: idempotency check via Redis SETNX(processing:{analysis_id}:{source}) before publishing results.
-        _publish(ch, "analysis.progress", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "progress": 50,
-            "stage": "INFERENCE",
-        })
-        with INFERENCE_LATENCY.labels(SOURCE).time():
-            result = process(msg)
-        DETECTOR_RESULTS.labels(SOURCE, result["verdict"].lower()).inc()
+        if not redis_client.setnx(f"processing:{analysis_id}", "1"):
+            log.warning("duplicate_message_dropped", reason="already_processing")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+        redis_client.expire(f"processing:{analysis_id}", 3600)
+        def progress_callback(pct: int):
+            _publish(ch, "analysis.progress", {
+                "analysis_id": analysis_id,
+                "correlation_id": correlation_id,
+                "source": SOURCE,
+                "progress": pct,
+                "stage": "INFERENCE",
+            })
+        result = process(msg, progress_callback=progress_callback)
         _publish(ch, "analysis.results", {
             "analysis_id": analysis_id,
             "correlation_id": correlation_id,
@@ -120,8 +116,10 @@ def _handle_message(ch, method, properties, body):
             "error": None,
         })
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        PROCESSED_AUDIO_TOTAL.labels(status="success").inc()
         log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
     except Exception as e:
+        PROCESSED_AUDIO_TOTAL.labels(status="error").inc()
         log.exception("processing_failed")
         DETECTOR_RESULTS.labels(SOURCE, "failed").inc()
         _publish(ch, "analysis.results", {
@@ -132,12 +130,9 @@ def _handle_message(ch, method, properties, body):
             "result": None,
             "error": {"code": "PROCESSING_ERROR", "message": str(e)},
         })
-        # ack — failure info already published; we do not want infinite redelivery
         ch.basic_ack(delivery_tag=method.delivery_tag)
     finally:
         structlog.contextvars.clear_contextvars()
-
-
 def run_consumer(health_state: dict) -> None:
     while True:
         try:
@@ -149,12 +144,7 @@ def run_consumer(health_state: dict) -> None:
             conn = pika.BlockingConnection(params)
             ch = conn.channel()
             ch.basic_qos(prefetch_count=1)
-            ch.confirm_delivery()  # publisher confirms (CLAUDE.md D6)
-
-            # Topology declaration — broker boots empty, every publisher/consumer
-            # must declare its own exchanges/queues on startup. Arguments MUST
-            # match RabbitConfig.java in the Orchestrator, otherwise PRECONDITION_FAILED.
-            # Single source of truth: docs/contracts/amqp-messages.md.
+            ch.confirm_delivery()                                     
             ch.exchange_declare(exchange=EXCHANGE, exchange_type="topic",  durable=True)
             ch.exchange_declare(exchange=DLX,      exchange_type="direct", durable=True)
             ch.queue_declare(queue=QUEUE, durable=True, arguments={
@@ -168,10 +158,8 @@ def run_consumer(health_state: dict) -> None:
             ch.queue_bind(queue=f"{QUEUE}.dlq",      exchange=DLX,      routing_key=f"{QUEUE}.dlq")
             ch.queue_bind(queue="analysis.results",  exchange=EXCHANGE, routing_key="analysis.results")
             ch.queue_bind(queue="analysis.progress", exchange=EXCHANGE, routing_key="analysis.progress")
-
             health_state["ok"] = True
             log.info("consumer_ready", queue=QUEUE, source=SOURCE)
-
             ch.basic_consume(queue=QUEUE, on_message_callback=_handle_message, auto_ack=False)
             ch.start_consuming()
         except Exception as e:
