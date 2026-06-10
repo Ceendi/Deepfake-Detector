@@ -1,6 +1,5 @@
 import json
 import os
-import random
 import time
 import pika
 import structlog
