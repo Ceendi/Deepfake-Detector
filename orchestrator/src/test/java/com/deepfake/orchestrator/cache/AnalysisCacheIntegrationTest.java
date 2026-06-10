@@ -40,7 +40,7 @@ class AnalysisCacheIntegrationTest {
         cf.afterPropertiesSet();
         StringRedisTemplate template = new StringRedisTemplate(cf);
         template.afterPropertiesSet();
-        cache = new AnalysisCache(template);
+        cache = new AnalysisCache(template, true);
     }
 
     @Test

@@ -15,6 +15,12 @@ spring:
     url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
+    hikari:
+      # Pool size env-overridable so the MO benchmark can A/B 10 vs 20 without a rebuild.
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: 5
+      connection-timeout: 5000        # fail fast under load instead of blocking the request thread
+      leak-detection-threshold: 10000 # warn on a connection held >10s (diagnostic)
   jpa:
     hibernate:
       ddl-auto: none
