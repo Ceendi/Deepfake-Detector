@@ -504,6 +504,9 @@ services:
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       BACKPRESSURE_MAX_INFLIGHT: ${BACKPRESSURE_MAX_INFLIGHT:-20}
+      # MO benchmark knobs (defaults = prod): cache-aside on/off, HikariCP max pool size.
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
       interval: 15s
