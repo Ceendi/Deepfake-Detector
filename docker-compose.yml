@@ -418,6 +418,8 @@ services:
       # Default for everything else is `full`; users get `no-delete` so UI-created
       # accounts survive sync. See ADR-0001 §Consequences.
       IMPORT_MANAGED_USER: no-delete
+      # Substituted into realm-export.json as $(env:LOADTEST_CLIENT_SECRET) — the D4 load-test client secret.
+      LOADTEST_CLIENT_SECRET: ${LOADTEST_CLIENT_SECRET}
     volumes:
       - ./infra/keycloak/realm-export.json:/config/realm-export.json:ro
     networks: [deepfake]
