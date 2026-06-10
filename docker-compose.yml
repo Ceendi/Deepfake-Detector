@@ -452,6 +452,15 @@ services:
   file-service:
     build: ./file-service
     profiles: ["core"]
+    # D4: scale 1<->2 via FILE_SERVICE_REPLICAS. Replicas only work here because the service has no
+    # host port (reached via Gateway lb://file-service) — do NOT add ports/container_name. The CPU
+    # cap is the point: 1 vCPU/replica, so a 2nd replica ~doubles the CPU-bound (ffprobe+Tika) capacity.
+    deploy:
+      replicas: ${FILE_SERVICE_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
     depends_on:
       postgres: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
