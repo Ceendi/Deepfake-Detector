@@ -32,6 +32,7 @@ spring:
                 maxAge: 3600
           routes:
             # Upload route first (more specific): stricter bucket, ~10 burst / ~60/min sustained.
+            # Bucket is env-tunable: raise it for the D4 load test (rate-limit is a separate concern).
             - id: file-service-upload
               uri: lb://file-service
               predicates:
@@ -40,8 +41,8 @@ spring:
               filters:
                 - name: RequestRateLimiter
                   args:
-                    redis-rate-limiter.replenishRate: 1
-                    redis-rate-limiter.burstCapacity: 10
+                    redis-rate-limiter.replenishRate: ${UPLOAD_RL_REPLENISH:1}
+                    redis-rate-limiter.burstCapacity: ${UPLOAD_RL_BURST:10}
                     key-resolver: "#{@userKeyResolver}"
             - id: file-service
               uri: lb://file-service
@@ -79,3 +80,24 @@ management:
   endpoint:
     health:
       show-details: always
+  tracing:
+    sampling:
+      probability: 1.0          # dev: sample everything; prod → ~0.1
+    # Gate EXPORT only — see orchestrator/application.yaml for the rationale.
+    export:
+      enabled: ${OTEL_TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    tracing:
+      export:
+        otlp:
+          endpoint: ${OTEL_OTLP_ENDPOINT:http://tempo:4318/v1/traces}
+  otlp:
+    metrics:
+      export:
+        # Metrics ship via Prometheus scrape (/actuator/prometheus, D3). The OTLP meter registry
+        # arrives transitively with the OpenTelemetry starter and is unused here — disabled so it
+        # doesn't push to (and fail against) a non-existent OTLP collector every minute.
+        enabled: false
+logging:
+  pattern:
+    console: '%d{ISO8601} %-5level [%X{correlationId:-},%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n'

@@ -17,9 +17,11 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 
 /**
@@ -35,6 +37,10 @@ class AnalysisServiceIdorTest {
     RabbitTemplate rabbitTemplate;
     @Mock
     StringRedisTemplate redis;
+    @Mock
+    AnalysisCache cache;
+    @Mock
+    AnalysisMetrics metrics;
     @InjectMocks
     AnalysisService service;
 

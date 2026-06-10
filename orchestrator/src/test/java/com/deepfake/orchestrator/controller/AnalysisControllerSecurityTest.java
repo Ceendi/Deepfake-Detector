@@ -30,6 +30,7 @@ import com.deepfake.orchestrator.config.WebConfig;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
@@ -40,7 +41,8 @@ import com.deepfake.orchestrator.service.AnalysisService;
  * The JWT subject must reach the service as the owner id.
  */
 @WebMvcTest(AnalysisController.class)
-@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class})
+@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class,
+        ReportPdfService.class})
 class AnalysisControllerSecurityTest {
 
     @Autowired

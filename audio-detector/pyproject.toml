@@ -43,3 +43,7 @@ torchvision = { index = "pytorch-cuda" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

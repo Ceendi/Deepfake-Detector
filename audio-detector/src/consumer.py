@@ -120,6 +120,7 @@ def _handle_message(ch, method, properties, body):
     except Exception as e:
         PROCESSED_AUDIO_TOTAL.labels(status="error").inc()
         log.exception("processing_failed")
+        DETECTOR_RESULTS.labels(SOURCE, "failed").inc()
         _publish(ch, "analysis.results", {
             "analysis_id": analysis_id,
             "correlation_id": correlation_id,
