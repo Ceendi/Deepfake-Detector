@@ -3,6 +3,8 @@ package com.deepfake.orchestrator.config;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.rabbit.retry.MessageRecoverer;
+import org.springframework.amqp.rabbit.retry.RepublishMessageRecoverer;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.context.annotation.Bean;
@@ -16,8 +18,10 @@ public class RabbitConfig {
     public static final String Q_AUDIO      = "analysis.audio";
     public static final String Q_RESULTS    = "analysis.results";
     public static final String Q_PROGRESS   = "analysis.progress";
+    public static final String Q_CANCEL     = "analysis.cancel";
     public static final String Q_VIDEO_DLQ  = "analysis.video.dlq";
     public static final String Q_AUDIO_DLQ  = "analysis.audio.dlq";
+    public static final String Q_RESULTS_DLQ = "analysis.results.dlq";
 
     @Bean
     TopicExchange analysisExchange() { return new TopicExchange(EXCHANGE, true, false); }
@@ -39,23 +43,41 @@ public class RabbitConfig {
     }
     @Bean Queue resultsQueue()  { return QueueBuilder.durable(Q_RESULTS).build(); }
     @Bean Queue progressQueue() { return QueueBuilder.durable(Q_PROGRESS).build(); }
+    // Declared so cancel events aren't dropped (topic exchange silently discards unrouted messages);
+    // detectors consume this in V2. Orchestrator only publishes here for now.
+    @Bean Queue cancelQueue()   { return QueueBuilder.durable(Q_CANCEL).build(); }
     @Bean Queue videoDlq()      { return QueueBuilder.durable(Q_VIDEO_DLQ).build(); }
     @Bean Queue audioDlq()      { return QueueBuilder.durable(Q_AUDIO_DLQ).build(); }
+    // Fed by the recoverer, not broker-DLX: analysis.results keeps no DLX args so the detectors
+    // that also declare it don't hit PRECONDITION_FAILED.
+    @Bean Queue resultsDlq()    { return QueueBuilder.durable(Q_RESULTS_DLQ).build(); }
 
     @Bean Binding bVideo()    { return BindingBuilder.bind(videoQueue()).to(analysisExchange()).with("analysis.video"); }
     @Bean Binding bAudio()    { return BindingBuilder.bind(audioQueue()).to(analysisExchange()).with("analysis.audio"); }
     @Bean Binding bResults()  { return BindingBuilder.bind(resultsQueue()).to(analysisExchange()).with("analysis.results"); }
     @Bean Binding bProgress() { return BindingBuilder.bind(progressQueue()).to(analysisExchange()).with("analysis.progress"); }
-    @Bean Binding bVideoDlq() { return BindingBuilder.bind(videoDlq()).to(analysisDlx()).with(Q_VIDEO_DLQ); }
-    @Bean Binding bAudioDlq() { return BindingBuilder.bind(audioDlq()).to(analysisDlx()).with(Q_AUDIO_DLQ); }
+    @Bean Binding bCancel()   { return BindingBuilder.bind(cancelQueue()).to(analysisExchange()).with(Q_CANCEL); }
+    @Bean Binding bVideoDlq()   { return BindingBuilder.bind(videoDlq()).to(analysisDlx()).with(Q_VIDEO_DLQ); }
+    @Bean Binding bAudioDlq()   { return BindingBuilder.bind(audioDlq()).to(analysisDlx()).with(Q_AUDIO_DLQ); }
+    @Bean Binding bResultsDlq() { return BindingBuilder.bind(resultsDlq()).to(analysisDlx()).with(Q_RESULTS_DLQ); }
 
     @Bean
     MessageConverter jsonConverter() { return new JacksonJsonMessageConverter(); }
+
+    // Exhausted retries -> republish to analysis.results.dlq (with x-exception-* headers), then the
+    // original is acked. Spring Boot auto-associates a MessageRecoverer bean with the listener factory.
+    @Bean
+    MessageRecoverer republishRecoverer(RabbitTemplate rabbitTemplate) {
+        return new RepublishMessageRecoverer(rabbitTemplate, DLX, Q_RESULTS_DLQ);
+    }
 
     @Bean
     public RabbitTemplate rabbitTemplate(ConnectionFactory cf, MessageConverter c) {
         RabbitTemplate t = new RabbitTemplate(cf);
         t.setMessageConverter(c);
+        // Own template bean opts out of Boot's auto-observation, so enable it by hand to inject the
+        // W3C traceparent on publish. The listener side is enabled via application.yaml.
+        t.setObservationEnabled(true);
         return t;
     }
 }

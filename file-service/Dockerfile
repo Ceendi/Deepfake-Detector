@@ -8,6 +8,9 @@ COPY src ./src
 RUN ./mvnw package -DskipTests
 
 FROM eclipse-temurin:25-jre-alpine
+# ffmpeg provides ffprobe, used by the upload validation subprocess. Without it the container
+# would throw IOException at runtime even though local tests (host ffprobe) pass.
+RUN apk add --no-cache ffmpeg
 RUN addgroup -S app && adduser -S app -G app
 USER app
 WORKDIR /app

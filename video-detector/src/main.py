@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from prometheus_client import make_asgi_app
 
 from .consumer import run_consumer
 
@@ -32,6 +33,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+# Default process/python_gc metrics for Prometheus scrape (PR4). TODO(Osoba 3/4): add business
+# metrics (inference_latency_seconds, per-stage counters) in the pipeline.
+app.mount("/metrics", make_asgi_app())
 
 
 @app.get("/health")
