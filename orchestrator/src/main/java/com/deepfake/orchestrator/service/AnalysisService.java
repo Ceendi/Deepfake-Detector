@@ -34,6 +34,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -96,7 +97,13 @@ public class AnalysisService {
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_VIDEO, payload);
         }
         if (req.type() == AnalysisType.AUDIO || req.type() == AnalysisType.FULL) {
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, payload);
+            // mode is audio-only: it selects the audio model (fast = spectrogram, accurate = Wav2Vec2).
+            // Always sent explicitly (request normalizes null -> accurate) so queue payloads are
+            // self-describing; the video task keeps the unchanged contract.
+            Span.current().setAttribute("analysis.mode", req.mode().wire());
+            Map<String, Object> audioPayload = new HashMap<>(payload);
+            audioPayload.put("mode", req.mode().wire());
+            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, audioPayload);
         }
 
         return AnalysisResponse.from(analysis);
