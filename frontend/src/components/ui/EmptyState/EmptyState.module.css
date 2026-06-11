@@ -1,0 +1,85 @@
+/* Kontener rozciąga się na całą szerokość (rodzic w .page ma align-items: stretch) */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-4);
+  padding: var(--spacing-7) var(--spacing-5);
+  text-align: center;
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+}
+
+/* Wariant „dropzone" — przerywana obwódka jak strefa uploadu, podświetlana akcentem na hover */
+.dropzone {
+  border: 2px dashed var(--color-border);
+  transition:
+    border-color var(--transition-base),
+    background var(--transition-base);
+}
+.dropzone:hover {
+  border-color: var(--color-accent);
+}
+
+/* Wariant „card" — zwykła pełna karta (np. brak wyników filtrów) */
+.card {
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Kafelek z ikoną — wspólny rozmiar/kształt; ton dokłada tło + obramowanie */
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-md);
+}
+
+/* Brandowy, „onboardingowy" — dashed + ukośny hatch (jak kafelek w Dropzone) */
+.iconAccent {
+  border: 2px dashed var(--color-primary-300);
+  color: var(--color-accent);
+  background-color: var(--color-accent-surface);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--color-accent) 12%, transparent) 0,
+    color-mix(in srgb, var(--color-accent) 12%, transparent) 2px,
+    transparent 2px,
+    transparent 11px
+  );
+}
+
+/* Neutralny — płaski kafelek dla stanów „nic nie znaleziono" */
+.iconNeutral {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+}
+
+.text {
+  margin: 0;
+  max-width: 460px;
+  color: var(--color-text-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-3);
+}
+
+.hint {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
