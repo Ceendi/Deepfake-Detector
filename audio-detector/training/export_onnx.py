@@ -4,7 +4,7 @@ from train_w2v2 import Wav2Vec2LightningModule
 def export_w2v2_to_onnx():
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     CHECKPOINT_DIR = os.path.join(SCRIPT_DIR, "checkpoints", "w2v2")
-    LAST_CKPT = os.path.join(CHECKPOINT_DIR, "last.ckpt")
+    LAST_CKPT = os.path.join(CHECKPOINT_DIR, "w2v2_model-epoch=00-val_eer=0.0071.ckpt")
     ONNX_OUTPUT = os.path.join(CHECKPOINT_DIR, "w2v2.onnx")
     if not os.path.exists(LAST_CKPT):
         print(f"BŁĄD: Nie znaleziono checkpointu {LAST_CKPT}!")

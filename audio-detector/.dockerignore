@@ -7,11 +7,13 @@ training/cache*
 training/WaveFake*
 training/data/
 training/lightning_logs/
-training/checkpoints/w2v2/*.ckpt
-training/checkpoints/mel_resnet/mel_model*.ckpt
-# Bake the fp32 w2v2 into the image; int8 (slower on non-VNNI CPUs) and broken fp16 stay out.
-training/checkpoints/w2v2/w2v2_int8.onnx
-training/checkpoints/w2v2/w2v2_fp16.onnx
+# Ignoruj absolutnie wszystkie checkpointy, ważą gigabajty
+training/checkpoints/
+
+# Zrób wyjątek TYLKO dla tych dwóch plików, których potrzebuje inference.py:
+!training/checkpoints/w2v2/w2v2.onnx
+!training/checkpoints/mel_resnet/mel_model-epoch=00-val_eer=0.0020.ckpt
+!training/checkpoints/mel_resnet/last.ckpt
 *.flac
 *.wav
 *.parquet

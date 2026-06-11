@@ -16,7 +16,7 @@ dependencies = [
     "structlog==25.*",
     "boto3==1.42.*",
     "lightning==2.5.0",
-    "audiomentations>=0.37",
+    "audiomentations[extras]>=0.37",
     "librosa>=0.10",
     "soundfile>=0.12",
     "pandas>=2.0",
@@ -28,24 +28,37 @@ dependencies = [
     "onnxruntime",
     "transformers<4.44.0",
     "redis",
-    "matplotlib"
+    "matplotlib",
+    "pyroomacoustics>=0.10.1",
+    "seaborn>=0.13.2",
 ]
 
-# This image is inference-only and runs entirely on CPU (ONNX CPUExecutionProvider +
-# torch map_location='cpu'). Training is done on the host, outside the image. Pulling
-# CPU wheels instead of cu121 drops ~4.5 GB (nvidia/* CUDA libs + triton) from the image.
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchaudio = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }
-
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
+torch = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+]
+torchaudio = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+]
+torchvision = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+]
 
 [tool.ruff]
 target-version = "py312"

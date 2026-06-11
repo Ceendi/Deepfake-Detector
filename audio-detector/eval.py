@@ -36,10 +36,7 @@ def main():
     args = parser.parse_args()
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     if not args.data_module:
-        if "parquet" in args.dataset.lower() or "melspec" in args.dataset.lower() or "cache" in args.dataset.lower():
-            args.data_module = "training.datasets.ParquetASVspoofDataModule"
-        else:
-            args.data_module = "training.datasets.ASVspoofDataModule"
+        args.data_module = "training.datasets.ASVspoofDataModule"
     if not args.model_class:
         if "mel" in args.model.lower():
             args.model_class = "training.train_mel.MelCNNLightningModule"
