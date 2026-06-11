@@ -4,6 +4,8 @@ import torch.nn as nn
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar, EarlyStopping
 from transformers import Wav2Vec2ForSequenceClassification
+from sklearn.metrics import roc_curve
+import numpy as np
 try:
     from datasets import ASVspoofDataModule
 except ImportError:
@@ -12,8 +14,6 @@ except ImportError:
 # Aktywacja rdzeni Tensor (Tensor Cores) dla serii RTX 40
 torch.set_float32_matmul_precision('high')
 
-from sklearn.metrics import roc_curve
-import numpy as np
 
 def compute_eer(y_true, y_score):
     fpr, tpr, thresholds = roc_curve(y_true, y_score)
@@ -122,9 +122,9 @@ class InfoCallback(pl.Callback):
         epoch = trainer.current_epoch + 1
         max_epochs = trainer.max_epochs
         print(f"\n\n{'='*60}")
-        print(f"✅ Zakończono walidację (Epoka {epoch}/{max_epochs})!")
-        print(f"💾 Checkpointy zostały zaktualizowane (o ile wynik był lepszy).")
-        print(f"🛑 To jest w pełni BEZPIECZNY MOMENT, aby przerwać trening (Ctrl+C).")
+        print("✅ Zakończono walidację (Epoka {}/{})!".format(epoch, max_epochs))
+        print("💾 Checkpointy zostały zaktualizowane (o ile wynik był lepszy).")
+        print("🛑 To jest w pełni BEZPIECZNY MOMENT, aby przerwać trening (Ctrl+C).")
         print(f"{'='*60}\n")
 
 if __name__ == "__main__":

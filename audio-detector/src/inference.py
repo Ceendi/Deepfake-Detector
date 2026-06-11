@@ -1,7 +1,6 @@
 import os
 import subprocess
 import torch
-import torchaudio
 import numpy as np
 import soundfile as sf
 import onnxruntime as ort
@@ -17,7 +16,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(PROJECT_ROOT)
 
-from training.train_mel import MelCNNLightningModule
+from training.train_mel import MelCNNLightningModule  # noqa: E402
 
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
 MEL_CKPT_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "last.ckpt")
