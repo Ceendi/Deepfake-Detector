@@ -54,6 +54,8 @@ class AnalysisServiceFailFromDlqTest {
         assertThat(msg.getValue()).isEqualTo("dead-letter: boom");
         verify(backpressure).release();
         verify(streams).complete(id);
+        verify(metrics).dlqFailure();
+        verify(metrics, never()).stuckRecovery();
     }
 
     @Test
@@ -67,6 +69,8 @@ class AnalysisServiceFailFromDlqTest {
         verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
         assertThat(msg.getValue()).contains("stuck > 600s");
         verify(backpressure).release();
+        verify(metrics).stuckRecovery();
+        verify(metrics, never()).dlqFailure();
     }
 
     // CAS returns 0 for both already-terminal and unknown ids (the mock default), so the transition
@@ -79,6 +83,7 @@ class AnalysisServiceFailFromDlqTest {
         verify(repository, never()).findById(any());
         verify(backpressure, never()).release();
         verify(streams, never()).sendResult(any(), any());
+        verify(metrics, never()).dlqFailure();
     }
 
     private Analysis analysis(AnalysisStatus status) {

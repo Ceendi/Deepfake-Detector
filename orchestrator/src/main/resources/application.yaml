@@ -50,9 +50,11 @@ spring:
         # Spans (traceId in MDC) for the consumer thread; reads traceparent off the message.
         observation-enabled: true
         # Exhausted retries -> RepublishMessageRecoverer (RabbitConfig) -> analysis.results.dlq.
+        # max-retries counts REDELIVERIES (3 = 4 attempts total); SB 4.0 dropped max-attempts —
+        # the old key binds nowhere and is silently ignored.
         retry:
           enabled: true
-          max-attempts: 4
+          max-retries: 3
           initial-interval: 1s
           multiplier: 4
           max-interval: 15s
