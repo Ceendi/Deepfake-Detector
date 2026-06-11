@@ -44,10 +44,13 @@ except Exception as e:
 def process(msg: dict, progress_callback=None) -> dict:
     if not audio_inference:
         raise RuntimeError("AudioInference module not initialized properly.")
+    
+    mode = msg.get("mode", "accurate")
     input_path = f"/tmp/{msg['analysis_id']}_input"
-    log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"])
+    log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"], mode=mode)
     s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
-    result = audio_inference.analyze(input_path, progress_callback=progress_callback)
+    
+    result = audio_inference.analyze(input_path, mode=mode, progress_callback=progress_callback)
     gradcam_url = None
     if "local_gradcam_path" in result and os.path.exists(result["local_gradcam_path"]):
         gradcam_key = f"{msg['analysis_id']}/gradcam.png"
