@@ -1,0 +1,61 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+}
+
+.head h1 {
+  margin: 0;
+}
+.subtitle {
+  margin: var(--spacing-1) 0 0;
+  color: var(--color-text-muted);
+}
+
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  padding: var(--spacing-3) var(--spacing-5);
+}
+.row + .row {
+  border-top: 1px solid var(--color-border);
+}
+.rowLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+.rowValue {
+  font-weight: var(--font-weight-medium);
+}
+
+.raw {
+  margin: 0;
+  padding: var(--spacing-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  overflow: auto;
+}
+
+.back {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-8);
+}
