@@ -22,7 +22,8 @@ from training.train_mel import MelCNNLightningModule
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
 MEL_CKPT_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "last.ckpt")
 
-EER_THRESHOLD = float(os.getenv("EER_THRESHOLD", "0.3049"))
+MEL_EER_THRESHOLD = float(os.getenv("MEL_EER_THRESHOLD", "0.3049"))
+W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.5000"))
 
 INFERENCE_TIME = Histogram(
     "audio_inference_duration_seconds",
@@ -37,7 +38,7 @@ MODEL_LOAD_TIME = Gauge(
 class AudioInference:
     def __init__(self):
         start_load = time.time()
-        # self.w2v2_session = ort.InferenceSession(W2V2_ONNX_PATH, providers=['CPUExecutionProvider'])
+        self.w2v2_session = ort.InferenceSession(W2V2_ONNX_PATH, providers=['CPUExecutionProvider'])
         
         self.mel_module = MelCNNLightningModule.load_from_checkpoint(MEL_CKPT_PATH, map_location=torch.device('cpu'))
         self.mel_module.eval()
@@ -119,19 +120,19 @@ class AudioInference:
 
         return out_png_path
 
-    def _generate_insights(self, segment_predictions, overall_prob):
+    def _generate_insights(self, segment_predictions, overall_prob, threshold):
         insights = []
         if not segment_predictions:
             return ["Brak danych do analizy odcinkowej."]
 
-        if overall_prob > max(0.85, EER_THRESHOLD + 0.35):
+        if overall_prob > max(0.85, threshold + 0.35):
             insights.append("Całe nagranie wykazuje spójne, bardzo wysokie parametry syntezy AI - model wskazuje na mocną ingerencję lub całkowite wygenerowanie głosu.")
-        elif overall_prob < min(0.15, EER_THRESHOLD - 0.35):
+        elif overall_prob < min(0.15, threshold - 0.35):
             insights.append("Sygnał audio jest w pełni naturalny, nie wykryto żadnych śladów modulacji AI.")
 
-        fake_segments = [s for s in segment_predictions if s["prob_fake"] > EER_THRESHOLD]
+        fake_segments = [s for s in segment_predictions if s["prob_fake"] > threshold]
 
-        if fake_segments and overall_prob <= max(0.85, EER_THRESHOLD + 0.35):
+        if fake_segments and overall_prob <= max(0.85, threshold + 0.35):
             clusters = []
             current_cluster = [fake_segments[0]]
             for s in fake_segments[1:]:
@@ -149,7 +150,7 @@ class AudioInference:
             
             if len(biggest_cluster) >= 3:
                 insights.append(f"Najwyższe stężenie cech deepfake występuje w fragmencie nagrania od {start_time:.1f}s do {end_time:.1f}s.")
-            elif len(fake_segments) <= 3 and overall_prob < EER_THRESHOLD:
+            elif len(fake_segments) <= 3 and overall_prob < threshold:
                 peak = max(fake_segments, key=lambda x: x["prob_fake"])
                 insights.append(f"Nagranie brzmi w większości naturalnie, jednak zidentyfikowano krótkie, podejrzane artefakty w okolicy {peak['start_time']:.1f}s - {peak['end_time']:.1f}s.")
 
@@ -159,8 +160,10 @@ class AudioInference:
         return insights
 
     @INFERENCE_TIME.time()
-    def analyze(self, file_path, progress_callback=None):
+    def analyze(self, file_path, mode="accurate", progress_callback=None):
         start_analysis = time.time()
+        
+        threshold = MEL_EER_THRESHOLD if mode == "fast" else W2V2_EER_THRESHOLD
         
         if progress_callback:
             progress_callback(5, "EXTRACTING_AUDIO")
@@ -203,17 +206,17 @@ class AudioInference:
                 continue
             # --------------------------------------
             
-            chunk_16_np = chunk_16_tensor.unsqueeze(0).numpy()
-            # w2v2_outs = self.w2v2_session.run(None, {"input_values": chunk_16_np})
-            # w2v2_logits = w2v2_outs[0][0][0]
-            # prob_b = 1.0 / (1.0 + np.exp(-w2v2_logits))
-            
-            with torch.no_grad():
-                mel_logits = self.mel_module(chunk_16_tensor.unsqueeze(0))
-                prob_a = torch.sigmoid(mel_logits).item()
-            
-            # TYMCZASOWO: Testowanie tylko modelu MEL
-            final_prob = float(prob_a) # 0.4 * prob_a + 0.6 * float(prob_b)
+            if mode == "fast":
+                with torch.no_grad():
+                    mel_logits = self.mel_module(chunk_16_tensor.unsqueeze(0))
+                    prob_a = torch.sigmoid(mel_logits).item()
+                final_prob = float(prob_a)
+            else:
+                chunk_16_np = chunk_16_tensor.unsqueeze(0).numpy()
+                w2v2_outs = self.w2v2_session.run(None, {"input_values": chunk_16_np})
+                w2v2_logits = w2v2_outs[0][0][0]
+                prob_b = 1.0 / (1.0 + np.exp(-w2v2_logits))
+                final_prob = float(prob_b)
             start_time = i * 0.5
             end_time = start_time + 1.0
             
@@ -247,16 +250,16 @@ class AudioInference:
             probs = [seg["prob_fake"] for seg in segment_predictions]
             overall_prob = float(np.median(probs))
         else:
-            overall_prob = EER_THRESHOLD
+            overall_prob = threshold
             
-        insights = self._generate_insights(segment_predictions, overall_prob)
+        insights = self._generate_insights(segment_predictions, overall_prob, threshold)
         end_analysis = time.time()
         
         return {
             "prob_fake": round(overall_prob, 4),
-            "verdict": "FAKE" if overall_prob > EER_THRESHOLD else "REAL",
-            "confidence": round(abs(overall_prob - EER_THRESHOLD) / max(EER_THRESHOLD, 1.0 - EER_THRESHOLD), 4),
-            "model_version": "v1.2.0-domain-shift",
+            "verdict": "FAKE" if overall_prob > threshold else "REAL",
+            "confidence": round(abs(overall_prob - threshold) / max(threshold, 1.0 - threshold), 4),
+            "model_version": f"v1.2.0-{mode}",
             "local_gradcam_path": gradcam_path,
             "metadata": {
                 "duration_seconds": round(duration_sec, 2),
@@ -264,6 +267,7 @@ class AudioInference:
                 "segments_processed": num_chunks,
                 "segment_predictions": segment_predictions,
                 "insights": insights,
-                "threshold_used": EER_THRESHOLD
+                "threshold_used": threshold,
+                "mode_used": mode
             }
         }
