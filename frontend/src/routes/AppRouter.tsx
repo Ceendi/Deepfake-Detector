@@ -39,7 +39,7 @@ const router = createBrowserRouter([
             element: <LazyUpload />,
           },
           {
-            path: '/analysis-result',
+            path: '/analysis-result/:id',
             element: <LazyAnalysisResult />,
           },
           {
