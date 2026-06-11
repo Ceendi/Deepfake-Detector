@@ -115,6 +115,19 @@
         { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "hikaricp_connections_pending{job=\"orchestrator\"}", "legendFormat": "pending" },
         { "refId": "D", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "hikaricp_connections_max{job=\"orchestrator\"}", "legendFormat": "max" }
       ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Reliability (D6) — DLQ / stuck / listener retries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "min": 0, "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(analyses_dlq_total[5m]))", "legendFormat": "DLQ failures" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(analyses_stuck_recovered_total[5m]))", "legendFormat": "stuck recovered" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" }, "expr": "sum(rate(amqp_listener_retries_total[5m]))", "legendFormat": "listener retries" }
+      ]
     }
   ]
 }
