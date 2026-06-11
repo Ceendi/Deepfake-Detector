@@ -40,7 +40,7 @@ import com.deepfake.orchestrator.service.AnalysisService;
         properties = {
                 "spring.rabbitmq.listener.simple.acknowledge-mode=auto",
                 "spring.rabbitmq.listener.simple.retry.enabled=true",
-                "spring.rabbitmq.listener.simple.retry.max-attempts=3",
+                "spring.rabbitmq.listener.simple.retry.max-retries=2",
                 // Tiny intervals so the test isn't gated on the production 1s/4s/15s backoff.
                 "spring.rabbitmq.listener.simple.retry.initial-interval=50ms",
                 "spring.rabbitmq.listener.simple.retry.multiplier=2",
