@@ -8,6 +8,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
@@ -33,7 +34,10 @@ class OrchestratorApplicationTests {
             new GenericContainer<>(DockerImageName.parse("rabbitmq:4.3.1-alpine"))
                     .withEnv("RABBITMQ_DEFAULT_USER", "test")
                     .withEnv("RABBITMQ_DEFAULT_PASS", "test")
-                    .withExposedPorts(5672);
+                    .withExposedPorts(5672)
+                    // Port-wait alone is not enough: Docker Desktop accepts TCP on the mapped port
+                    // before the broker is up, so early AMQP handshakes fail (flaky on Windows).
+                    .waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {

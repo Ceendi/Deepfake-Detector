@@ -2,15 +2,16 @@ package com.deepfake.orchestrator.listener;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doAnswer;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.core.Message;
+import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.amqp.autoconfigure.RabbitAutoConfiguration;
@@ -31,23 +32,17 @@ import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.service.AnalysisService;
 
 /**
- * A handler that keeps throwing is retried, then republished to analysis.results.dlq and acked
- * (no infinite redelivery). Verifies retry + recoverer auto-wire on the Boot 4.0 factory. Needs Docker.
+ * D6 resilience: a broker restart must not require an app restart. The broker process is bounced
+ * via rabbitmqctl stop_app/start_app (container and mapped port survive, all AMQP connections
+ * drop), then both sides must self-heal: RabbitTemplate opens a fresh connection on the next
+ * publish, the listener container reconnects on its recovery loop and consumes the new message.
+ * Durable queues/bindings persist across the bounce. Needs Docker.
  */
 @Testcontainers
 @SpringBootTest(
-        classes = AnalysisResultRetryIntegrationTest.TestConfig.class,
-        properties = {
-                "spring.rabbitmq.listener.simple.acknowledge-mode=auto",
-                "spring.rabbitmq.listener.simple.retry.enabled=true",
-                "spring.rabbitmq.listener.simple.retry.max-attempts=3",
-                // Tiny intervals so the test isn't gated on the production 1s/4s/15s backoff.
-                "spring.rabbitmq.listener.simple.retry.initial-interval=50ms",
-                "spring.rabbitmq.listener.simple.retry.multiplier=2",
-                "spring.rabbitmq.listener.simple.retry.max-interval=200ms",
-                "eureka.client.enabled=false"
-        })
-class AnalysisResultRetryIntegrationTest {
+        classes = RabbitRestartReconnectIntegrationTest.TestConfig.class,
+        properties = {"eureka.client.enabled=false"})
+class RabbitRestartReconnectIntegrationTest {
 
     @Container
     static final GenericContainer<?> rabbit =
@@ -74,20 +69,49 @@ class AnalysisResultRetryIntegrationTest {
     AnalysisService analysisService;
 
     @Test
-    void exhaustedRetriesLandInResultsDlq() {
-        doThrow(new RuntimeException("boom")).when(analysisService).handleResult(any());
+    void listenerAndPublisherRecoverAfterBrokerRestart() throws Exception {
+        CountDownLatch firstDelivery = new CountDownLatch(1);
+        CountDownLatch secondDelivery = new CountDownLatch(2);
+        doAnswer(inv -> {
+            firstDelivery.countDown();
+            secondDelivery.countDown();
+            return null;
+        }).when(analysisService).handleResult(any());
 
-        UUID id = UUID.randomUUID();
+        sendResult();
+        assertThat(firstDelivery.await(15, TimeUnit.SECONDS))
+                .as("baseline delivery before the restart").isTrue();
+
+        rabbit.execInContainer("rabbitmqctl", "stop_app");
+        rabbit.execInContainer("rabbitmqctl", "start_app");
+
+        sendResultRetrying(Duration.ofSeconds(60));
+
+        assertThat(secondDelivery.await(30, TimeUnit.SECONDS))
+                .as("listener should reconnect and consume after the broker restart").isTrue();
+    }
+
+    private void sendResult() {
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_RESULTS,
-                Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED"));
+                Map.of("analysis_id", UUID.randomUUID().toString(),
+                        "source", "video", "status", "COMPLETED"));
+    }
 
-        Message dead = rabbitTemplate.receive(RabbitConfig.Q_RESULTS_DLQ, 15_000);
-
-        assertThat(dead).as("failed result should be republished to the DLQ").isNotNull();
-        assertThat(dead.getMessageProperties().getHeaders()).containsKey("x-exception-message");
-        // original was acked after republish — nothing loops back
-        assertThat(rabbitTemplate.receive(RabbitConfig.Q_RESULTS, 200)).isNull();
-        verify(analysisService, atLeast(3)).handleResult(any());
+    // Publishing right after start_app can still hit a dead cached connection; keep trying until
+    // the template re-establishes one (that lazy re-open IS the recovery behaviour under test).
+    private void sendResultRetrying(Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (true) {
+            try {
+                sendResult();
+                return;
+            } catch (AmqpException e) {
+                if (System.nanoTime() > deadline) {
+                    throw e;
+                }
+                Thread.sleep(500);
+            }
+        }
     }
 
     @Configuration
