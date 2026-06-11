@@ -65,7 +65,7 @@ class AnalysisServiceBackpressureTest {
         when(repository.save(any())).thenReturn(
                 Analysis.builder().id(id).userId("alice").type(AnalysisType.VIDEO).build());
 
-        service.create(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO), "alice");
+        service.create(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO, null), "alice");
 
         verify(backpressure).acquire();
     }
@@ -75,7 +75,7 @@ class AnalysisServiceBackpressureTest {
         doThrow(new TooManyAnalysesException(21, 5)).when(backpressure).acquire();
 
         assertThatThrownBy(() ->
-                service.create(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO), "alice"))
+                service.create(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO, null), "alice"))
                 .isInstanceOf(TooManyAnalysesException.class);
 
         verifyNoInteractions(repository);
