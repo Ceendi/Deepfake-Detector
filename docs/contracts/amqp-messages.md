@@ -59,9 +59,17 @@ Published to `analysis.video` or `analysis.audio`.
   "file_bucket": "deepfake-uploads",
   "file_key": "550e8400-e29b-41d4-a716-446655440000_test.mp4",
   "correlation_id": "corr-uuid",
-  "timestamp": "2026-04-21T10:30:00Z"
+  "timestamp": "2026-04-21T10:30:00Z",
+  "mode": "accurate"
 }
 ```
+
+`mode` — **audio tasks only** (optional). Selects the audio model: `"fast"` =
+lightweight spectrogram model, `"accurate"` = Wav2Vec2 waveform analysis (slower,
+robust to recent generators, e.g. ElevenLabs). The Audio Detector falls back to
+`"accurate"` when the field is missing; the Orchestrator nevertheless always sends
+it explicitly (REST `mode` absent → `"accurate"`). Video tasks do not carry the
+field.
 
 `file_key` follows the convention from
 [`object-storage.md`](./object-storage.md): full `{fileId}` UUID + `_` +
