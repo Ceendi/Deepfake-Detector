@@ -1,0 +1,288 @@
+/* =========================================================================
+   Keycloakify login theme — brand shell + formularz, spójne z apką (tokens.css).
+   Wspólny Template dla WSZYSTKICH ekranów auth + custom Login/Register.
+   doUseDefaultCss=false → zero PatternFly; pełna kontrola przez te klasy
+   (część mapowana w KcPage na klucze kcClsx dla dynamicznych pól Register).
+   Dark mode: prefers-color-scheme (tokeny semantyczne flipują automatycznie).
+   ========================================================================= */
+
+/* ---- Pełnoekranowy ekran + poświata akcentu (jak Login.module.css apki) -- */
+.screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--spacing-5) var(--spacing-4);
+  background: radial-gradient(
+    120% 80% at 50% -10%,
+    var(--color-accent-surface) 0%,
+    var(--color-surface) 55%
+  );
+}
+
+/* ---- Karta ------------------------------------------------------------- */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  width: 100%;
+  max-width: 420px;
+  padding: var(--spacing-6) var(--spacing-5);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+/* ---- Marka + nagłówek (logo akcentu jak w Headerze) -------------------- */
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-2);
+  text-align: center;
+}
+.brandMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--spacing-1);
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.eyebrow {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+}
+.requiredHint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.requiredStar {
+  color: var(--color-danger);
+}
+
+/* ---- Alerty (kcContext.message) --------------------------------------- */
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: var(--font-size-sm);
+}
+.alert svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.alertError {
+  background: var(--color-danger-surface);
+  border-color: color-mix(in srgb, var(--color-danger) 35%, transparent);
+  color: var(--color-danger);
+}
+.alertWarning {
+  background: var(--color-warning-surface);
+  border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
+  color: var(--color-warning);
+}
+.alertSuccess {
+  background: var(--color-success-surface);
+  border-color: color-mix(in srgb, var(--color-success) 35%, transparent);
+  color: var(--color-success);
+}
+.alertInfo {
+  background: var(--color-accent-surface);
+  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
+  color: var(--color-accent);
+}
+
+/* ---- Formularz (Login custom + mapowane pola Register) ----------------- */
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+.label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+/* Input — wartości skopiowane z components/ui/Input/Input.module.css (parytet) */
+.input {
+  width: 100%;
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--font-size-sm);
+}
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+.input:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
+}
+.input[aria-invalid='true'] {
+  outline: 3px solid color-mix(in srgb, var(--color-danger) 45%, transparent);
+  outline-offset: 1px;
+  border-color: var(--color-danger);
+}
+
+/* Grupa hasła (input + toggle podglądu) */
+.inputGroup {
+  position: relative;
+  display: flex;
+}
+.inputGroup .input {
+  padding-right: calc(var(--spacing-7) + var(--spacing-1));
+}
+.passwordToggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--spacing-3);
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.passwordToggle:hover {
+  color: var(--color-text-primary);
+}
+
+.inputError {
+  font-size: var(--font-size-xs);
+  color: var(--color-danger);
+}
+
+/* ---- Opcje (remember me + zapomniane hasło) ---------------------------- */
+.options {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.checkboxInput {
+  accent-color: var(--color-accent);
+}
+
+/* ---- Linki ------------------------------------------------------------- */
+.link {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-accent);
+}
+.link:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+/* ---- Przycisk pełnej szerokości (klasa dla mojego <Button>) ------------ */
+.actionBtn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ---- Zmapowane kc-buttony (strony dziedziczące DefaultPage) ------------- */
+.kcButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2) var(--spacing-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  cursor: pointer;
+}
+.kcButtonPrimary {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.kcButtonPrimary:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+.kcButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.kcButtonBlock {
+  width: 100%;
+}
+
+/* ---- Strefa info (np. link do rejestracji) ---------------------------- */
+.info {
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* ---- Stopka (hairline + nota Keycloak, jak chip „managed" w Profilu) --- */
+.footer {
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--color-border);
+}
+.note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.note svg {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}
+
+/* ---- Selektor języka (minimalny, tylko gdy >1 język) ------------------- */
+.locale {
+  align-self: flex-end;
+  display: inline-flex;
+  gap: var(--spacing-2);
+}
+.localeActive {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}

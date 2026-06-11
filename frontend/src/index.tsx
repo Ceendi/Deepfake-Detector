@@ -1,24 +1,23 @@
-import { StrictMode } from 'react'
+/* eslint-disable react-refresh/only-export-components -- to jest entry point, nie moduł komponentu */
+import { StrictMode, Suspense, lazy } from 'react'
 import { createRoot } from 'react-dom/client'
 
-import '@/styles/reset.css'
-import '@/styles/tokens.css'
-import '@/styles/global.css'
+import { KcPage } from './keycloak-theme/kc.gen'
 
-import { AppRouter } from '@/routes/AppRouter'
-import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary'
-
-import { ThemeProvider } from './context/ThemeContext'
-import { AuthProvider } from './context/AuthContext'
+// Keycloakify wstrzykuje `window.kcContext` w HTML stron logowania/rejestracji serwowanych
+// przez Keycloacka. Jeśli jest → renderujemy theme KC (React). W przeciwnym razie (normalne
+// wejście na :5173) → lazy-ładujemy całą aplikację SPA. Dzięki temu kod KC nie wchodzi do
+// głównego bundla apki i odwrotnie.
+const AppEntrypoint = lazy(() => import('./main.app'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ErrorBoundary>
-      <ThemeProvider>
-        <AuthProvider>
-          <AppRouter />
-        </AuthProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
+    {window.kcContext ? (
+      <KcPage kcContext={window.kcContext} />
+    ) : (
+      <Suspense>
+        <AppEntrypoint />
+      </Suspense>
+    )}
   </StrictMode>,
 )
