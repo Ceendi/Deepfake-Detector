@@ -54,6 +54,24 @@ class AnalysisMetricsTest {
         assertThat(registry.get("analysis.duration").tag("type", "video").timer().count()).isEqualTo(1L);
     }
 
+    // D6 counters must exist at 0 right after construction (rate()/alerts need the series present
+    // before the first failure) and move by exactly one per call.
+    @Test
+    void reliabilityCountersAreEagerlyRegisteredAndIncrement() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        AnalysisMetrics metrics = new AnalysisMetrics(registry, redis);
+
+        assertThat(registry.get("analyses.dlq").counter().count()).isZero();
+        assertThat(registry.get("analyses.stuck.recovered").counter().count()).isZero();
+
+        metrics.dlqFailure();
+        metrics.stuckRecovery();
+        metrics.stuckRecovery();
+
+        assertThat(registry.get("analyses.dlq").counter().count()).isEqualTo(1.0);
+        assertThat(registry.get("analyses.stuck.recovered").counter().count()).isEqualTo(2.0);
+    }
+
     // Pins the actual Prometheus exposition names — Micrometer must not double the _total suffix.
     @Test
     void prometheusScrapeUsesExpectedNames() {
@@ -72,5 +90,8 @@ class AnalysisMetricsTest {
         assertThat(scrape).contains("cache_requests_total{");
         assertThat(scrape).doesNotContain("cache_requests_total_total");
         assertThat(scrape).contains("analyses_inflight");
+        assertThat(scrape).contains("analyses_dlq_total");
+        assertThat(scrape).doesNotContain("analyses_dlq_total_total");
+        assertThat(scrape).contains("analyses_stuck_recovered_total");
     }
 }

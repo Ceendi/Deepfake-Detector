@@ -241,22 +241,29 @@ public class AnalysisService {
 
     // Dead-lettered message: the DLQ consumer asks us to fail the analysis.
     public void failFromDlq(UUID id, String reason) {
-        transitionToFailed(id, "dead-letter: " + reason);
+        if (transitionToFailed(id, "dead-letter: " + reason)) {
+            metrics.dlqFailure();
+        }
     }
 
     // Stuck-job recovery asks us to fail an analysis that hasn't progressed past its threshold.
     public void failStuck(UUID id, long thresholdSeconds) {
-        transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery");
+        if (transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery")) {
+            metrics.stuckRecovery();
+        }
     }
 
     // Shared terminal-failure transition. The CAS is the guard: a late result and recovery firing
-    // together still release the slot exactly once (only one gets 1 row).
-    private void transitionToFailed(UUID id, String errorMessage) {
+    // together still release the slot exactly once (only one gets 1 row). Returns whether this call
+    // won, so callers count their cause-specific D6 metric only for the winning transition — keeping
+    // analyses_dlq_total / analyses_stuck_recovered_total aligned with analyses_total{status=failed}.
+    private boolean transitionToFailed(UUID id, String errorMessage) {
         if (repository.failIfActive(id, AnalysisStatus.FAILED, errorMessage, ACTIVE, Instant.now()) == 1) {
             onTerminal(id);
-        } else {
-            log.info("fail requested for non-active analysis {}, ignoring", id);
+            return true;
         }
+        log.info("fail requested for non-active analysis {}, ignoring", id);
+        return false;
     }
 
     // Side effects shared by every terminal transition (status already CAS-written). Re-reads because
