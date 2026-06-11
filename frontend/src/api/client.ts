@@ -70,14 +70,19 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 // z Gateway) albo backpressure ({ queuePosition, retryAfterSeconds }).
 async function toApiError(response: Response, sentCorrelationId: string): Promise<ApiError> {
   const correlationId = response.headers.get('X-Correlation-Id') ?? sentCorrelationId
+  const data = await readJsonSafe(response)
+  return apiErrorFrom(response.status, data, correlationId)
+}
 
+// Buduje ApiError ze statusu + (opcjonalnego) sparsowanego body. Współdzielone przez fetch (tu),
+// XHR upload (api/files.ts) i SSE (api/stream.ts) — jedno miejsce mapowania body → ApiError.
+export function apiErrorFrom(status: number, body: unknown, correlationId?: string): ApiError {
   let code: string | undefined
-  let message = `Żądanie nie powiodło się (HTTP ${response.status})`
+  let message = `Żądanie nie powiodło się (HTTP ${status})`
   let backpressure: BackpressureInfo | undefined
 
-  const data = await readJsonSafe(response)
-  if (data && typeof data === 'object') {
-    const obj = data as Record<string, unknown>
+  if (body && typeof body === 'object') {
+    const obj = body as Record<string, unknown>
     if (typeof obj.code === 'string') code = obj.code
     if (typeof obj.message === 'string') message = obj.message
     if (typeof obj.queuePosition === 'number' && typeof obj.retryAfterSeconds === 'number') {
@@ -85,7 +90,7 @@ async function toApiError(response: Response, sentCorrelationId: string): Promis
     }
   }
 
-  return new ApiError({ status: response.status, message, code, correlationId, backpressure })
+  return new ApiError({ status, message, code, correlationId, backpressure })
 }
 
 async function readJsonSafe(response: Response): Promise<unknown> {
