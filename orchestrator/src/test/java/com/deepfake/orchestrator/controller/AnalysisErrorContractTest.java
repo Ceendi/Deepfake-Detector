@@ -37,6 +37,7 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.service.ArtifactService;
 
 /**
  * List endpoint + uniform error contract (GlobalExceptionHandler, auto-included as
@@ -53,6 +54,9 @@ class AnalysisErrorContractTest {
 
     @MockitoBean
     AnalysisService service;
+
+    @MockitoBean
+    ArtifactService artifactService;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
