@@ -62,6 +62,15 @@ eureka:
   client:
     service-url:
       defaultZone: http://eureka-server:8761/eureka/
+storage:
+  endpoint: ${S3_ENDPOINT:http://seaweedfs:8333}
+  region: us-east-1
+  # Read-only identity scoped to analysis-artifacts (infra/seaweedfs/s3.json) — the orchestrator
+  # serves Grad-CAM PNGs but must not be able to read user uploads. Dev defaults let the context
+  # start without S3 (client construction is offline; calls fail-soft to 404/503 in the endpoint).
+  access-key: ${S3_ORCHESTRATOR_KEY:dev-unset}
+  secret-key: ${S3_ORCHESTRATOR_SECRET:dev-unset}
+  artifacts-bucket: analysis-artifacts
 backpressure:
   # Max concurrent in-flight analyses before POST /api/analysis returns 429 (counts analyses, not
   # detector tasks). Env-overridable so load tests can trip it (e.g. =2 with dummy ML).
