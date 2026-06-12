@@ -47,6 +47,10 @@ def process(msg: dict, progress_callback=None) -> dict:
     
     mode = msg.get("mode", "accurate")
     input_path = f"/tmp/{msg['analysis_id']}_input"
+    # Start-ping before the S3 download: flips the analysis PENDING -> PROCESSING immediately,
+    # so a long download doesn't look like a stuck PENDING job (amqp-messages.md).
+    if progress_callback:
+        progress_callback(0, "LOADING")
     log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"], mode=mode)
     s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
     
