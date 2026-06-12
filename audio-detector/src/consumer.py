@@ -51,17 +51,19 @@ def process(msg: dict, progress_callback=None) -> dict:
     s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
     
     result = audio_inference.analyze(input_path, mode=mode, progress_callback=progress_callback)
-    gradcam_url = None
+    # Contract (amqp-messages.md): gradcam_keys = bare object keys following
+    # {analysisId}/{source}/{name}.png from object-storage.md. No URI scheme, no bucket prefix.
+    gradcam_keys = []
     if "local_gradcam_path" in result and os.path.exists(result["local_gradcam_path"]):
-        gradcam_key = f"{msg['analysis_id']}/gradcam.png"
+        gradcam_key = f"{msg['analysis_id']}/{SOURCE}/gradcam.png"
         try:
             s3_client.upload_file(
-                result["local_gradcam_path"], 
-                "analysis-artifacts", 
+                result["local_gradcam_path"],
+                "analysis-artifacts",
                 gradcam_key,
                 ExtraArgs={"ContentType": "image/png"}
             )
-            gradcam_url = f"minio://analysis-artifacts/{gradcam_key}"
+            gradcam_keys.append(gradcam_key)
         except Exception as e:
             log.error("gradcam_upload_failed", error=str(e))
         finally:
@@ -69,7 +71,7 @@ def process(msg: dict, progress_callback=None) -> dict:
             del result["local_gradcam_path"]
     if os.path.exists(input_path):
         os.remove(input_path)
-    result["gradcam_url"] = gradcam_url
+    result["gradcam_keys"] = gradcam_keys
     return result
 def _publish(ch, routing_key: str, payload: dict) -> None:
     ch.basic_publish(
@@ -93,13 +95,20 @@ def _handle_message(ch, method, properties, body):
         correlation_id=correlation_id,
         source=SOURCE,
     )
+    # Per-source dedup key (CLAUDE.md): a FULL analysis is two independent tasks under one id —
+    # without :{source} the second detector would see "duplicate" and drop its task. Fail-open:
+    # Redis down must not fail the analysis (the Orchestrator's dedup + DB guard is the authority).
+    dedup_key = f"processing:{analysis_id}:{SOURCE}"
     try:
-        log.info("processing_started")
-        if not redis_client.setnx(f"processing:{analysis_id}", "1"):
+        if not redis_client.set(dedup_key, "1", nx=True, ex=3600):
             log.warning("duplicate_message_dropped", reason="already_processing")
             ch.basic_ack(delivery_tag=method.delivery_tag)
+            structlog.contextvars.clear_contextvars()
             return
-        redis_client.expire(f"processing:{analysis_id}", 3600)
+    except redis.RedisError as e:
+        log.warning("dedup_check_skipped", reason="redis_unavailable", error=str(e))
+    try:
+        log.info("processing_started")
         def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
             payload = {
                 "analysis_id": analysis_id,
@@ -126,6 +135,12 @@ def _handle_message(ch, method, properties, body):
     except Exception as e:
         PROCESSED_AUDIO_TOTAL.labels(status="error").inc()
         log.exception("processing_failed")
+        # Release the dedup key: a retried/redelivered message must be processable again,
+        # otherwise it would bounce off SETNX and the analysis would hang until stuck-recovery.
+        try:
+            redis_client.delete(dedup_key)
+        except redis.RedisError:
+            pass  # fail-open; TTL reaps it
         _publish(ch, "analysis.results", {
             "analysis_id": analysis_id,
             "correlation_id": correlation_id,
