@@ -36,6 +36,11 @@ dependencies = [
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
+# Consumer tests stub src.inference, so they run without the ML stack:
+#   uv pip install pika structlog boto3 redis prometheus-client pytest && pytest tests
+[dependency-groups]
+dev = ["pytest>=8"]
+
 [[tool.uv.index]]
 name = "pytorch-cu126"
 url = "https://download.pytorch.org/whl/cu126"
