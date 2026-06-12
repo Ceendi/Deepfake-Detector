@@ -90,7 +90,12 @@ Published to `analysis.progress` while processing.
 }
 ```
 
-`stage` values: `LOADING`, `PREPROCESSING`, `INFERENCE`, `POSTPROCESSING`.
+`stage` values: `LOADING`, `PREPROCESSING`, `INFERENCE`, `POSTPROCESSING`. This is a
+closed set — clients switch on it, detectors must not invent their own names.
+
+`details` (optional) — small detector-defined object with stage context, e.g. the audio
+detector sends `{ "current_segment": 12, "total_segments": 40 }` during `INFERENCE`.
+Consumers must tolerate its absence.
 
 Detectors send a start-ping (`progress: 0`, `stage: LOADING`) as soon as they pick up
 a task. The Orchestrator flips the analysis `PENDING` → `PROCESSING` on it and treats

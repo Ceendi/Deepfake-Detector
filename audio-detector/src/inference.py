@@ -45,10 +45,15 @@ class AudioInference:
         MODEL_LOAD_TIME.set(time.time() - start_load)
 
     def _extract_audio(self, input_path, sr, out_path):
-        subprocess.run([
+        # Surface ffmpeg failures here: with stderr discarded a bad input only blew up later
+        # as a cryptic sf.read error on the missing/empty wav.
+        proc = subprocess.run([
             "ffmpeg", "-y", "-i", input_path,
             "-ar", str(sr), "-ac", "1", out_path
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            tail = proc.stderr.decode(errors="replace").strip()[-500:]
+            raise RuntimeError(f"ffmpeg extraction failed (rc={proc.returncode}): {tail}")
 
     def _load_wav(self, path):
         # torchaudio 2.11 routes load() through torchcodec (not bundled); soundfile is already a
@@ -164,8 +169,10 @@ class AudioInference:
         
         threshold = MEL_EER_THRESHOLD if mode == "fast" else W2V2_EER_THRESHOLD
         
+        # Stage values are the contract set (amqp-messages.md): LOADING / PREPROCESSING /
+        # INFERENCE / POSTPROCESSING — clients switch on them, no detector-specific names.
         if progress_callback:
-            progress_callback(5, "EXTRACTING_AUDIO")
+            progress_callback(5, "PREPROCESSING")
 
         # Derive temp paths from file_path (carries the analysis id) — fixed /tmp names would
         # collide between concurrent tasks (prefetch > 1 or a second worker in one container).
@@ -173,7 +180,7 @@ class AudioInference:
         self._extract_audio(file_path, 16000, path_16k)
 
         if progress_callback:
-            progress_callback(10, "PREPROCESSING_AUDIO")
+            progress_callback(10, "PREPROCESSING")
 
         wav_16k = self._load_wav(path_16k)
         if os.path.exists(path_16k):
@@ -202,8 +209,8 @@ class AudioInference:
             if rms_energy < 0.005:
                 if progress_callback:
                     progress_callback(
-                        15 + int((i / num_chunks) * 80), 
-                        "ANALYZING_SEGMENTS",
+                        15 + int((i / num_chunks) * 80),
+                        "INFERENCE",
                         {"current_segment": i+1, "total_segments": num_chunks}
                     )
                 continue
@@ -235,19 +242,19 @@ class AudioInference:
                 
             if progress_callback:
                 progress_callback(
-                    15 + int((i / num_chunks) * 80), 
-                    "ANALYZING_SEGMENTS",
+                    15 + int((i / num_chunks) * 80),
+                    "INFERENCE",
                     {"current_segment": i+1, "total_segments": num_chunks}
                 )
 
         gradcam_path = f"{file_path}_gradcam.png"
         if worst_chunk_16k is not None:
             if progress_callback:
-                progress_callback(95, "GENERATING_HEATMAP")
+                progress_callback(95, "POSTPROCESSING")
             self.generate_gradcam(worst_chunk_16k, gradcam_path)
-            
+
         if progress_callback:
-            progress_callback(100, "ANALYSIS_COMPLETED")
+            progress_callback(100, "POSTPROCESSING")
             
         if segment_predictions:
             raw_probs = [seg["prob_fake"] for seg in segment_predictions]

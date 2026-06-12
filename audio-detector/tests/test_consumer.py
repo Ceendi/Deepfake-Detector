@@ -103,6 +103,33 @@ class TestProcessGradcamContract:
         s3.upload_file.assert_not_called()
 
 
+class TestProgressContract:
+    def test_loading_start_ping_fires_before_s3_download(self, s3, inference):
+        inference.analyze.return_value = _analyze_result()
+        calls = []
+        s3.download_file.side_effect = lambda *a, **kw: calls.append("download")
+
+        def cb(pct, stage="INFERENCE", details=None):
+            calls.append((pct, stage))
+
+        consumer.process(_task_msg(), progress_callback=cb)
+
+        assert calls[0] == (0, "LOADING")
+        assert calls[1] == "download"
+
+    def test_sources_emit_only_contract_stages(self):
+        # Conformance grep over both modules: the stage set is closed (amqp-messages.md);
+        # a detector-specific name would silently break clients switching on stage.
+        import pathlib
+        import re
+        allowed = {"LOADING", "PREPROCESSING", "INFERENCE", "POSTPROCESSING"}
+        for module in ("consumer.py", "inference.py"):
+            src = (pathlib.Path(__file__).parent.parent / "src" / module).read_text(encoding="utf-8")
+            used = set(re.findall(r'progress_callback\(\s*[\w+*/() ]+,\s*"([A-Z_]+)"', src))
+            used |= set(re.findall(r'stage:\s*str\s*=\s*"([A-Z_]+)"', src))
+            assert used <= allowed, f"{module} emits non-contract stages: {used - allowed}"
+
+
 class TestHandleMessageIdempotency:
     def _deliver(self, monkeypatch, rds, result=None, error=None):
         ch, method = MagicMock(), MagicMock(delivery_tag=7)
