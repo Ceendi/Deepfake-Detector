@@ -114,12 +114,26 @@ Success:
     "verdict": "FAKE",
     "confidence": 0.74,
     "model_version": "dummy-v0.1",
-    "gradcam_urls": [],
+    "gradcam_keys": ["550e8400-e29b-41d4-a716-446655440000/video/frame1.png"],
     "metadata": {}
   },
   "error": null
 }
 ```
+
+`gradcam_keys` — list of **bare object keys** in the `analysis-artifacts` bucket,
+following the `{analysisId}/{source}/{name}.png` convention from
+[`object-storage.md`](./object-storage.md). No URI scheme, no bucket prefix — the
+Orchestrator persists the keys and serves the artifacts itself. Empty list when the
+detector produced no visualizations. (Transitional: the Orchestrator still accepts
+the pre-rename `gradcam_urls` list and the legacy single `gradcam_url` string with a
+`minio://analysis-artifacts/` prefix, and normalizes both to bare keys — do not use
+these in new code.)
+
+`metadata` — detector-defined free-form object (e.g. audio publishes
+`segment_predictions`, `insights`, `duration_seconds`). The Orchestrator persists it
+as-is, except `segment_predictions` is uniformly downsampled to ≤500 entries
+(`segment_predictions_downsampled: true` is set when that happens).
 
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
 

@@ -171,7 +171,13 @@ never `403`). Any open SSE stream (below) receives a `result` event with
   "confidence": 0.74,
   "videoProb": 0.87,
   "audioProb": null,
-  "details": null,
+  "details": {
+    "video": {
+      "modelVersion": "v1.0.0",
+      "gradcamKeys": ["550e8400-e29b-41d4-a716-446655440000/video/frame1.png"],
+      "metadata": { "frames_analyzed": 16 }
+    }
+  },
   "errorMessage": null,
   "createdAt": "2026-04-21T10:30:00Z",
   "updatedAt": "2026-04-21T10:30:02Z"
@@ -185,8 +191,14 @@ never `403`). Any open SSE stream (below) receives a `result` event with
 | `confidence`   | `number` (0..1) \| `null`                                      | `status != COMPLETED`                          |
 | `videoProb`    | `number` (0..1) \| `null`                                      | source not analyzed                            |
 | `audioProb`    | `number` (0..1) \| `null`                                      | source not analyzed                            |
-| `details`      | `object` \| `null`                                             | MVP; later: Grad-CAM URLs and metadata         |
+| `details`      | `object` \| `null`                                             | no detector has reported yet                   |
 | `errorMessage` | `string` \| `null`                                             | `status != FAILED`                             |
+
+`details` groups per-source detector results under `video` / `audio` keys (only the
+sources that have reported are present). Each entry carries `modelVersion` (string),
+`gradcamKeys` (array of object keys in `analysis-artifacts` — serving endpoint lands
+in a follow-up) and `metadata` (detector-defined free-form object, snake_case keys;
+see [`amqp-messages.md`](./amqp-messages.md) for the audio fields and the segment cap).
 
 ## Realtime progress (SSE)
 
