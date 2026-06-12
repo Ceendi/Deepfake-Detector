@@ -34,6 +34,7 @@ import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.service.ArtifactService;
 
 /**
  * End-to-edge auth behaviour of the analysis endpoints (no Keycloak, no DB): anonymous → 401,
@@ -50,6 +51,9 @@ class AnalysisControllerSecurityTest {
 
     @MockitoBean
     AnalysisService service;
+
+    @MockitoBean
+    ArtifactService artifactService;
 
     @MockitoBean
     JwtDecoder jwtDecoder;

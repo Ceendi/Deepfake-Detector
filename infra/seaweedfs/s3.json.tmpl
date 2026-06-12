@@ -26,6 +26,19 @@
       ]
     },
     {
+      "name": "orchestrator",
+      "credentials": [
+        {
+          "accessKey": "${S3_ORCHESTRATOR_KEY}",
+          "secretKey": "${S3_ORCHESTRATOR_SECRET}"
+        }
+      ],
+      "actions": [
+        "Read:analysis-artifacts",
+        "List:analysis-artifacts"
+      ]
+    },
+    {
       "name": "detector",
       "credentials": [
         {

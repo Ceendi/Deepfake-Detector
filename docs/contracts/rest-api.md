@@ -118,6 +118,17 @@ Downloads the analysis report as a PDF (`Content-Type: application/pdf`,
 token. Semester 1: verdict/confidence/probabilities/timestamps as text + a table; Grad-CAM heatmap
 embeds land in semester 2.
 
+### `GET /api/analysis/{id}/artifacts/{source}/{name}`
+
+Downloads one Grad-CAM artifact (`Content-Type: image/png`) referenced by
+`details.gradcamUrls` of the analysis. `source` is `video` | `audio`; `name` must match
+the filename of an artifact the detector actually reported for that source — anything
+else is `404` (the bucket is never browsable through this endpoint). `404 Not Found`
+also for a missing or non-owned analysis (IDOR — never `403`). `503 Service
+Unavailable` when object storage is down. Responses carry
+`Cache-Control: private, max-age=86400, immutable` (artifacts never change once
+written).
+
 ### `GET /api/analysis`
 
 Paginated history for the authenticated user. Query params: `page` (default `0`),
@@ -175,6 +186,7 @@ never `403`). Any open SSE stream (below) receives a `result` event with
     "video": {
       "modelVersion": "v1.0.0",
       "gradcamKeys": ["550e8400-e29b-41d4-a716-446655440000/video/frame1.png"],
+      "gradcamUrls": ["/api/analysis/550e8400-e29b-41d4-a716-446655440000/artifacts/video/frame1.png"],
       "metadata": { "frames_analyzed": 16 }
     }
   },
@@ -196,9 +208,10 @@ never `403`). Any open SSE stream (below) receives a `result` event with
 
 `details` groups per-source detector results under `video` / `audio` keys (only the
 sources that have reported are present). Each entry carries `modelVersion` (string),
-`gradcamKeys` (array of object keys in `analysis-artifacts` — serving endpoint lands
-in a follow-up) and `metadata` (detector-defined free-form object, snake_case keys;
-see [`amqp-messages.md`](./amqp-messages.md) for the audio fields and the segment cap).
+`gradcamUrls` (array of ready-to-fetch artifact endpoint paths — what clients should
+use), `gradcamKeys` (the raw object keys in `analysis-artifacts`, kept for audit) and
+`metadata` (detector-defined free-form object, snake_case keys; see
+[`amqp-messages.md`](./amqp-messages.md) for the audio fields and the segment cap).
 
 ## Realtime progress (SSE)
 

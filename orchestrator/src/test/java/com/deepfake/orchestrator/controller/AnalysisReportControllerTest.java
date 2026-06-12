@@ -33,6 +33,7 @@ import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.service.ArtifactService;
 
 /**
  * report.pdf endpoint: owner of a COMPLETED analysis gets a real PDF (200, attachment); a non-COMPLETED
@@ -48,6 +49,9 @@ class AnalysisReportControllerTest {
 
     @MockitoBean
     AnalysisService service;
+
+    @MockitoBean
+    ArtifactService artifactService;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
