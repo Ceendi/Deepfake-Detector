@@ -182,9 +182,16 @@ def run_consumer(health_state: dict) -> None:
             ch.queue_bind(queue="analysis.results",  exchange=EXCHANGE, routing_key="analysis.results")
             ch.queue_bind(queue="analysis.progress", exchange=EXCHANGE, routing_key="analysis.progress")
             health_state["ok"] = True
+            health_state["last_beat"] = time.time()
             log.info("consumer_ready", queue=QUEUE, source=SOURCE)
-            ch.basic_consume(queue=QUEUE, on_message_callback=_handle_message, auto_ack=False)
-            ch.start_consuming()
+            # consume() with inactivity_timeout instead of start_consuming(): every iteration
+            # (message or idle tick) bumps the heartbeat /health checks, so a wedged consumer
+            # thread turns the container unhealthy instead of reporting a stale "connected" flag.
+            for method, properties, body in ch.consume(QUEUE, inactivity_timeout=5):
+                health_state["last_beat"] = time.time()
+                if method is None:
+                    continue  # idle tick - heartbeat only
+                _handle_message(ch, method, properties, body)
         except Exception as e:
             health_state["ok"] = False
             log.error("consumer_crashed_reconnecting", error=str(e), backoff_seconds=5)

@@ -45,10 +45,15 @@ class AudioInference:
         MODEL_LOAD_TIME.set(time.time() - start_load)
 
     def _extract_audio(self, input_path, sr, out_path):
-        subprocess.run([
+        # Surface ffmpeg failures here: with stderr discarded a bad input only blew up later
+        # as a cryptic sf.read error on the missing/empty wav.
+        proc = subprocess.run([
             "ffmpeg", "-y", "-i", input_path,
             "-ar", str(sr), "-ac", "1", out_path
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            tail = proc.stderr.decode(errors="replace").strip()[-500:]
+            raise RuntimeError(f"ffmpeg extraction failed (rc={proc.returncode}): {tail}")
 
     def _load_wav(self, path):
         # torchaudio 2.11 routes load() through torchcodec (not bundled); soundfile is already a
