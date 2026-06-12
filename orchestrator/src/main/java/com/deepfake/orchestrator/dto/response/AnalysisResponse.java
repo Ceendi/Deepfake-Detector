@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.dto.response;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -11,8 +12,9 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 
 /**
  * API view of {@link Analysis} — never expose the JPA entity (leaks internal state, risks
- * lazy-proxy serialization). Shape per docs/contracts/rest-api.md. {@code details} is null in
- * MVP (later: Grad-CAM URLs/metadata).
+ * lazy-proxy serialization). Shape per docs/contracts/rest-api.md. {@code details} groups the
+ * per-source detector results ({@code video} / {@code audio}: modelVersion, gradcamKeys,
+ * metadata); null until a detector reports.
  */
 public record AnalysisResponse(
         UUID id,
@@ -42,9 +44,23 @@ public record AnalysisResponse(
                 a.getConfidence(),
                 a.getVideoProb(),
                 a.getAudioProb(),
-                null,
+                details(a),
                 a.getErrorMessage(),
                 a.getCreatedAt(),
                 a.getUpdatedAt());
+    }
+
+    private static Map<String, Object> details(Analysis a) {
+        if (a.getVideoDetails() == null && a.getAudioDetails() == null) {
+            return null;
+        }
+        Map<String, Object> details = new LinkedHashMap<>();
+        if (a.getVideoDetails() != null) {
+            details.put("video", a.getVideoDetails());
+        }
+        if (a.getAudioDetails() != null) {
+            details.put("audio", a.getAudioDetails());
+        }
+        return details;
     }
 }

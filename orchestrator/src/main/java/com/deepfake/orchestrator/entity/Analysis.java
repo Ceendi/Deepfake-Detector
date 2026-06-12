@@ -2,9 +2,12 @@ package com.deepfake.orchestrator.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -45,6 +48,16 @@ public class Analysis {
 
     @Column(name = "audio_prob", precision = 5, scale = 4)
     private BigDecimal audioProb;
+
+    // Per-source result details (model_version, gradcam_keys, metadata). Disjoint columns so the
+    // concurrent video/audio writes stay race-free — same rule as videoProb/audioProb.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "video_details")
+    private Map<String, Object> videoDetails;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "audio_details")
+    private Map<String, Object> audioDetails;
 
     @Column(name = "error_message")
     private String errorMessage;

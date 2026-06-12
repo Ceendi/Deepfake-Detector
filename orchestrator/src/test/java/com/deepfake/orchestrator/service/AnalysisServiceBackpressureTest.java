@@ -85,7 +85,7 @@ class AnalysisServiceBackpressureTest {
     @Test
     void completedResultReleasesSlot() {
         givenAnalysis(AnalysisType.VIDEO, new BigDecimal("0.8"), null);
-        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
         when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of(
@@ -110,7 +110,7 @@ class AnalysisServiceBackpressureTest {
     @Test
     void partialResultDoesNotReleaseUntilDone() {
         givenAnalysis(AnalysisType.FULL, new BigDecimal("0.7"), null); // still needs audio
-        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of(
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",

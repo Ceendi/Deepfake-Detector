@@ -17,7 +17,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
- * Smoke test for the Flyway migrations: applies V1 + V2 on a throwaway Postgres (matching the
+ * Smoke test for the Flyway migrations: applies the full chain on a throwaway Postgres (matching the
  * compose image) and asserts the schema the rest of the sprint depends on — the covering and
  * partial indexes, plus the timestamptz columns. No Spring context: this exercises the SQL only,
  * so it does not need Redis/RabbitMQ/Eureka and stays decoupled from the app wiring.
@@ -43,6 +43,17 @@ class FlywayMigrationIntegrationTest {
         List<String> indexes =
                 query("SELECT indexname FROM pg_indexes WHERE tablename = 'analysis'");
         assertThat(indexes).contains("idx_analysis_user_created", "idx_analysis_active");
+    }
+
+    @Test
+    void perSourceDetailsColumnsAreJsonbAndLegacySingleColumnIsGone() throws Exception {
+        List<String> types = query("SELECT data_type FROM information_schema.columns "
+                + "WHERE table_name = 'analysis' AND column_name IN ('video_details', 'audio_details')");
+        assertThat(types).hasSize(2).allMatch("jsonb"::equals);
+
+        List<String> legacy = query("SELECT column_name FROM information_schema.columns "
+                + "WHERE table_name = 'analysis' AND column_name = 'details'");
+        assertThat(legacy).isEmpty();
     }
 
     @Test

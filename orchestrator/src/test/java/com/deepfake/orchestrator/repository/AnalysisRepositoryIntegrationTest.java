@@ -2,8 +2,11 @@ package com.deepfake.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -72,6 +75,38 @@ class AnalysisRepositoryIntegrationTest {
         AnalysisSummary head = page.getContent().getFirst();
         assertThat(head.getType()).isEqualTo(AnalysisType.VIDEO);
         assertThat(head.getStatus()).isEqualTo(AnalysisStatus.PENDING);
+    }
+
+    // The details Map must bind as jsonb inside the bulk JPQL UPDATE (not just on entity persist) —
+    // that's the write path handleResult actually uses.
+    @Test
+    void writeAudioProbPersistsDetailsJsonb() {
+        UUID id = persist("alice", Instant.now());
+        Map<String, Object> details = Map.of(
+                "modelVersion", "v1.2.0-fast",
+                "gradcamKeys", List.of(id + "/audio/gradcam.png"),
+                "metadata", Map.of("duration_seconds", 12.5));
+
+        int rows = repository.writeAudioProb(id, new BigDecimal("0.9100"), details,
+                List.of(AnalysisStatus.PENDING, AnalysisStatus.PROCESSING), Instant.now());
+
+        assertThat(rows).isEqualTo(1);
+        Analysis fresh = repository.findById(id).orElseThrow();
+        assertThat(fresh.getAudioDetails())
+                .containsEntry("modelVersion", "v1.2.0-fast")
+                .containsEntry("gradcamKeys", List.of(id + "/audio/gradcam.png"));
+        assertThat(fresh.getVideoDetails()).isNull(); // disjoint columns stay untouched
+    }
+
+    @Test
+    void writeVideoProbAcceptsNullDetails() {
+        UUID id = persist("alice", Instant.now());
+
+        int rows = repository.writeVideoProb(id, new BigDecimal("0.4200"), null,
+                List.of(AnalysisStatus.PENDING, AnalysisStatus.PROCESSING), Instant.now());
+
+        assertThat(rows).isEqualTo(1);
+        assertThat(repository.findById(id).orElseThrow().getVideoDetails()).isNull();
     }
 
     private UUID persist(String userId, Instant createdAt) {

@@ -59,7 +59,7 @@ def process(msg: dict) -> dict:
         "verdict": "FAKE" if prob > 0.5 else "REAL",
         "confidence": round(abs(prob - 0.5) * 2, 4),
         "model_version": "dummy-v0.1",
-        "gradcam_urls": [],
+        "gradcam_keys": [],
         "metadata": {},
     }
 
