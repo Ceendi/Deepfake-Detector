@@ -18,10 +18,6 @@ class ResultDetailsExtractor {
     // 1h of audio ≈ 7200 half-second segments (~0.5 MB JSONB); uniform stride keeps the timeline shape.
     static final int MAX_SEGMENTS = 500;
 
-    // Audio published a single gradcam_url with a made-up scheme before the gradcam_keys contract;
-    // accept and normalize it to a bare object key until the detector catches up.
-    private static final String LEGACY_URI_PREFIX = "minio://analysis-artifacts/";
-
     /** Returns the details to persist, or null when the result carries nothing beyond prob_fake. */
     Map<String, Object> extract(Map<String, Object> result) {
         Map<String, Object> details = new LinkedHashMap<>();
@@ -40,24 +36,12 @@ class ResultDetailsExtractor {
         return details.isEmpty() ? null : details;
     }
 
+    // Contract field only (amqp-messages.md): bare object keys, no URI scheme, no bucket prefix.
     private List<String> gradcamKeys(Map<String, Object> result) {
-        Object keys = result.get("gradcam_keys");
-        if (keys == null) {
-            keys = result.get("gradcam_urls"); // pre-rename contract field (video stub publishes [])
-        }
-        if (keys instanceof Collection<?> c) {
-            return c.stream().filter(Objects::nonNull)
-                    .map(Object::toString).map(ResultDetailsExtractor::stripLegacyUri).toList();
-        }
-        Object legacy = result.get("gradcam_url");
-        if (legacy instanceof String s && !s.isBlank()) {
-            return List.of(stripLegacyUri(s));
+        if (result.get("gradcam_keys") instanceof Collection<?> keys) {
+            return keys.stream().filter(Objects::nonNull).map(Object::toString).toList();
         }
         return List.of();
-    }
-
-    private static String stripLegacyUri(String value) {
-        return value.startsWith(LEGACY_URI_PREFIX) ? value.substring(LEGACY_URI_PREFIX.length()) : value;
     }
 
     @SuppressWarnings("unchecked")

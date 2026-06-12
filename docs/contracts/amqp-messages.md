@@ -125,10 +125,8 @@ Success:
 following the `{analysisId}/{source}/{name}.png` convention from
 [`object-storage.md`](./object-storage.md). No URI scheme, no bucket prefix — the
 Orchestrator persists the keys and serves the artifacts itself. Empty list when the
-detector produced no visualizations. (Transitional: the Orchestrator still accepts
-the pre-rename `gradcam_urls` list and the legacy single `gradcam_url` string with a
-`minio://analysis-artifacts/` prefix, and normalizes both to bare keys — do not use
-these in new code.)
+detector produced no visualizations. This is the only accepted field — URI-style
+variants (`gradcam_url`, `gradcam_urls`) are ignored.
 
 `metadata` — detector-defined free-form object (e.g. audio publishes
 `segment_predictions`, `insights`, `duration_seconds`). The Orchestrator persists it

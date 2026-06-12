@@ -10,9 +10,8 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * Result payload → persisted details JSON: camelCase top level, gradcam key normalization
- * (contract list, pre-rename list, legacy minio:// single url), and the segment cap that keeps
- * a long recording's JSONB bounded.
+ * Result payload → persisted details JSON: camelCase top level, contract-only gradcam_keys,
+ * and the segment cap that keeps a long recording's JSONB bounded.
  */
 class ResultDetailsExtractorTest {
 
@@ -35,24 +34,19 @@ class ResultDetailsExtractorTest {
     @Test
     void probOnlyResultYieldsNull() {
         assertThat(extractor.extract(Map.of("prob_fake", 0.5))).isNull();
-        assertThat(extractor.extract(Map.of("prob_fake", 0.5, "gradcam_urls", List.of(),
+        assertThat(extractor.extract(Map.of("prob_fake", 0.5, "gradcam_keys", List.of(),
                 "metadata", Map.of()))).isNull();
     }
 
     @Test
-    void legacyMinioUrlIsNormalizedToObjectKey() {
+    void nonContractGradcamFieldsAreIgnored() {
+        // gradcam_keys is the only contract field — stray variants must not leak into details.
         Map<String, Object> details = extractor.extract(Map.of(
-                "gradcam_url", "minio://analysis-artifacts/abc/gradcam.png"));
+                "model_version", "v1",
+                "gradcam_url", "minio://analysis-artifacts/abc/gradcam.png",
+                "gradcam_urls", List.of("abc/frame1.png")));
 
-        assertThat(details).containsEntry("gradcamKeys", List.of("abc/gradcam.png"));
-    }
-
-    @Test
-    void preRenameGradcamUrlsListIsAccepted() {
-        Map<String, Object> details = extractor.extract(Map.of(
-                "gradcam_urls", List.of("minio://analysis-artifacts/abc/frame1.png", "abc/frame2.png")));
-
-        assertThat(details).containsEntry("gradcamKeys", List.of("abc/frame1.png", "abc/frame2.png"));
+        assertThat(details).doesNotContainKey("gradcamKeys");
     }
 
     @Test

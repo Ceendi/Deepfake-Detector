@@ -63,14 +63,14 @@ class AnalysisServiceResultDetailsTest {
                 "result", Map.of(
                         "prob_fake", "0.91",
                         "model_version", "v1.2.0-fast",
-                        "gradcam_url", "minio://analysis-artifacts/" + id + "/gradcam.png",
+                        "gradcam_keys", List.of(id + "/audio/gradcam.png"),
                         "metadata", Map.of("insights", List.of("podejrzane artefakty")))));
 
         verify(repository).writeAudioProb(eq(id), eq(new BigDecimal("0.91")),
                 detailsCaptor.capture(), any(), any());
         assertThat(detailsCaptor.getValue())
                 .containsEntry("modelVersion", "v1.2.0-fast")
-                .containsEntry("gradcamKeys", List.of(id + "/gradcam.png"))
+                .containsEntry("gradcamKeys", List.of(id + "/audio/gradcam.png"))
                 .containsEntry("metadata", Map.of("insights", List.of("podejrzane artefakty")));
     }
 
@@ -81,7 +81,7 @@ class AnalysisServiceResultDetailsTest {
 
         service.handleResult(Map.of(
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
-                "result", Map.of("prob_fake", "0.42", "gradcam_urls", List.of())));
+                "result", Map.of("prob_fake", "0.42", "gradcam_keys", List.of())));
 
         verify(repository).writeVideoProb(eq(id), eq(new BigDecimal("0.42")), isNull(), any(), any());
     }
