@@ -273,6 +273,8 @@ services:
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
       S3_DETECTOR_KEY: ${S3_DETECTOR_KEY}
       S3_DETECTOR_SECRET: ${S3_DETECTOR_SECRET}
+      S3_ORCHESTRATOR_KEY: ${S3_ORCHESTRATOR_KEY}
+      S3_ORCHESTRATOR_SECRET: ${S3_ORCHESTRATOR_SECRET}
     entrypoint: ["/bin/sh", "/init.sh"]
     volumes:
       - ./infra/seaweedfs/init.sh:/init.sh:ro
@@ -503,6 +505,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      S3_ORCHESTRATOR_KEY: ${S3_ORCHESTRATOR_KEY}
+      S3_ORCHESTRATOR_SECRET: ${S3_ORCHESTRATOR_SECRET}
       BACKPRESSURE_MAX_INFLIGHT: ${BACKPRESSURE_MAX_INFLIGHT:-20}
       # MO benchmark knobs (defaults = prod): cache-aside on/off, HikariCP max pool size.
       CACHE_ENABLED: ${CACHE_ENABLED:-true}

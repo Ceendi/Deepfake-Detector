@@ -9,6 +9,8 @@ set -eu
 : "${S3_FILE_SERVICE_SECRET:?missing}"
 : "${S3_DETECTOR_KEY:?missing}"
 : "${S3_DETECTOR_SECRET:?missing}"
+: "${S3_ORCHESTRATOR_KEY:?missing}"
+: "${S3_ORCHESTRATOR_SECRET:?missing}"
 
 sed \
   -e "s|\${S3_ADMIN_KEY}|${S3_ADMIN_KEY}|g" \
@@ -17,6 +19,8 @@ sed \
   -e "s|\${S3_FILE_SERVICE_SECRET}|${S3_FILE_SERVICE_SECRET}|g" \
   -e "s|\${S3_DETECTOR_KEY}|${S3_DETECTOR_KEY}|g" \
   -e "s|\${S3_DETECTOR_SECRET}|${S3_DETECTOR_SECRET}|g" \
+  -e "s|\${S3_ORCHESTRATOR_KEY}|${S3_ORCHESTRATOR_KEY}|g" \
+  -e "s|\${S3_ORCHESTRATOR_SECRET}|${S3_ORCHESTRATOR_SECRET}|g" \
   /s3.json.tmpl > /out/s3.json
 
 chmod 0644 /out/s3.json
