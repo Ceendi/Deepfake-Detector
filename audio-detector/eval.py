@@ -31,6 +31,7 @@ def main():
     parser.add_argument("--data_module", type=str, required=False, 
                         help="Full module path to DataModule (e.g. training.datasets.ParquetASVspoofDataModule)")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for evaluation")
+    parser.add_argument("--limit_batches", type=int, default=0, help="Ogranicz liczbe batchy (0 = brak limitu, np. 50 = szybki test)")
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--output_dir", type=str, default="eval_results", help="Directory to save generated plots")
     args = parser.parse_args()
@@ -58,6 +59,16 @@ def main():
     dm = data_module_cls(args.dataset, batch_size=args.batch_size)
     dm.setup(stage="test")
     test_loader = dm.test_dataloader()
+    
+    if args.limit_batches > 0:
+        # Recreate test_loader with shuffle=True to ensure we don't get only 1 class
+        print("Wymuszanie losowania (shuffle) dla limit_batches...")
+        test_loader = torch.utils.data.DataLoader(
+            test_loader.dataset, 
+            batch_size=args.batch_size, 
+            shuffle=True, 
+            num_workers=test_loader.num_workers
+        )
     print(f"Loading checkpoint from: {args.model}")
     model_mod_parts = args.model_class.split('.')
     model_cls = getattr(importlib.import_module('.'.join(model_mod_parts[:-1])), model_mod_parts[-1])
@@ -68,7 +79,9 @@ def main():
     all_targets = []
     print("Running inference on test dataset...")
     with torch.no_grad():
-        for batch in tqdm(test_loader, desc="Evaluating"):
+        for i, batch in enumerate(tqdm(test_loader, desc="Evaluating")):
+            if args.limit_batches > 0 and i >= args.limit_batches:
+                break
             x, y = batch
             x = x.to(args.device)
             logits = model(x)

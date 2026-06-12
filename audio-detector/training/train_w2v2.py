@@ -170,7 +170,7 @@ if __name__ == "__main__":
     early_stop_callback = EarlyStopping(
         monitor='val_eer',
         mode='min',
-        patience=7,
+        patience=30,  # Zwiększono z 7 na 30, by powstrzymać przedwczesne ubijanie treningu!
         min_delta=0.001,
         verbose=True,
     )
