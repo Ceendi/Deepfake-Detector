@@ -2,7 +2,9 @@ package com.deepfake.orchestrator.dto.response;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
@@ -36,6 +38,25 @@ class AnalysisResponseDetailsTest {
         assertThat(full.details())
                 .containsEntry("video", video)
                 .containsEntry("audio", audio);
+    }
+
+    @Test
+    void gradcamKeysAreTranslatedToArtifactEndpointUrls() {
+        UUID id = UUID.randomUUID();
+        Analysis a = analysis(null, Map.of(
+                "modelVersion", "v1.2.0-fast",
+                "gradcamKeys", List.of(id + "/audio/gradcam.png", id + "/legacy.png")));
+        a.setId(id);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> audio = (Map<String, Object>) AnalysisResponse.from(a).details().get("audio");
+
+        assertThat(audio).containsEntry("gradcamUrls", List.of(
+                "/api/analysis/" + id + "/artifacts/audio/gradcam.png",
+                "/api/analysis/" + id + "/artifacts/audio/legacy.png"));
+        // keys stay for audit; the entity's stored map is not mutated by the view
+        assertThat(audio).containsKey("gradcamKeys");
+        assertThat(a.getAudioDetails()).doesNotContainKey("gradcamUrls");
     }
 
     private static Analysis analysis(Map<String, Object> video, Map<String, Object> audio) {
