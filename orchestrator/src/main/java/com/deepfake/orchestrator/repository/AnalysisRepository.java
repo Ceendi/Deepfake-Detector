@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
@@ -23,15 +24,18 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     // Atomic aggregation + terminal transitions. clearAutomatically so the caller
     // can re-read fresh; each returns rows touched (0 => already terminal/unknown).
 
-    // Disjoint single-column writes: concurrent video+audio both survive under the Postgres row-lock.
+    // Disjoint per-source writes (prob + details together): concurrent video+audio both survive
+    // under the Postgres row-lock.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Analysis a SET a.videoProb = :prob, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
+    @Query("UPDATE Analysis a SET a.videoProb = :prob, a.videoDetails = :details, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
     int writeVideoProb(@Param("id") UUID id, @Param("prob") BigDecimal prob,
+            @Param("details") Map<String, Object> details,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Analysis a SET a.audioProb = :prob, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
+    @Query("UPDATE Analysis a SET a.audioProb = :prob, a.audioDetails = :details, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
     int writeAudioProb(@Param("id") UUID id, @Param("prob") BigDecimal prob,
+            @Param("details") Map<String, Object> details,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
     // CAS the status: 1 row => this caller won the transition, so it runs the side effects exactly once.

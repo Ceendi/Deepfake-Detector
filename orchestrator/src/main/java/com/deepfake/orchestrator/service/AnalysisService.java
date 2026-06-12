@@ -61,6 +61,7 @@ public class AnalysisService {
     private final BackpressureGuard backpressure;
     private final IdempotencyGuard idempotency;
     private final AnalysisMetrics metrics;
+    private final ResultDetailsExtractor detailsExtractor = new ResultDetailsExtractor();
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         backpressure.acquire(); // 429 here -> nothing persisted or published
@@ -218,10 +219,11 @@ public class AnalysisService {
         @SuppressWarnings("unchecked")
         Map<String, Object> result = (Map<String, Object>) payload.get("result");
         BigDecimal prob = new BigDecimal(result.get("prob_fake").toString());
+        Map<String, Object> details = detailsExtractor.extract(result);
 
         int rows = "video".equals(source)
-                ? repository.writeVideoProb(id, prob, ACTIVE, Instant.now())
-                : repository.writeAudioProb(id, prob, ACTIVE, Instant.now());
+                ? repository.writeVideoProb(id, prob, details, ACTIVE, Instant.now())
+                : repository.writeAudioProb(id, prob, details, ACTIVE, Instant.now());
         if (rows == 0) {
             log.warn("Result for terminal/unknown analysis {} ({}), ignoring", id, source);
             return;
