@@ -166,14 +166,18 @@ class AudioInference:
         
         if progress_callback:
             progress_callback(5, "EXTRACTING_AUDIO")
-            
-        path_16k = "/tmp/audio_16k.wav"
+
+        # Derive temp paths from file_path (carries the analysis id) — fixed /tmp names would
+        # collide between concurrent tasks (prefetch > 1 or a second worker in one container).
+        path_16k = f"{file_path}_16k.wav"
         self._extract_audio(file_path, 16000, path_16k)
-        
+
         if progress_callback:
             progress_callback(10, "PREPROCESSING_AUDIO")
-            
+
         wav_16k = self._load_wav(path_16k)
+        if os.path.exists(path_16k):
+            os.remove(path_16k)
         
         duration_sec = len(wav_16k) / 16000.0
         chunk_len_16k = 16000
@@ -236,7 +240,7 @@ class AudioInference:
                     {"current_segment": i+1, "total_segments": num_chunks}
                 )
 
-        gradcam_path = "/tmp/gradcam.png"
+        gradcam_path = f"{file_path}_gradcam.png"
         if worst_chunk_16k is not None:
             if progress_callback:
                 progress_callback(95, "GENERATING_HEATMAP")
