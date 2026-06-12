@@ -22,7 +22,7 @@ W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "
 MEL_CKPT_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "last.ckpt")
 
 MEL_EER_THRESHOLD = float(os.getenv("MEL_EER_THRESHOLD", "0.3049"))
-W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.5000"))
+W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.3000"))
 
 INFERENCE_TIME = Histogram(
     "audio_inference_duration_seconds",
@@ -246,8 +246,20 @@ class AudioInference:
             progress_callback(100, "ANALYSIS_COMPLETED")
             
         if segment_predictions:
-            probs = [seg["prob_fake"] for seg in segment_predictions]
-            overall_prob = float(np.median(probs))
+            raw_probs = [seg["prob_fake"] for seg in segment_predictions]
+            
+            # Wygładzanie (Moving Average z oknem 3-sekundowym)
+            # Izolowane piki (np. trzask w mikrofonie, szum) znikną.
+            # Aby uznać fragment za fake, anomalia musi trwać chociaż 2-3 sekundy ciągiem.
+            smoothed_probs = []
+            for i in range(len(raw_probs)):
+                start_idx = max(0, i - 1)
+                end_idx = min(len(raw_probs), i + 2)
+                smoothed_probs.append(float(np.mean(raw_probs[start_idx:end_idx])))
+                
+            top_k = min(3, len(smoothed_probs))
+            top_probs = sorted(smoothed_probs, reverse=True)[:top_k]
+            overall_prob = float(np.mean(top_probs))
         else:
             overall_prob = threshold
             
