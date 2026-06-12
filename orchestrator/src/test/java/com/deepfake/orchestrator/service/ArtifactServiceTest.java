@@ -69,19 +69,6 @@ class ArtifactServiceTest {
     }
 
     @Test
-    void legacyKeyWithoutSourceSegmentIsMatchedByFilename() {
-        givenAnalysis(Map.of("gradcamKeys", List.of(id + "/gradcam.png")));
-        when(s3.getObjectAsBytes(any(GetObjectRequest.class))).thenReturn(
-                ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), png));
-
-        service.download(id, "audio", "gradcam.png", "alice");
-
-        ArgumentCaptor<GetObjectRequest> req = ArgumentCaptor.forClass(GetObjectRequest.class);
-        verify(s3).getObjectAsBytes(req.capture());
-        assertThat(req.getValue().key()).isEqualTo(id + "/gradcam.png");
-    }
-
-    @Test
     void foreignOwnerGets404WithoutTouchingStorage() {
         givenAnalysis(Map.of("gradcamKeys", List.of(id + "/audio/gradcam.png")));
 

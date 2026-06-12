@@ -71,7 +71,7 @@ public class ArtifactService {
         if (details == null || !(details.get("gradcamKeys") instanceof Collection<?> keys)) {
             return Optional.empty();
         }
-        // Match on the filename part so legacy keys without the {source}/ segment stay servable.
+        // Resolve the requested name against the filename part of each stored key.
         return keys.stream().map(Object::toString)
                 .filter(k -> name.equals(k.substring(k.lastIndexOf('/') + 1)))
                 .findFirst();
