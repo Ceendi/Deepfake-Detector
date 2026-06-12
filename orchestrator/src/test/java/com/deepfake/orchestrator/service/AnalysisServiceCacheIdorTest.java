@@ -57,7 +57,7 @@ class AnalysisServiceCacheIdorTest {
 
         repository = mock(AnalysisRepository.class);
         service = new AnalysisService(repository, mock(RabbitTemplate.class), template,
-                new AnalysisCache(template), mock(AnalysisStreamRegistry.class),
+                new AnalysisCache(template, true), mock(AnalysisStreamRegistry.class),
                 mock(BackpressureGuard.class), mock(IdempotencyGuard.class), mock(AnalysisMetrics.class));
     }
 

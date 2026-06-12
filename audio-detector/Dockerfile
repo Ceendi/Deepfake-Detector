@@ -3,18 +3,26 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    HF_HOME=/tmp/huggingface
 
+# ffmpeg: audio extraction; libglib2.0-0: librosa/soundfile runtime dep; curl: healthcheck.
+# No libgl1 (OpenGL) — only OpenCV needs it, and this service has no cv2.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg libgl1 libglib2.0-0 curl \
+      ffmpeg libglib2.0-0 curl \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv==0.5.*
 RUN addgroup --system app && adduser --system --ingroup app app
 
 COPY --chown=app:app pyproject.toml ./
-RUN uv pip install --system --no-cache -r pyproject.toml
+# Production image is CPU-only (ONNX CPUExecutionProvider). Pulling CPU wheels
+# instead of CUDA drops ~4.5 GB (nvidia/* libs + triton) from the image.
+RUN uv pip install --system --no-cache -r pyproject.toml \
+      --extra-index-url https://download.pytorch.org/whl/cpu
 
 COPY --chown=app:app src ./src
+COPY --chown=app:app training ./training
 
 USER app
 EXPOSE 8000

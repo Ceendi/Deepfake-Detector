@@ -41,7 +41,7 @@ class AnalysisCacheDegradationTest {
 
     @BeforeEach
     void setUp() {
-        cache = new AnalysisCache(redis);
+        cache = new AnalysisCache(redis, true);
     }
 
     @Test

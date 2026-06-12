@@ -1,0 +1,25 @@
+.venv
+.idea
+__pycache__
+*.pyc
+training/ASVspoof*
+training/cache*
+training/WaveFake*
+training/data/
+training/lightning_logs/
+# Ignoruj absolutnie wszystkie checkpointy, ważą gigabajty
+training/checkpoints/
+
+# Zrób wyjątek TYLKO dla tych dwóch plików, których potrzebuje inference.py:
+!training/checkpoints/w2v2/w2v2.onnx
+!training/checkpoints/w2v2/w2v2.onnx.data
+!training/checkpoints/mel_resnet/mel_model-epoch=00-val_eer=0.0020.ckpt
+!training/checkpoints/mel_resnet/last.ckpt
+*.flac
+*.wav
+*.parquet
+*.zip
+mock_test.py
+eval.py
+STATUS_*.md
+Brief_*.md

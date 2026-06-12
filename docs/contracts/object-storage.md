@@ -26,10 +26,13 @@ and [`infra/seaweedfs/bucket-init.sh`](../../infra/seaweedfs/bucket-init.sh) (bu
 | Admin (init) | `S3_ADMIN_KEY`        | `S3_ADMIN_SECRET`        | `Admin` — used only by `seaweedfs-bucket-init` to create buckets                     |
 | File Service | `S3_FILE_SERVICE_KEY` | `S3_FILE_SERVICE_SECRET` | `Read/Write/List/Tagging` on `deepfake-uploads`                                      |
 | Detectors    | `S3_DETECTOR_KEY`     | `S3_DETECTOR_SECRET`     | `Read/List` on `deepfake-uploads`; `Read/Write/List/Tagging` on `analysis-artifacts` |
+| Orchestrator | `S3_ORCHESTRATOR_KEY` | `S3_ORCHESTRATOR_SECRET` | `Read/List` on `analysis-artifacts` only                                             |
 
 Credentials are split by purpose: detectors must not be able to write user
-uploads, the file service must not be able to overwrite ML artifacts. The
-admin identity exists only for bootstrap and is never embedded in app config.
+uploads, the file service must not be able to overwrite ML artifacts, and the
+orchestrator (which only serves Grad-CAM PNGs back to their owner) must not be
+able to read user uploads or write anything. The admin identity exists only
+for bootstrap and is never embedded in app config.
 
 ## S3 client configuration
 
@@ -45,8 +48,10 @@ virtual-hosted style (`bucket.endpoint/key`). Set
 ## Notes
 
 - Real values live in `.env` (gitignored). `.env.example` ships placeholders.
-- `analysis-artifacts` is created up-front but written to only in V2 (Grad-CAM).
-  In MVP, `result.gradcam_urls` is `[]`.
+- `analysis-artifacts` holds detector visualizations (audio Grad-CAM today, video
+  top-frames next). Detectors publish the bare object keys in `result.gradcam_keys`
+  (see [`amqp-messages.md`](./amqp-messages.md)); the Orchestrator persists them and
+  serves the PNGs to the owner via `GET /api/analysis/{id}/artifacts/{source}/{name}`.
 - Retention policy on `deepfake-uploads` is TBD (privacy requirements).
 - Bucket creation is centralised in `seaweedfs-bucket-init` — apps must NOT
   call `CreateBucket` at startup (their identities lack `Admin` and would

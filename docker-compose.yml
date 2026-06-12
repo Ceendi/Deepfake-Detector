@@ -49,6 +49,12 @@ x-otel-env: &otel-env
   OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
   OTEL_OTLP_ENDPOINT: ${OTEL_OTLP_ENDPOINT:-http://tempo:4318/v1/traces}
 
+# Native Spring Boot 4 structured logging (ECS JSON on stdout) — only in containers, so Alloy can
+# parse fields into Loki. Local IDE runs (no env) keep the human-readable pattern. NB: this makes
+# `docker logs <svc>` JSON in every profile, not just monitoring.
+x-logging-env: &logging-env
+  LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+
 services:
   postgres:
     image: postgres:18.4-alpine
@@ -163,8 +169,13 @@ services:
     ports:
       - "127.0.0.1:${RABBITMQ_AMQP_PORT:-5672}:5672"
       - "127.0.0.1:${RABBITMQ_UI_PORT:-15672}:15672"
+      - "127.0.0.1:${RABBITMQ_PROM_PORT:-15692}:15692" # rabbitmq_prometheus /metrics
     volumes:
       - rabbitmqdata:/var/lib/rabbitmq
+      # Enable the prometheus plugin alongside management (replaces the image default).
+      - ./infra/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      # Per-queue prometheus metrics (queue label).
+      - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -262,6 +273,8 @@ services:
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
       S3_DETECTOR_KEY: ${S3_DETECTOR_KEY}
       S3_DETECTOR_SECRET: ${S3_DETECTOR_SECRET}
+      S3_ORCHESTRATOR_KEY: ${S3_ORCHESTRATOR_KEY}
+      S3_ORCHESTRATOR_SECRET: ${S3_ORCHESTRATOR_SECRET}
     entrypoint: ["/bin/sh", "/init.sh"]
     volumes:
       - ./infra/seaweedfs/init.sh:/init.sh:ro
@@ -412,6 +425,8 @@ services:
       # Default for everything else is `full`; users get `no-delete` so UI-created
       # accounts survive sync. See ADR-0001 §Consequences.
       IMPORT_MANAGED_USER: no-delete
+      # Substituted into realm-export.json as $(env:LOADTEST_CLIENT_SECRET) — the D4 load-test client secret.
+      LOADTEST_CLIENT_SECRET: ${LOADTEST_CLIENT_SECRET}
     volumes:
       - ./infra/keycloak/realm-export.json:/config/realm-export.json:ro
     networks: [deepfake]
@@ -420,6 +435,8 @@ services:
     build: ./eureka-server
     profiles: ["core"]
     ports: ["8761:8761"]
+    environment:
+      <<: *logging-env
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
       interval: 10s
@@ -436,21 +453,33 @@ services:
         condition: service_healthy
     ports: ["8080:8080"]
     environment:
-      <<: [*jwt-env, *otel-env]
+      <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+      # D4: upload rate-limit, env-tunable (raise for the load test). Defaults = prod values.
+      UPLOAD_RL_REPLENISH: ${UPLOAD_RL_REPLENISH:-1}
+      UPLOAD_RL_BURST: ${UPLOAD_RL_BURST:-10}
     networks: [deepfake]
 
   file-service:
     build: ./file-service
     profiles: ["core"]
+    # D4: scale 1<->2 via FILE_SERVICE_REPLICAS. Replicas only work here because the service has no
+    # host port (reached via Gateway lb://file-service) — do NOT add ports/container_name. The CPU
+    # cap is the point: 1 vCPU/replica, so a 2nd replica ~doubles the CPU-bound (ffprobe+Tika) capacity.
+    deploy:
+      replicas: ${FILE_SERVICE_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
     depends_on:
       postgres: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
     environment:
-      <<: [*jwt-env, *otel-env]
+      <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/
       FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
       FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
@@ -474,14 +503,19 @@ services:
       rabbitmq: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
     environment:
-      <<: [*jwt-env, *otel-env]
+      <<: [*jwt-env, *otel-env, *logging-env]
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      S3_ORCHESTRATOR_KEY: ${S3_ORCHESTRATOR_KEY}
+      S3_ORCHESTRATOR_SECRET: ${S3_ORCHESTRATOR_SECRET}
       BACKPRESSURE_MAX_INFLIGHT: ${BACKPRESSURE_MAX_INFLIGHT:-20}
+      # MO benchmark knobs (defaults = prod): cache-aside on/off, HikariCP max pool size.
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
       interval: 15s
@@ -498,8 +532,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1g
-          cpus: "1.5"
+          memory: 3g
           pids: 500
     logging: *default-logging
     depends_on:
@@ -530,8 +563,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1g
-          cpus: "1.5"
+          memory: 3g
           pids: 500
     logging: *default-logging
     depends_on:
@@ -553,6 +585,114 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks: [deepfake]
 
+  # --- Observability stack (profile: monitoring) ---------------------------------------------
+  # Dev-only: prometheus/loki/tempo/alloy run as root with named volumes (avoids uid/perms juggling
+  # on fresh volumes) — the app/db containers above stay hardened. All ports bound to 127.0.0.1.
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+    networks: [deepfake]
+
+  loki:
+    image: grafana/loki:3.7.2
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    user: "0:0"
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./infra/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+    # No healthcheck: the loki image is distroless (no shell/wget to probe with). Dependents wait on
+    # service_started; loki.write/Grafana both retry until /ready returns 200.
+    logging: *default-logging
+    networks: [deepfake]
+
+  tempo:
+    image: grafana/tempo:2.10.6
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    user: "0:0"
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./infra/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    ports:
+      # Query API only; OTLP receivers 4317/4318 stay internal (Java services push over the network).
+      - "127.0.0.1:${TEMPO_PORT:-3200}:3200"
+    # No healthcheck: distroless image (see loki). Dependents wait on service_started.
+    logging: *default-logging
+    networks: [deepfake]
+
+  grafana:
+    image: grafana/grafana:11.6.15
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    depends_on:
+      prometheus: { condition: service_healthy }
+      loki: { condition: service_started }
+      tempo: { condition: service_started }
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+    networks: [deepfake]
+
+  alloy:
+    image: grafana/alloy:v1.16.3
+    profiles: ["monitoring"]
+    restart: unless-stopped
+    user: "0:0" # reads the root-owned docker socket
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    depends_on:
+      loki: { condition: service_started }
+    volumes:
+      - ./infra/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      # #G1: dev-only, read-only — Alloy tails container stdout via the Docker API.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    ports:
+      - "127.0.0.1:${ALLOY_PORT:-12345}:12345"
+    # No healthcheck: the alloy image has no wget; nothing depends on alloy's health. Readiness is at
+    # http://localhost:12345/-/ready (UI on the same port).
+    logging: *default-logging
+    networks: [deepfake]
+
 volumes:
   pgdata:
   redisdata:
@@ -560,6 +700,10 @@ volumes:
   seaweeddata:
   seaweedconfig:
   keycloak-pgdata:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  alloy-data:
 
 networks:
   deepfake:

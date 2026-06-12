@@ -31,6 +31,10 @@ spring:
       max-file-size: 500MB
       max-request-size: 500MB
 eureka:
+  instance:
+    # D4: register the docker-network IP, not the auto container-ID hostname (not DNS-resolvable),
+    # so the Gateway LoadBalancer can reach each replica. Default instance-id stays unique per replica.
+    prefer-ip-address: true
   client:
     service-url:
       defaultZone: http://eureka-server:8761/eureka/

@@ -59,9 +59,17 @@ Published to `analysis.video` or `analysis.audio`.
   "file_bucket": "deepfake-uploads",
   "file_key": "550e8400-e29b-41d4-a716-446655440000_test.mp4",
   "correlation_id": "corr-uuid",
-  "timestamp": "2026-04-21T10:30:00Z"
+  "timestamp": "2026-04-21T10:30:00Z",
+  "mode": "accurate"
 }
 ```
+
+`mode` — **audio tasks only** (optional). Selects the audio model: `"fast"` =
+lightweight spectrogram model, `"accurate"` = Wav2Vec2 waveform analysis (slower,
+robust to recent generators, e.g. ElevenLabs). The Audio Detector falls back to
+`"accurate"` when the field is missing; the Orchestrator nevertheless always sends
+it explicitly (REST `mode` absent → `"accurate"`). Video tasks do not carry the
+field.
 
 `file_key` follows the convention from
 [`object-storage.md`](./object-storage.md): full `{fileId}` UUID + `_` +
@@ -82,7 +90,12 @@ Published to `analysis.progress` while processing.
 }
 ```
 
-`stage` values: `LOADING`, `PREPROCESSING`, `INFERENCE`, `POSTPROCESSING`.
+`stage` values: `LOADING`, `PREPROCESSING`, `INFERENCE`, `POSTPROCESSING`. This is a
+closed set — clients switch on it, detectors must not invent their own names.
+
+`details` (optional) — small detector-defined object with stage context, e.g. the audio
+detector sends `{ "current_segment": 12, "total_segments": 40 }` during `INFERENCE`.
+Consumers must tolerate its absence.
 
 Detectors send a start-ping (`progress: 0`, `stage: LOADING`) as soon as they pick up
 a task. The Orchestrator flips the analysis `PENDING` → `PROCESSING` on it and treats
@@ -106,12 +119,24 @@ Success:
     "verdict": "FAKE",
     "confidence": 0.74,
     "model_version": "dummy-v0.1",
-    "gradcam_urls": [],
+    "gradcam_keys": ["550e8400-e29b-41d4-a716-446655440000/video/frame1.png"],
     "metadata": {}
   },
   "error": null
 }
 ```
+
+`gradcam_keys` — list of **bare object keys** in the `analysis-artifacts` bucket,
+following the `{analysisId}/{source}/{name}.png` convention from
+[`object-storage.md`](./object-storage.md). No URI scheme, no bucket prefix — the
+Orchestrator persists the keys and serves the artifacts itself. Empty list when the
+detector produced no visualizations. This is the only accepted field — URI-style
+variants (`gradcam_url`, `gradcam_urls`) are ignored.
+
+`metadata` — detector-defined free-form object (e.g. audio publishes
+`segment_predictions`, `insights`, `duration_seconds`). The Orchestrator persists it
+as-is, except `segment_predictions` is uniformly downsampled to ≤500 entries
+(`segment_predictions_downsampled: true` is set when that happens).
 
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
 

@@ -15,6 +15,12 @@ spring:
     url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
     username: ${POSTGRES_USER}
     password: ${POSTGRES_PASSWORD}
+    hikari:
+      # Pool size env-overridable so the MO benchmark can A/B 10 vs 20 without a rebuild.
+      maximum-pool-size: ${DB_POOL_MAX:20}
+      minimum-idle: 5
+      connection-timeout: 5000        # fail fast under load instead of blocking the request thread
+      leak-detection-threshold: 10000 # warn on a connection held >10s (diagnostic)
   jpa:
     hibernate:
       ddl-auto: none
@@ -44,9 +50,11 @@ spring:
         # Spans (traceId in MDC) for the consumer thread; reads traceparent off the message.
         observation-enabled: true
         # Exhausted retries -> RepublishMessageRecoverer (RabbitConfig) -> analysis.results.dlq.
+        # max-retries counts REDELIVERIES (3 = 4 attempts total); SB 4.0 dropped max-attempts —
+        # the old key binds nowhere and is silently ignored.
         retry:
           enabled: true
-          max-attempts: 4
+          max-retries: 3
           initial-interval: 1s
           multiplier: 4
           max-interval: 15s
@@ -54,6 +62,15 @@ eureka:
   client:
     service-url:
       defaultZone: http://eureka-server:8761/eureka/
+storage:
+  endpoint: ${S3_ENDPOINT:http://seaweedfs:8333}
+  region: us-east-1
+  # Read-only identity scoped to analysis-artifacts (infra/seaweedfs/s3.json) — the orchestrator
+  # serves Grad-CAM PNGs but must not be able to read user uploads. Dev defaults let the context
+  # start without S3 (client construction is offline; calls fail-soft to 404/503 in the endpoint).
+  access-key: ${S3_ORCHESTRATOR_KEY:dev-unset}
+  secret-key: ${S3_ORCHESTRATOR_SECRET:dev-unset}
+  artifacts-bucket: analysis-artifacts
 backpressure:
   # Max concurrent in-flight analyses before POST /api/analysis returns 429 (counts analyses, not
   # detector tasks). Env-overridable so load tests can trip it (e.g. =2 with dummy ML).

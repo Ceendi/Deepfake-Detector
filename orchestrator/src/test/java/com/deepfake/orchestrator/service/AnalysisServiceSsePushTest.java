@@ -37,7 +37,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
  * AMQP result/progress handling pushes to the SSE registry: progress events while running, and
- * exactly one terminal result + complete() once a status is reached — but nothing until a multi-task
+ * exactly one terminal result + complete() once a status is reached â€” but nothing until a multi-task
  * analysis is fully done.
  */
 @ExtendWith(MockitoExtension.class)
@@ -88,7 +88,7 @@ class AnalysisServiceSsePushTest {
     @Test
     void completedResultPushesResultThenCompletes() {
         givenAnalysis(AnalysisType.VIDEO, new BigDecimal("0.8"), null);
-        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
         when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of(
@@ -117,7 +117,7 @@ class AnalysisServiceSsePushTest {
     @Test
     void partialResultDoesNotPushUntilDone() {
         givenAnalysis(AnalysisType.FULL, new BigDecimal("0.7"), null); // needs both, only video so far
-        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of( // only video arrives so far
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",

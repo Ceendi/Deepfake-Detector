@@ -15,7 +15,56 @@ dependencies = [
     "prometheus-client==0.25.*",
     "structlog==25.*",
     "boto3==1.42.*",
+    "lightning==2.5.0",
+    "audiomentations[extras]>=0.37",
+    "librosa>=0.10",
+    "soundfile>=0.12",
+    "pandas>=2.0",
+    "pyarrow>=14.0",
+    "torch==2.12.0",
+    "torchaudio==2.11.0",
+    "torchvision==0.27.0",
+    "onnx",
+    "onnxruntime",
+    "transformers<4.44.0",
+    "redis",
+    "matplotlib",
+    "pyroomacoustics>=0.10.1",
+    "seaborn>=0.13.2",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+# Consumer tests stub src.inference, so they run without the ML stack:
+#   uv pip install pika structlog boto3 redis prometheus-client pytest && pytest tests
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+]
+torchaudio = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+]
+torchvision = [
+  { index = "pytorch-cu126", marker = "sys_platform == 'win32'" },
+  { index = "pytorch-cpu", marker = "sys_platform == 'linux'" }
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

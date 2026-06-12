@@ -34,6 +34,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -60,6 +61,7 @@ public class AnalysisService {
     private final BackpressureGuard backpressure;
     private final IdempotencyGuard idempotency;
     private final AnalysisMetrics metrics;
+    private final ResultDetailsExtractor detailsExtractor = new ResultDetailsExtractor();
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         backpressure.acquire(); // 429 here -> nothing persisted or published
@@ -96,7 +98,13 @@ public class AnalysisService {
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_VIDEO, payload);
         }
         if (req.type() == AnalysisType.AUDIO || req.type() == AnalysisType.FULL) {
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, payload);
+            // mode is audio-only: it selects the audio model (fast = spectrogram, accurate = Wav2Vec2).
+            // Always sent explicitly (request normalizes null -> accurate) so queue payloads are
+            // self-describing; the video task keeps the unchanged contract.
+            Span.current().setAttribute("analysis.mode", req.mode().wire());
+            Map<String, Object> audioPayload = new HashMap<>(payload);
+            audioPayload.put("mode", req.mode().wire());
+            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, audioPayload);
         }
 
         return AnalysisResponse.from(analysis);
@@ -211,10 +219,11 @@ public class AnalysisService {
         @SuppressWarnings("unchecked")
         Map<String, Object> result = (Map<String, Object>) payload.get("result");
         BigDecimal prob = new BigDecimal(result.get("prob_fake").toString());
+        Map<String, Object> details = detailsExtractor.extract(result);
 
         int rows = "video".equals(source)
-                ? repository.writeVideoProb(id, prob, ACTIVE, Instant.now())
-                : repository.writeAudioProb(id, prob, ACTIVE, Instant.now());
+                ? repository.writeVideoProb(id, prob, details, ACTIVE, Instant.now())
+                : repository.writeAudioProb(id, prob, details, ACTIVE, Instant.now());
         if (rows == 0) {
             log.warn("Result for terminal/unknown analysis {} ({}), ignoring", id, source);
             return;
@@ -241,22 +250,29 @@ public class AnalysisService {
 
     // Dead-lettered message: the DLQ consumer asks us to fail the analysis.
     public void failFromDlq(UUID id, String reason) {
-        transitionToFailed(id, "dead-letter: " + reason);
+        if (transitionToFailed(id, "dead-letter: " + reason)) {
+            metrics.dlqFailure();
+        }
     }
 
     // Stuck-job recovery asks us to fail an analysis that hasn't progressed past its threshold.
     public void failStuck(UUID id, long thresholdSeconds) {
-        transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery");
+        if (transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery")) {
+            metrics.stuckRecovery();
+        }
     }
 
     // Shared terminal-failure transition. The CAS is the guard: a late result and recovery firing
-    // together still release the slot exactly once (only one gets 1 row).
-    private void transitionToFailed(UUID id, String errorMessage) {
+    // together still release the slot exactly once (only one gets 1 row). Returns whether this call
+    // won, so callers count their cause-specific D6 metric only for the winning transition — keeping
+    // analyses_dlq_total / analyses_stuck_recovered_total aligned with analyses_total{status=failed}.
+    private boolean transitionToFailed(UUID id, String errorMessage) {
         if (repository.failIfActive(id, AnalysisStatus.FAILED, errorMessage, ACTIVE, Instant.now()) == 1) {
             onTerminal(id);
-        } else {
-            log.info("fail requested for non-active analysis {}, ignoring", id);
+            return true;
         }
+        log.info("fail requested for non-active analysis {}, ignoring", id);
+        return false;
     }
 
     // Side effects shared by every terminal transition (status already CAS-written). Re-reads because

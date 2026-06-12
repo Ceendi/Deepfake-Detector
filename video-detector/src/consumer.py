@@ -5,6 +5,7 @@ import time
 
 import pika
 import structlog
+from prometheus_client import Counter, Histogram
 
 RABBIT_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 RABBIT_USER = os.getenv("RABBITMQ_USER", "deepfake")
@@ -15,6 +16,20 @@ EXCHANGE    = "analysis.exchange"
 DLX         = "analysis.dlx"
 
 log = structlog.get_logger(__name__)
+
+# --- Business metrics (starter; exposed at /metrics, see main.py) -------------------------------
+# TODO(Osoba 3/4): extend with per-stage timings (face-detect / inference / grad-cam), model_version
+# label, queue-wait, etc. Labelled by source so video + audio share one series name.
+INFERENCE_LATENCY = Histogram(
+    "inference_latency_seconds",
+    "Wall-clock time of one process() inference",
+    ["source"],
+)
+DETECTOR_RESULTS = Counter(
+    "detector_results_total",
+    "Detector outcomes",
+    ["source", "outcome"],  # outcome: fake | real | failed
+)
 
 # ============================================================
 # REPLACEMENT POINT — swap with the real ML pipeline.
@@ -44,7 +59,7 @@ def process(msg: dict) -> dict:
         "verdict": "FAKE" if prob > 0.5 else "REAL",
         "confidence": round(abs(prob - 0.5) * 2, 4),
         "model_version": "dummy-v0.1",
-        "gradcam_urls": [],
+        "gradcam_keys": [],
         "metadata": {},
     }
 
@@ -93,7 +108,9 @@ def _handle_message(ch, method, properties, body):
             "progress": 50,
             "stage": "INFERENCE",
         })
-        result = process(msg)
+        with INFERENCE_LATENCY.labels(SOURCE).time():
+            result = process(msg)
+        DETECTOR_RESULTS.labels(SOURCE, result["verdict"].lower()).inc()
         _publish(ch, "analysis.results", {
             "analysis_id": analysis_id,
             "correlation_id": correlation_id,
@@ -106,6 +123,7 @@ def _handle_message(ch, method, properties, body):
         log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
     except Exception as e:
         log.exception("processing_failed")
+        DETECTOR_RESULTS.labels(SOURCE, "failed").inc()
         _publish(ch, "analysis.results", {
             "analysis_id": analysis_id,
             "correlation_id": correlation_id,

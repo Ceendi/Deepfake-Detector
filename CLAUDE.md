@@ -56,8 +56,8 @@ Szczegóły podziału: sekcja 10 planu. Jeśli implementujesz coś — sprawdź,
 ### ML (Python)
 
 - Python 3.12
-- PyTorch 2.7 + PyTorch Lightning 2.5
-- ONNX Runtime 1.25
+- PyTorch 2.12 (CPU wheels) + PyTorch Lightning 2.5 — **detektory robią inferencję CPU-only** (ONNX `CPUExecutionProvider` + torch `map_location='cpu'`); trening jest na GPU hosta, poza obrazem. Audio pinuje `torch==2.12.0` / `torchaudio==2.11.0` / `torchvision==0.27.0` z indeksu `pytorch-cpu` (NIE cu121)
+- ONNX Runtime 1.25 (CPU EP). Uwaga: `torchaudio.load` w audio zastąpione `soundfile` — torchaudio ≥ 2.9 routuje `load()` przez `torchcodec`, którego nie instalujemy
 - `timm`, `insightface` (RetinaFace), `albumentations`, `audiomentations`
 - HuggingFace `transformers` (Wav2Vec2-XLS-R)
 - `pytorch-grad-cam`
@@ -65,7 +65,7 @@ Szczegóły podziału: sekcja 10 planu. Jeśli implementujesz coś — sprawdź,
 - `prometheus-client` 0.25, `structlog` 25, `boto3` 1.42, OpenTelemetry Python SDK
 - Weights & Biases (experiment tracking)
 - **Install:** `uv` (de facto standard 2026, ~10x szybsze niż pip). Dockerfile używa `uv pip install --system -r pyproject.toml` — instalujemy _tylko_ deps z `[project.dependencies]`, sam projekt nie jest budowany w obrazie (żeby code change nie inwalidował warstwy z deps)
-- **Źródło prawdy dla wersji Python deps:** `video-detector/pyproject.toml` (audio-detector trzyma identyczną kopię — różni się tylko `name`/`description` + dwa env defaults w `consumer.py`). Pyproject wygrywa nad CLAUDE.md — popraw CLAUDE.md w PR jeśli widzisz rozjazd
+- **Źródło prawdy dla wersji Python deps:** `audio-detector/pyproject.toml` (realny stack ML: CPU torch + ONNX + lightning). `video-detector` jest na razie **stubem** (`process()` = dummy, bez torcha w pyproject) — dostanie własny stack przy wdrożeniu modelu video (najpewniej GPU). Pyproject wygrywa nad CLAUDE.md — popraw CLAUDE.md w PR jeśli widzisz rozjazd
 
 ### Infra
 
