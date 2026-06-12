@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.dto.response;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -56,11 +57,26 @@ public record AnalysisResponse(
         }
         Map<String, Object> details = new LinkedHashMap<>();
         if (a.getVideoDetails() != null) {
-            details.put("video", a.getVideoDetails());
+            details.put("video", withArtifactUrls(a.getId(), "video", a.getVideoDetails()));
         }
         if (a.getAudioDetails() != null) {
-            details.put("audio", a.getAudioDetails());
+            details.put("audio", withArtifactUrls(a.getId(), "audio", a.getAudioDetails()));
         }
         return details;
+    }
+
+    // Clients consume artifact-endpoint URLs, not raw bucket keys — the storage layout stays
+    // internal. Keys are kept alongside for audit; the URL filename is the key's last segment,
+    // which is exactly what the membership check in ArtifactService matches against.
+    private static Map<String, Object> withArtifactUrls(UUID id, String source, Map<String, Object> stored) {
+        if (!(stored.get("gradcamKeys") instanceof Collection<?> keys) || keys.isEmpty()) {
+            return stored;
+        }
+        Map<String, Object> copy = new LinkedHashMap<>(stored);
+        copy.put("gradcamUrls", keys.stream().map(Object::toString)
+                .map(k -> "/api/analysis/" + id + "/artifacts/" + source + "/"
+                        + k.substring(k.lastIndexOf('/') + 1))
+                .toList());
+        return copy;
     }
 }
