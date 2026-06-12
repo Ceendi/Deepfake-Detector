@@ -3,6 +3,7 @@ package com.deepfake.orchestrator.controller;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.response.UserStatsResponse;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.AuthenticatedUser;
@@ -55,6 +56,13 @@ public class AnalysisController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return new PagedModel<>(service.list(user.id(), pageable));
+    }
+
+    // The exact "/stats" pattern outranks the "/{id}" template, so this never resolves as an id.
+    @Operation(summary = "Aggregate stats of the caller's analyses (homepage dashboard)")
+    @GetMapping("/stats")
+    public UserStatsResponse stats(@CurrentUser AuthenticatedUser user) {
+        return service.stats(user.id());
     }
 
     @Operation(summary = "Get one analysis by id")

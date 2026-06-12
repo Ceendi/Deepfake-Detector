@@ -5,6 +5,7 @@ import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.response.UserStatsResponse;
 import com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent;
 import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
@@ -33,6 +34,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
@@ -153,6 +155,15 @@ public class AnalysisService {
     public Page<AnalysisSummary> list(String currentUserId, Pageable pageable) {
         // IDOR is enforced by scoping to currentUserId — the query never returns foreign rows.
         return repository.findByUserId(currentUserId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public UserStatsResponse stats(String currentUserId) {
+        // Same IDOR-by-construction scoping as list(). Uncached: the aggregate rides the covering
+        // index idx_analysis_user_created, and a stale in-progress count on the homepage would
+        // contradict the live SSE updates.
+        return UserStatsResponse.from(
+                repository.userStats(currentUserId, Instant.now().minus(7, ChronoUnit.DAYS)));
     }
 
     /**
