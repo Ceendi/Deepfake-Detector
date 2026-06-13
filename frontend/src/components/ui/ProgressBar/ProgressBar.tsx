@@ -6,7 +6,7 @@ import type { ComponentPropsWithoutRef, CSSProperties } from 'react'
 
 interface ProgressBarProps extends ComponentPropsWithoutRef<'div'> {
   value?: number
-  tone?: 'accent' | 'danger'
+  tone?: 'accent' | 'danger' | 'warning' | 'success'
   label?: string
   showValue?: boolean
 }

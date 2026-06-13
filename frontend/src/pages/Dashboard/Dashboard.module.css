@@ -85,6 +85,9 @@
   color: var(--color-success);
 }
 .statMeta {
+  /* Karty równej wysokości (grid stretch) → meta dosunięta do dołu, więc pasek „Odsetek FAKE"
+     siada na spodzie karty, w jednej linii z metami pozostałych kart. */
+  margin-top: auto;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
@@ -95,12 +98,16 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
+  overflow: hidden; /* przycina hover wierszy do zaokrąglonych rogów (jak .list w History) */
 }
 .panelHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-4) var(--spacing-5);
+  /* oddziela nagłówek od pierwszego wiersza — HistoryRow rozdziela wiersze przez .row + .row,
+     więc pierwszy nie ma górnej krawędzi (mirror nagłówka kolumn .listHead w History) */
+  border-bottom: 1px solid var(--color-border);
 }
 .panelHead h2 {
   margin: 0;
@@ -109,100 +116,6 @@
 .viewAll {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
-}
-
-/* ---- Wiersz analizy ---------------------------------------------------- */
-.row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  padding: var(--spacing-4) var(--spacing-5);
-  border-top: 1px solid var(--color-border);
-}
-.thumb {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  width: 56px;
-  height: 40px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-}
-.thumbLabel {
-  font-family: var(--font-family-mono);
-  font-size: 9px;
-  letter-spacing: 0.05em;
-}
-.rowMain {
-  flex: 1;
-  min-width: 0;
-}
-.rowTitle {
-  font-weight: var(--font-weight-semibold);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rowMeta {
-  margin-top: 2px;
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  white-space: nowrap;
-}
-.rowRight {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  flex-shrink: 0;
-}
-/* Werdykt + pewność trzymane razem (na mobile zjadą w jednej linii, status pod spodem) */
-.verdictGroup {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-4);
-}
-.confidence {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-sm);
-  color: var(--color-text-muted);
-}
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--font-size-sm);
-  white-space: nowrap;
-}
-.statusDanger {
-  color: var(--color-danger);
-  font-weight: var(--font-weight-semibold);
-}
-.dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-full);
-}
-.dotSuccess {
-  background: var(--color-success);
-}
-.dotAccent {
-  background: var(--color-accent);
-}
-.dotDanger {
-  background: var(--color-danger);
-}
-.dotMuted {
-  background: var(--color-neutral-400);
-}
-.rowProgress {
-  width: 120px;
 }
 
 /* ---- Stan pusty (brak analiz) ----------------------------------------- */
@@ -302,18 +215,5 @@
 @media (max-width: 560px) {
   .stats {
     grid-template-columns: 1fr;
-  }
-  .row {
-    padding: var(--spacing-4);
-    gap: var(--spacing-3);
-  }
-  /* Prawa kolumna staje pionowa: werdykt+pewność u góry, status pod spodem — bez ucinania */
-  .rowRight {
-    flex-direction: column;
-    align-items: flex-end;
-    gap: var(--spacing-1);
-  }
-  .rowProgress {
-    width: 80px;
   }
 }

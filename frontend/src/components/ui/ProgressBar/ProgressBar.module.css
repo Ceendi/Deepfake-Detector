@@ -65,3 +65,9 @@
 .danger .fill {
   background: var(--color-danger);
 }
+.warning .fill {
+  background: var(--color-warning);
+}
+.success .fill {
+  background: var(--color-success);
+}

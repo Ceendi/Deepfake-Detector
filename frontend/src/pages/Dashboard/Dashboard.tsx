@@ -5,105 +5,39 @@ import { Link } from 'react-router-dom'
 import { Plus, LineChart, ShieldAlert, ShieldCheck, BarChart3 } from 'lucide-react'
 
 import { useAuth } from '@/context/auth-context'
-import { listAnalyses } from '@/api/analysis'
-import type { AnalysisSummary } from '@/api/types'
+import { getStats, listAnalyses } from '@/api/analysis'
+import type { AnalysisSummary, UserStats } from '@/api/types'
 
 import { Spinner } from '@/components/ui/Spinner/Spinner'
 import { Alert } from '@/components/ui/Alert/Alert'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
+// „Ostatnie analizy" reużywa wiersza z History — jedno źródło prawdy, identyczny render.
+import { HistoryRow } from '@/pages/History/components/HistoryRow'
 
 import { StatCard } from './components/StatCard'
-import { AnalysisRow } from './components/AnalysisRow'
 import { DashboardEmpty } from './components/DashboardEmpty'
 
 import styles from './Dashboard.module.css'
 
-// TODO(backend): statystyki podsumowujące nie mają jeszcze endpointu (np. GET /api/analysis/stats).
-// Na razie dane zmyślone — podmień, gdy Orchestrator wystawi agregaty.
-const FAKE_STATS = {
-  total: 128,
-  totalDelta: 12,
-  fake: 37,
-  real: 91,
-}
-const fakePercent = Math.round((FAKE_STATS.fake / FAKE_STATS.total) * 100)
-
 type LoadState = 'loading' | 'ready' | 'error'
-
-// TODO: tymczasowy podgląd widoku „z danymi" zanim ruszy backend. Ustaw na false (i usuń
-// MOCK_ANALYSES) gdy lista z Orchestratora działa. Włączone → pomija fetch, używa mocka.
-const USE_MOCK = false
-const MOCK_ANALYSES: AnalysisSummary[] = [
-  {
-    id: '1',
-    fileId: 'a1b2c3d4e5f6',
-    type: 'VIDEO',
-    status: 'COMPLETED',
-    verdict: 'FAKE',
-    confidence: 0.94,
-    createdAt: '2026-06-10T14:32:00Z',
-    updatedAt: '2026-06-10T14:33:00Z',
-  },
-  {
-    id: '2',
-    fileId: 'b2c3d4e5f6a1',
-    type: 'AUDIO',
-    status: 'COMPLETED',
-    verdict: 'REAL',
-    confidence: 0.88,
-    createdAt: '2026-06-10T11:08:00Z',
-    updatedAt: '2026-06-10T11:09:00Z',
-  },
-  {
-    id: '3',
-    fileId: 'c3d4e5f6a1b2',
-    type: 'VIDEO',
-    status: 'PROCESSING',
-    verdict: null,
-    confidence: null,
-    createdAt: '2026-06-10T09:15:00Z',
-    updatedAt: '2026-06-10T09:15:00Z',
-  },
-  {
-    id: '4',
-    fileId: 'd4e5f6a1b2c3',
-    type: 'VIDEO',
-    status: 'COMPLETED',
-    verdict: 'REAL',
-    confidence: 0.91,
-    createdAt: '2026-06-09T18:40:00Z',
-    updatedAt: '2026-06-09T18:42:00Z',
-  },
-  {
-    id: '5',
-    fileId: 'e5f6a1b2c3d4',
-    type: 'AUDIO',
-    status: 'FAILED',
-    verdict: null,
-    confidence: null,
-    createdAt: '2026-06-08T20:12:00Z',
-    updatedAt: '2026-06-08T20:12:00Z',
-  },
-]
 
 export default function Dashboard() {
   const { user } = useAuth()
 
-  const [state, setState] = useState<LoadState>(USE_MOCK ? 'ready' : 'loading')
-  const [items, setItems] = useState<AnalysisSummary[]>(USE_MOCK ? MOCK_ANALYSES : [])
-  const [total, setTotal] = useState(USE_MOCK ? MOCK_ANALYSES.length : 0)
+  const [state, setState] = useState<LoadState>('loading')
+  const [items, setItems] = useState<AnalysisSummary[]>([])
+  const [stats, setStats] = useState<UserStats | null>(null)
 
-  // Stan „ma analizy / nie ma" ustalamy po pierwszej stronie listy z Orchestratora.
-  // totalElements > 0 → pokazujemy dashboard z danymi; === 0 → onboarding (pusty stan).
+  // Agregaty (karty) + pierwsza strona listy (ostatnie analizy) lecą równolegle.
+  // stats.total > 0 → dashboard z danymi; === 0 → onboarding (pusty stan).
   useEffect(() => {
-    if (USE_MOCK) return // podgląd z mocka — nie wołamy backendu
     const controller = new AbortController()
 
-    listAnalyses(0, 5, controller.signal)
-      .then((paged) => {
+    Promise.all([getStats(controller.signal), listAnalyses(0, 5, controller.signal)])
+      .then(([userStats, paged]) => {
+        setStats(userStats)
         setItems(paged.content)
-        setTotal(paged.page.totalElements)
         setState('ready')
       })
       .catch(() => {
@@ -132,9 +66,19 @@ export default function Dashboard() {
     )
   }
 
-  if (total === 0) {
+  // state === 'ready' ⟹ stats != null; `|| !stats` zawęża typ i jest bezpiecznym fallbackiem.
+  if (!stats || stats.total === 0) {
     return <DashboardEmpty firstName={firstName} />
   }
+
+  // Odsetek FAKE wśród analiz, które dostały werdykt (fake + real == COMPLETED), nie wśród total —
+  // PENDING/FAILED/CANCELLED nie mają werdyktu. Zero werdyktów → 0%, bez dzielenia przez zero.
+  const verdictTotal = stats.verdicts.fake + stats.verdicts.real
+  const fakePercent = verdictTotal > 0 ? Math.round((stats.verdicts.fake / verdictTotal) * 100) : 0
+  const last7Meta =
+    stats.last7Days > 0
+      ? `↗ +${stats.last7Days} w ostatnich 7 dniach`
+      : 'brak nowych w tym tygodniu'
 
   // --- Stan z danymi ----------------------------------------------------------
   return (
@@ -153,14 +97,14 @@ export default function Dashboard() {
         <StatCard
           icon={LineChart}
           label="Łączna liczba analiz"
-          value={FAKE_STATS.total}
+          value={stats.total}
           iconTone="accent"
-          meta={`↗ +${FAKE_STATS.totalDelta} w tym tygodniu`}
+          meta={last7Meta}
         />
         <StatCard
           icon={ShieldAlert}
           label="Wykryte FAKE"
-          value={FAKE_STATS.fake}
+          value={stats.verdicts.fake}
           iconTone="danger"
           valueTone="danger"
           meta="manipulacje obrazu / dźwięku"
@@ -168,7 +112,7 @@ export default function Dashboard() {
         <StatCard
           icon={ShieldCheck}
           label="Potwierdzone REAL"
-          value={FAKE_STATS.real}
+          value={stats.verdicts.real}
           iconTone="success"
           valueTone="success"
           meta="materiały autentyczne"
@@ -178,7 +122,7 @@ export default function Dashboard() {
           label="Odsetek FAKE"
           value={`${fakePercent}%`}
           iconTone="warning"
-          meta={<ProgressBar value={fakePercent} tone="danger" />}
+          meta={<ProgressBar value={fakePercent} tone="warning" />}
         />
       </div>
 
@@ -190,7 +134,7 @@ export default function Dashboard() {
           </Link>
         </div>
         {items.map((item) => (
-          <AnalysisRow key={item.id} analysis={item} />
+          <HistoryRow key={item.id} analysis={item} />
         ))}
       </section>
     </div>
