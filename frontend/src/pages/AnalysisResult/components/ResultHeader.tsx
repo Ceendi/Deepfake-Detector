@@ -4,13 +4,23 @@ import type { Analysis } from '@/api/types'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 
 import { ReportPdfButton } from './ReportPdfButton'
-import { displayName, typeLabel, formatDateTime, analysisDuration } from '../result-utils'
+import {
+  displayName,
+  typeLabel,
+  formatDateTime,
+  analysisDuration,
+  relativeTime,
+} from '../result-utils'
 
 import styles from '../AnalysisResult.module.css'
 
 export function ResultHeader({ analysis }: { analysis: Analysis }) {
   const Icon = analysis.type === 'AUDIO' ? AudioLines : Video
-  const duration = analysisDuration(analysis.createdAt, analysis.updatedAt)
+  const inProgress = analysis.status === 'PENDING' || analysis.status === 'PROCESSING'
+  // W toku nie ma jeszcze „czasu analizy" → pokaż kiedy ruszyła; po zakończeniu — ile trwała.
+  const timeInfo = inProgress
+    ? `rozpoczęto: ${relativeTime(analysis.createdAt)}`
+    : `czas analizy: ${analysisDuration(analysis.createdAt, analysis.updatedAt)}`
 
   return (
     <header className={styles.header}>
@@ -26,7 +36,7 @@ export function ResultHeader({ analysis }: { analysis: Analysis }) {
             <span className={styles.metaDot} aria-hidden="true">
               ·
             </span>
-            <span className={styles.metaText}>czas analizy: {duration}</span>
+            <span className={styles.metaText}>{timeInfo}</span>
           </div>
         </div>
       </div>

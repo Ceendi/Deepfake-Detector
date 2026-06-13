@@ -20,6 +20,18 @@ const TYPE_LABEL: Record<AnalysisType, string> = {
 }
 export const typeLabel = (type: AnalysisType): string => TYPE_LABEL[type]
 
+// Czas względny od `iso` do teraz ('przed chwilą' / '3 min temu' / '2 godz. temu'); starsze niż doba
+// → pełna data. Używane w nagłówku dla analiz w toku ('rozpoczęto: …'). Liczone przy renderze.
+export function relativeTime(iso: string): string {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 45) return 'przed chwilą'
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m} min temu`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h} godz. temu`
+  return formatDateTime(iso)
+}
+
 // Czas analizy = updatedAt − createdAt (sekundy → '30 s' / '1 min 5 s'). Przybliżenie do realnego
 // czasu wykonania; dokładny pomiar dojdzie z backendu.
 export function analysisDuration(createdAt: string, updatedAt: string): string {

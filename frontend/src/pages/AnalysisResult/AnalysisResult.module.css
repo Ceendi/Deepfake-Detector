@@ -512,6 +512,168 @@
   margin-top: var(--spacing-1);
 }
 
+/* ============================================================
+   Ekran „w toku" na żywo (LiveProgress)
+   ============================================================ */
+.liveCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-4);
+  min-height: 340px;
+  padding: var(--spacing-7) var(--spacing-6);
+  text-align: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Badge „● NA ŻYWO" */
+.liveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.liveDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 18%, transparent);
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+
+.liveTitle {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+.liveStage {
+  margin: 0;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* Pasek całości + duży procent pod nim */
+.liveBarWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-2);
+  width: 100%;
+  max-width: 520px;
+  margin-top: var(--spacing-1);
+}
+.livePercent {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Checklista kroków (rozbita na wideo/audio dla FULL) */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  width: 100%;
+  max-width: 520px;
+  margin-top: var(--spacing-2);
+  text-align: left;
+}
+.stepGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: var(--spacing-3) 0 var(--spacing-0);
+  padding: 0 var(--spacing-3);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.stepGroup:first-child {
+  margin-top: 0;
+}
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-md);
+}
+.stepActive {
+  background: var(--color-accent-surface);
+}
+.stepIcon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+.stepIcon[data-state='done'] {
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+  color: var(--color-on-success);
+}
+.stepIcon[data-state='active'] {
+  color: var(--color-accent);
+}
+.stepIcon[data-state='pending'] {
+  color: var(--color-text-muted);
+  opacity: 0.4;
+}
+.stepLabel {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.step[data-state='done'] .stepLabel {
+  color: var(--color-text-primary);
+}
+.stepActive .stepLabel {
+  color: var(--color-text-primary);
+  font-weight: var(--font-weight-semibold);
+}
+
+.liveActions {
+  margin-top: var(--spacing-3);
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes livePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .liveDot {
+    animation: none;
+  }
+}
+
 /* ===== Stopka akcji ===== */
 .footer {
   display: flex;

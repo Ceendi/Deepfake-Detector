@@ -21,36 +21,39 @@ import { AudioTimeline } from './components/AudioTimeline'
 import { SummarySection } from './components/SummarySection'
 import { ReportPdfButton } from './components/ReportPdfButton'
 import { AnalysisStatusState } from './components/AnalysisStatusState'
+import { LiveProgress } from './components/LiveProgress'
 
 import styles from './AnalysisResult.module.css'
 
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error'
 
-// Strona wyniku analizy. Na razie odwzorowuje makietę — część treści (wnioski, etykiety klatek,
-// nazwa modelu) to placeholder; obrazy Grad-CAM są realne (pobierane z endpointu artefaktów).
-// Live-stream postępu (gdy PENDING/PROCESSING) i raport PDF dochodzą osobno.
+// Strona wyniku analizy. COMPLETED → werdykt + Grad-CAM (realne) + placeholdery (wnioski/model);
+// PENDING/PROCESSING → LiveProgress (postęp na żywo z SSE); FAILED/CANCELLED → AnalysisStatusState.
+// Po `result`/anulowaniu LiveProgress woła onSettled → refetch przełącza widok. Raport PDF osobno.
 export default function AnalysisResult() {
   const { id } = useParams<{ id: string }>()
   const [state, setState] = useState<LoadState>('loading')
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
+  // Bump po SSE `result` / anulowaniu (LiveProgress.onSettled) → efekt poniżej przeładowuje pełny
+  // zasób, przełączając ekran „w toku" na werdykt / FAILED / CANCELLED. setState w callbackach
+  // promisy (nie synchronicznie w efekcie) — wymóg react-hooks/set-state-in-effect.
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     if (!id) return
     const controller = new AbortController()
-
-    getAnalysis(id, controller.signal)
-      .then((a) => {
-        console.log('[AnalysisResult] GET /api/analysis/%s →', id, a)
+    getAnalysis(id, controller.signal).then(
+      (a) => {
         setAnalysis(a)
         setState('ready')
-      })
-      .catch((err) => {
+      },
+      (err) => {
         if (controller.signal.aborted) return
         setState(err instanceof ApiError && err.isNotFound ? 'notfound' : 'error')
-      })
-
+      },
+    )
     return () => controller.abort()
-  }, [id])
+  }, [id, reloadKey])
 
   // Trasa to /analysis-result/:id, więc w praktyce id zawsze jest — guard dla typu/edge-case.
   if (!id) {
@@ -88,6 +91,7 @@ export default function AnalysisResult() {
 
   const isCompleted =
     analysis.status === 'COMPLETED' && analysis.verdict != null && analysis.confidence != null
+  const isInProgress = analysis.status === 'PENDING' || analysis.status === 'PROCESSING'
 
   return (
     <div className={styles.page}>
@@ -114,6 +118,12 @@ export default function AnalysisResult() {
             <ReportPdfButton variant="primary" label="Pobierz raport PDF" />
           </footer>
         </>
+      ) : isInProgress ? (
+        <LiveProgress
+          key={analysis.id}
+          analysis={analysis}
+          onSettled={() => setReloadKey((k) => k + 1)}
+        />
       ) : (
         <AnalysisStatusState analysis={analysis} />
       )}
