@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 from .consumer import run_consumer
+
 structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,
@@ -18,13 +19,19 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 _consumer_alive = {"ok": False}
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     threading.Thread(target=run_consumer, args=(_consumer_alive,), daemon=True).start()
     yield
+
+
 app = FastAPI(lifespan=lifespan)
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
+
+
 @app.get("/health")
 def health():
     if _consumer_alive["ok"]:
