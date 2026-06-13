@@ -1,0 +1,11 @@
+trial,lr_backbone,lr_head,best_val_auc,best_epoch,last_val_f1,minutes,ckpt
+lr_backbone=1e-05_lr_head=0.001,1e-05,0.001,0.736,05,0.6057,33.9,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=1e-05_lr_head=0.001\best-epoch=05-val_auc=0.7360.ckpt
+lr_backbone=1e-05_lr_head=0.0003,1e-05,0.0003,0.7292,04,0.6319,33.5,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=1e-05_lr_head=0.0003\best-epoch=04-val_auc=0.7292.ckpt
+lr_backbone=5e-05_lr_head=0.001,5e-05,0.001,0.8244,05,0.8028,33.5,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=5e-05_lr_head=0.001\best-epoch=05-val_auc=0.8244.ckpt
+lr_backbone=5e-05_lr_head=0.0003,5e-05,0.0003,0.867,04,0.7396,33.4,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=5e-05_lr_head=0.0003\best-epoch=04-val_auc=0.8670.ckpt
+lr_backbone=0.0002_lr_head=0.001,0.0002,0.001,0.8552,04,0.8086,33.5,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=0.0002_lr_head=0.001\best-epoch=04-val_auc=0.8552.ckpt
+lr_backbone=0.0002_lr_head=0.0003,0.0002,0.0003,0.8847,04,0.7857,33.1,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=0.0002_lr_head=0.0003\best-epoch=04-val_auc=0.8847.ckpt
+lr_backbone=0.0005_lr_head=0.001,0.0005,0.001,0.8021,05,0.8107,33.5,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=0.0005_lr_head=0.001\best-epoch=05-val_auc=0.8021.ckpt
+lr_backbone=0.0005_lr_head=0.0003,0.0005,0.0003,0.955,05,0.9159,33.7,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=0.0005_lr_head=0.0003\best-epoch=05-val_auc=0.9550.ckpt
+lr_backbone=0.001_lr_head=0.001,0.001,0.001,0.5428,01,0.7407,38.8,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=0.001_lr_head=0.001\best-epoch=01-val_auc=0.5428.ckpt
+lr_backbone=0.001_lr_head=0.0003,0.001,0.0003,0.717,03,0.7653,38.9,C:\Users\rekin\Documents\GitHub\Deepfake-Detector\video-detector\training\checkpoints\grid\lr_backbone=0.001_lr_head=0.0003\best-epoch=03-val_auc=0.7170.ckpt

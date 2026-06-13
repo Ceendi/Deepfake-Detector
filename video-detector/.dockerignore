@@ -1,0 +1,14 @@
+# Build context musi zostac maly: dataset cache, venv i artefakty eksperymentow
+# to pojedyncze GB — do obrazu wchodza tylko src/, pyproject i modele z
+# training/checkpoints/effnet_lstm (last.ckpt + *.onnx).
+training/data/
+training/.venv/
+training/checkpoints/grid/
+training/checkpoints/effnet_lstm/video-epoch*.ckpt
+training/gradcam_out*/
+training/eval_results*/
+training/wandb/
+archive.zip
+tests/
+**/__pycache__/
+*.pyc

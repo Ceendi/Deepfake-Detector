@@ -1,5 +1,7 @@
 import logging
+import os
 import threading
+import time
 from contextlib import asynccontextmanager
 
 import structlog
@@ -23,7 +25,12 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 
-_consumer_alive = {"ok": False}
+# Prog ciszy heartbeatu (D6): musi byc wyrazne wiekszy niz najdluzsza pojedyncza
+# inferencja — w trakcie process() petla consumera nie bije (BlockingConnection
+# jest jednowatkowe), wiec zbyt niski prog flapowalby healthcheckiem pod obciazeniem.
+HEALTH_MAX_SILENCE_SECONDS = int(os.getenv("HEALTH_MAX_SILENCE_SECONDS", "120"))
+
+_consumer_alive = {"ok": False, "last_beat": 0.0}
 
 
 @asynccontextmanager
@@ -34,13 +41,14 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Default process/python_gc metrics for Prometheus scrape (PR4). TODO(Osoba 3/4): add business
-# metrics (inference_latency_seconds, per-stage counters) in the pipeline.
 app.mount("/metrics", make_asgi_app())
 
 
 @app.get("/health")
 def health():
-    if _consumer_alive["ok"]:
+    # Sama flaga "connected" nie wystarcza: zaklinowany watek consumera dalej trzyma
+    # polaczenie — dopiero cisza heartbeatu powyzej progu oznacza serwis DOWN.
+    silence = time.time() - _consumer_alive.get("last_beat", 0.0)
+    if _consumer_alive["ok"] and silence <= HEALTH_MAX_SILENCE_SECONDS:
         return {"status": "UP"}
     return JSONResponse(status_code=503, content={"status": "DOWN"})

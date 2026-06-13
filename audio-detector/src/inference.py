@@ -19,7 +19,9 @@ sys.path.append(PROJECT_ROOT)
 from training.train_mel import MelCNNLightningModule  # noqa: E402
 
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
-MEL_CKPT_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "last.ckpt")
+MEL_CKPT_PATH = os.path.join(
+    PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "mel_model-epoch=49-val_eer=0.0816.ckpt"
+)
 
 MEL_EER_THRESHOLD = float(os.getenv("MEL_EER_THRESHOLD", "0.3049"))
 W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.3000"))
@@ -258,18 +260,8 @@ class AudioInference:
             
         if segment_predictions:
             raw_probs = [seg["prob_fake"] for seg in segment_predictions]
-            
-            # Wygładzanie (Moving Average z oknem 3-sekundowym)
-            # Izolowane piki (np. trzask w mikrofonie, szum) znikną.
-            # Aby uznać fragment za fake, anomalia musi trwać chociaż 2-3 sekundy ciągiem.
-            smoothed_probs = []
-            for i in range(len(raw_probs)):
-                start_idx = max(0, i - 1)
-                end_idx = min(len(raw_probs), i + 2)
-                smoothed_probs.append(float(np.mean(raw_probs[start_idx:end_idx])))
-                
-            top_k = min(3, len(smoothed_probs))
-            top_probs = sorted(smoothed_probs, reverse=True)[:top_k]
+            top_k = max(1, int(len(raw_probs) * 0.3))
+            top_probs = sorted(raw_probs, reverse=True)[:top_k]
             overall_prob = float(np.mean(top_probs))
         else:
             overall_prob = threshold

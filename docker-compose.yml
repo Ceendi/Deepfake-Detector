@@ -546,6 +546,10 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       QUEUE_NAME: analysis.video
       SOURCE_LABEL: video
+      # Python OTel: same gate + endpoint values as the Java *otel-env anchor, but under the
+      # standard OTel SDK env name the Python OTLP exporter reads directly.
+      OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_OTLP_ENDPOINT:-http://tempo:4318/v1/traces}
       S3_ENDPOINT: http://seaweedfs:8333
       S3_REGION: us-east-1
       S3_ACCESS_KEY: ${S3_DETECTOR_KEY}
@@ -577,6 +581,9 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
       QUEUE_NAME: analysis.audio
       SOURCE_LABEL: audio
+      # Python OTel — see video-detector for the rationale.
+      OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_OTLP_ENDPOINT:-http://tempo:4318/v1/traces}
       S3_ENDPOINT: http://seaweedfs:8333
       S3_REGION: us-east-1
       S3_ACCESS_KEY: ${S3_DETECTOR_KEY}

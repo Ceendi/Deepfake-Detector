@@ -138,7 +138,7 @@ Observability: Prometheus + Loki + Tempo + Grafana + OpenTelemetry
 - Serwisy (foldery): `gateway`, `eureka-server`, `orchestrator`, `file-service`, `video-detector`, `audio-detector`, `frontend`
 - Package Java: `com.deepfake.{service}.*`
 - Python modules: `src/pipeline/`, `src/models/`, `src/training/`, `src/evaluation/`, `src/explainability/`
-- RabbitMQ: exchange `analysis.exchange` (topic) + `analysis.dlx` (direct, DLX), routing keys `analysis.video`, `analysis.audio`, `analysis.progress`, `analysis.results`, `analysis.cancel`, DLQ: `*.dlq`
+- RabbitMQ: exchange `analysis.exchange` (topic) + `analysis.dlx` (direct, DLX), routing keys `analysis.video`, `analysis.audio`, `analysis.progress`, `analysis.results`, DLQ: `*.dlq`. Cancel NIE jest eventem AMQP — flaga Redis `cancel:{analysis_id}` (kontrakt: `docs/contracts/amqp-messages.md`)
 
 ### Topologia AMQP
 
@@ -173,7 +173,8 @@ Broker startuje pusty. **Topologia (exchanges, queues, bindings) deklarowana w k
 - Stuck job recovery: `@Scheduled` skan `idx_analysis_active`, jobs `PENDING/PROCESSING` starsze niż próg (domyślnie 600s) → `FAILED` + release (gauge reconcile) + SSE. `PROCESSING` realny od start-pingu `0/LOADING`; każdy progress = heartbeat `updated_at`
 - Python consumer: reconnect loop z 5s backoff
 - DLQ consumer: każda kolejka ma swoją DLQ (`results/video/audio.dlq`), konsumer DLQ (MANUAL ack) → status FAILED + notyfikacja SSE + release slotu
-- Redis graceful degradation: każdy dotyk Redisa fail-open (cache→DB, gauge→admit, dedup→DB-guard, progress snapshot→skip)
+- Cooperative cancel: flaga Redis `cancel:{analysis_id}` (TTL 2h, set **po commit** cancelu) — detektory sprawdzają przy podjęciu taska + na każdym progress ticku → `AnalysisCancelled` → ack bez publikacji wyniku. Fail-open: bez flagi detektor liczy do końca, late result odbija się od guardu DB
+- Redis graceful degradation: każdy dotyk Redisa fail-open (cache→DB, gauge→admit, dedup→DB-guard, progress snapshot→skip, cancel flag→liczy do końca)
 
 ### Observability — must-have
 

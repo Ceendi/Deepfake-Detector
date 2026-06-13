@@ -18,7 +18,6 @@ public class RabbitConfig {
     public static final String Q_AUDIO      = "analysis.audio";
     public static final String Q_RESULTS    = "analysis.results";
     public static final String Q_PROGRESS   = "analysis.progress";
-    public static final String Q_CANCEL     = "analysis.cancel";
     public static final String Q_VIDEO_DLQ  = "analysis.video.dlq";
     public static final String Q_AUDIO_DLQ  = "analysis.audio.dlq";
     public static final String Q_RESULTS_DLQ = "analysis.results.dlq";
@@ -43,9 +42,9 @@ public class RabbitConfig {
     }
     @Bean Queue resultsQueue()  { return QueueBuilder.durable(Q_RESULTS).build(); }
     @Bean Queue progressQueue() { return QueueBuilder.durable(Q_PROGRESS).build(); }
-    // Declared so cancel events aren't dropped (topic exchange silently discards unrouted messages);
-    // detectors consume this in V2. Orchestrator only publishes here for now.
-    @Bean Queue cancelQueue()   { return QueueBuilder.durable(Q_CANCEL).build(); }
+    // Cancellation is NOT an AMQP event: a shared cancel queue would round-robin each cancel to
+    // one of N detector consumers, and pika's BlockingConnection can't receive while processing.
+    // Detectors instead poll the Redis flag cancel:{analysis_id} (see amqp-messages.md).
     @Bean Queue videoDlq()      { return QueueBuilder.durable(Q_VIDEO_DLQ).build(); }
     @Bean Queue audioDlq()      { return QueueBuilder.durable(Q_AUDIO_DLQ).build(); }
     // Fed by the recoverer, not broker-DLX: analysis.results keeps no DLX args so the detectors
@@ -56,7 +55,6 @@ public class RabbitConfig {
     @Bean Binding bAudio()    { return BindingBuilder.bind(audioQueue()).to(analysisExchange()).with("analysis.audio"); }
     @Bean Binding bResults()  { return BindingBuilder.bind(resultsQueue()).to(analysisExchange()).with("analysis.results"); }
     @Bean Binding bProgress() { return BindingBuilder.bind(progressQueue()).to(analysisExchange()).with("analysis.progress"); }
-    @Bean Binding bCancel()   { return BindingBuilder.bind(cancelQueue()).to(analysisExchange()).with(Q_CANCEL); }
     @Bean Binding bVideoDlq()   { return BindingBuilder.bind(videoDlq()).to(analysisDlx()).with(Q_VIDEO_DLQ); }
     @Bean Binding bAudioDlq()   { return BindingBuilder.bind(audioDlq()).to(analysisDlx()).with(Q_AUDIO_DLQ); }
     @Bean Binding bResultsDlq() { return BindingBuilder.bind(resultsDlq()).to(analysisDlx()).with(Q_RESULTS_DLQ); }

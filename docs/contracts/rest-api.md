@@ -159,6 +159,30 @@ Paginated history for the authenticated user. Query params: `page` (default `0`)
 `confidence`, `createdAt`, `updatedAt`) follow the same types and nullability as
 the matching `Analysis` fields below.
 
+### `GET /api/analysis/stats`
+
+Aggregate stats of the authenticated user's analyses (homepage dashboard). Scoped
+to `jwt.sub` by construction (like `GET /api/analysis`), so there is no IDOR
+surface. `200 OK`:
+
+```json
+{
+  "total": 42,
+  "byStatus": { "completed": 30, "failed": 5, "cancelled": 2, "inProgress": 5 },
+  "byType": { "video": 20, "audio": 10, "full": 12 },
+  "verdicts": { "fake": 12, "real": 18 },
+  "avgConfidence": 0.83,
+  "last7Days": 9,
+  "lastAnalysisAt": "2026-06-12T10:30:00Z"
+}
+```
+
+- `inProgress` = `PENDING` + `PROCESSING`.
+- `verdicts` counts `COMPLETED` analyses by verdict (`fake + real == byStatus.completed`).
+- `avgConfidence` averages `COMPLETED` analyses only; `null` until the first one completes.
+- `last7Days` counts analyses created in the trailing 7 days (any status).
+- `lastAnalysisAt` is the `createdAt` of the newest analysis; `null` for a fresh user.
+
 ### `DELETE /api/analysis/{id}`
 
 Soft-cancels an in-progress analysis. `200 OK` with the `Analysis` (now
@@ -166,7 +190,10 @@ Soft-cancels an in-progress analysis. `200 OK` with the `Analysis` (now
 returns `200`. `409 Conflict` (code `CONFLICT`) if the analysis already finished
 (`COMPLETED`/`FAILED`). `404 Not Found` for a missing or non-owned analysis (IDOR —
 never `403`). Any open SSE stream (below) receives a `result` event with
-`status: CANCELLED` and is then closed.
+`status: CANCELLED` and is then closed. A committed cancel also sets the Redis
+flag `cancel:{analysis_id}` (best-effort) so detectors abort queued/in-flight
+work early instead of processing the whole file — see the Cancellation section
+in [`amqp-messages.md`](./amqp-messages.md).
 
 ## `Analysis` shape
 

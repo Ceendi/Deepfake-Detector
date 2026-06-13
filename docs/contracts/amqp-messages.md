@@ -17,7 +17,11 @@ Exchange `analysis.dlx` — type `direct`, durable. Receives dead-lettered messa
 | `analysis.audio`    | `analysis.audio`    | Orchestrator | Audio Detector  |
 | `analysis.progress` | `analysis.progress` | Detectors    | Orchestrator    |
 | `analysis.results`  | `analysis.results`  | Detectors    | Orchestrator    |
-| `analysis.cancel`   | `analysis.cancel`   | Orchestrator | Detectors (V2)  |
+
+Cancellation is deliberately **not** an AMQP event — see
+[Cancellation](#cancellation-orchestrator--detector-via-redis) below. (The
+`analysis.cancel` queue existed pre-V2 with no consumer; deployments that still
+have it on the broker can delete it.)
 
 Required arguments for `analysis.video` and `analysis.audio`:
 
@@ -28,8 +32,8 @@ Required arguments for `analysis.video` and `analysis.audio`:
 DLQ queues (`analysis.video.dlq`, `analysis.audio.dlq`) are bound to
 `analysis.dlx` with a routing key equal to the queue name.
 
-`analysis.progress`, `analysis.results`, and `analysis.cancel` are `durable: true`
-with no further arguments (no DLX).
+`analysis.progress` and `analysis.results` are `durable: true` with no further
+arguments (no DLX).
 
 `analysis.results.dlq` is bound to `analysis.dlx` with a routing key equal to the
 queue name, but it is **not** reached by broker dead-lettering — it is fed by the
@@ -43,11 +47,14 @@ and consumes `analysis.results.dlq`.
 Convention: **snake_case** for AMQP payloads (Python-friendly). All fields
 are required unless explicitly marked optional.
 
-Beyond the JSON body, the Java services propagate the W3C `traceparent` header on
-publish and consume (Micrometer observation → distributed tracing). `correlation_id`
-lives in the body and is the cross-language correlation id — detectors echo it on
-every progress/result. Python detectors do not yet propagate `traceparent` (planned:
-`opentelemetry-instrumentation-pika`).
+Beyond the JSON body, every service propagates the W3C `traceparent` header on
+publish and consume: the Java services via Micrometer observation, the Python
+detectors via a manual `TraceContextTextMapPropagator` extract/inject in
+`consumer.py` (extract on the task message, inject on every progress/result), so
+one Tempo trace spans HTTP → AMQP → detector → result. `correlation_id` lives in
+the body and is the cross-language correlation id — detectors echo it on every
+progress/result. A message without `traceparent` roots a new trace; processing
+never depends on the header.
 
 ### Task — Orchestrator → Detector
 
@@ -138,21 +145,47 @@ variants (`gradcam_url`, `gradcam_urls`) are ignored.
 as-is, except `segment_predictions` is uniformly downsampled to ≤500 entries
 (`segment_predictions_downsampled: true` is set when that happens).
 
+Video publishes `duration_seconds`, `fps`, `frames_sampled`, `faces_detected` and
+`frame_predictions` — a list of `{ "timestamp": 1.2, "attention": 0.18 }` entries with
+the attention-pooling weights of the sampled frames (they sum to 1). **`attention` is
+the frame's relative contribution to the clip-level verdict, not a per-frame
+`prob_fake`** — the video model emits a single logit per clip, so clients must not
+render it as a fake-probability timeline (audio's `segment_predictions` *are*
+per-segment probabilities; these are not). On a REAL verdict the highest-attention
+frames are the ones that most convinced the model of authenticity. Every `metadata`
+field is source-specific and optional — consumers must not require a field published
+by the other detector.
+
+Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no decodable
+frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
+`PROCESSING_ERROR` (generic fallback, shared with audio).
+
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
 
-### Cancel — Orchestrator → Detector
+### Cancellation — Orchestrator → Detector (via Redis)
 
-Published to `analysis.cancel` when a user cancels an analysis (`DELETE
-/api/analysis/{id}`). The queue is declared so the event isn't dropped by the topic
-exchange, but has no consumer yet — detectors consume it in V2 to stop in-progress
-work early.
+Cancellation is cooperative and rides Redis, not AMQP. An AMQP cancel queue can't
+work here: a shared queue round-robins each cancel to exactly one of N detector
+consumers, and pika's `BlockingConnection` can't receive a broadcast while it is
+busy processing — while the Redis flag also covers a task that is still waiting
+in the queue, with no in-memory state to lose on restart.
 
-```json
-{
-  "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
-  "correlation_id": "corr-uuid"
-}
-```
+Contract:
+
+- On a committed cancel (`DELETE /api/analysis/{id}`) the Orchestrator sets the
+  Redis key **`cancel:{analysis_id}`** = `"1"` with a 2 h TTL (after commit, so a
+  rolled-back cancel can never abort a live analysis). One flag covers both
+  sources of a FULL analysis.
+- Detectors check the flag (`EXISTS`) at **task pickup** — cancelled-while-queued,
+  the common case behind a long job with `prefetch=1` — and on **every progress
+  tick**, so an in-flight inference aborts within one chunk/frame batch.
+- On a hit the detector acks and drops the task, publishing **no** result and no
+  further progress (the analysis is already terminal `CANCELLED` upstream; a
+  `FAILED` result would be ignored anyway).
+- Both sides fail open: Redis down ⇒ the flag is skipped / reads as absent, the
+  detector simply finishes and the late result bounces off the Orchestrator's
+  DB terminal-state guard — wasted compute, never a wrong state. The DB remains
+  the correctness authority; the flag is purely a compute saver.
 
 ## Reliability (D6)
 

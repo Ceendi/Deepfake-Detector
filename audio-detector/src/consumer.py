@@ -1,13 +1,18 @@
 import json
 import os
+import tempfile
 import time
 import pika
 import structlog
 import boto3
 import redis
 from botocore.client import Config
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, StatusCode
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from prometheus_client import Counter
 from .inference import AudioInference
+from .tracing import init_tracing
 PROCESSED_AUDIO_TOTAL = Counter(
     "audio_processed_total",
     "Total number of audio files processed",
@@ -21,6 +26,9 @@ SOURCE      = os.getenv("SOURCE_LABEL", "audio")
 EXCHANGE    = "analysis.exchange"
 DLX         = "analysis.dlx"
 log = structlog.get_logger(__name__)
+init_tracing(f"{SOURCE}-detector")
+tracer = trace.get_tracer(__name__)
+_propagator = TraceContextTextMapPropagator()  # W3C traceparent, same as the Java services
 s3_client = boto3.client(
     "s3",
     endpoint_url=os.environ.get("S3_ENDPOINT", "http://localhost:9000"),
@@ -41,20 +49,42 @@ try:
 except Exception as e:
     log.error("Failed to load AudioInference", error=str(e))
     audio_inference = None
+
+
+class AnalysisCancelled(Exception):
+    """Task aborted because the user cancelled the analysis (cooperative cancel)."""
+
+
+def _is_cancelled(analysis_id: str) -> bool:
+    # Cooperative cancel: the Orchestrator flags cancel:{analysis_id} in Redis after a committed
+    # DELETE (amqp-messages.md). Fail-open — Redis down just means we finish the work and the
+    # late result bounces off the Orchestrator's terminal-state guard.
+    try:
+        return redis_client.exists(f"cancel:{analysis_id}") > 0
+    except redis.RedisError:
+        return False
+
+
 def process(msg: dict, progress_callback=None) -> dict:
     if not audio_inference:
         raise RuntimeError("AudioInference module not initialized properly.")
-    
+
     mode = msg.get("mode", "accurate")
-    input_path = f"/tmp/{msg['analysis_id']}_input"
-    # Start-ping before the S3 download: flips the analysis PENDING -> PROCESSING immediately,
-    # so a long download doesn't look like a stuck PENDING job (amqp-messages.md).
-    if progress_callback:
-        progress_callback(0, "LOADING")
-    log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"], mode=mode)
-    s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
-    
-    result = audio_inference.analyze(input_path, mode=mode, progress_callback=progress_callback)
+    input_path = os.path.join(tempfile.gettempdir(), f"{msg['analysis_id']}_input")
+    try:
+        # Start-ping before the S3 download: flips the analysis PENDING -> PROCESSING immediately,
+        # so a long download doesn't look like a stuck PENDING job (amqp-messages.md).
+        if progress_callback:
+            progress_callback(0, "LOADING")
+        log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"], mode=mode)
+        s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
+
+        result = audio_inference.analyze(input_path, mode=mode, progress_callback=progress_callback)
+    finally:
+        # Runs on failure and AnalysisCancelled too, not just the happy path — a 20-minute
+        # input left in /tmp per aborted task would fill the container disk.
+        if os.path.exists(input_path):
+            os.remove(input_path)
     # Contract (amqp-messages.md): gradcam_keys = bare object keys following
     # {analysisId}/{source}/{name}.png from object-storage.md. No URI scheme, no bucket prefix.
     gradcam_keys = []
@@ -73,17 +103,24 @@ def process(msg: dict, progress_callback=None) -> dict:
         finally:
             os.remove(result["local_gradcam_path"])
             del result["local_gradcam_path"]
-    if os.path.exists(input_path):
-        os.remove(input_path)
     result["gradcam_keys"] = gradcam_keys
     return result
+def _trace_log_fields(span) -> dict:
+    sc = span.get_span_context()
+    if not sc.is_valid:
+        return {}
+    return {"trace_id": format(sc.trace_id, "032x"), "span_id": format(sc.span_id, "016x")}
 def _publish(ch, routing_key: str, payload: dict) -> None:
+    # Inject the current span context so the Orchestrator's listener joins this trace.
+    headers = {}
+    _propagator.inject(carrier=headers)
     ch.basic_publish(
         exchange=EXCHANGE,
         routing_key=routing_key,
         body=json.dumps(payload).encode(),
-        properties=pika.BasicProperties(content_type="application/json", delivery_mode=2),
-        mandatory=True,                                                                                     
+        properties=pika.BasicProperties(content_type="application/json", delivery_mode=2,
+                                        headers=headers or None),
+        mandatory=True,
     )
 def _handle_message(ch, method, properties, body):
     try:
@@ -94,68 +131,102 @@ def _handle_message(ch, method, properties, body):
         log.error("bad_message_to_dlq", error=str(e), error_type=type(e).__name__)
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
         return
-    structlog.contextvars.bind_contextvars(
-        analysis_id=analysis_id,
-        correlation_id=correlation_id,
-        source=SOURCE,
-    )
-    # Per-source dedup key (CLAUDE.md): a FULL analysis is two independent tasks under one id —
-    # without :{source} the second detector would see "duplicate" and drop its task. Fail-open:
-    # Redis down must not fail the analysis (the Orchestrator's dedup + DB guard is the authority).
-    dedup_key = f"processing:{analysis_id}:{SOURCE}"
-    try:
-        if not redis_client.set(dedup_key, "1", nx=True, ex=3600):
-            log.warning("duplicate_message_dropped", reason="already_processing")
+    # Continue the trace the Orchestrator started (W3C traceparent header); a message without
+    # the header simply roots a new trace, so tracing can never block processing.
+    upstream = _propagator.extract(carrier=properties.headers or {})
+    with tracer.start_as_current_span(
+            f"{QUEUE} process", context=upstream, kind=SpanKind.CONSUMER,
+            attributes={"analysis.id": analysis_id, "analysis.source": SOURCE}) as span:
+        structlog.contextvars.bind_contextvars(
+            analysis_id=analysis_id,
+            correlation_id=correlation_id,
+            source=SOURCE,
+            **_trace_log_fields(span),
+        )
+        # Cancelled while waiting in the queue (common behind a long job with prefetch=1):
+        # ack and drop before downloading or touching the dedup key.
+        if _is_cancelled(analysis_id):
+            log.info("task_cancelled_before_start")
+            span.set_attribute("analysis.cancelled", True)
             ch.basic_ack(delivery_tag=method.delivery_tag)
+            PROCESSED_AUDIO_TOTAL.labels(status="cancelled").inc()
             structlog.contextvars.clear_contextvars()
             return
-    except redis.RedisError as e:
-        log.warning("dedup_check_skipped", reason="redis_unavailable", error=str(e))
-    try:
-        log.info("processing_started")
-        def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
-            payload = {
+        # Per-source dedup key (CLAUDE.md): a FULL analysis is two independent tasks under one id —
+        # without :{source} the second detector would see "duplicate" and drop its task. Fail-open:
+        # Redis down must not fail the analysis (the Orchestrator's dedup + DB guard is the authority).
+        dedup_key = f"processing:{analysis_id}:{SOURCE}"
+        try:
+            if not redis_client.set(dedup_key, "1", nx=True, ex=3600):
+                log.warning("duplicate_message_dropped", reason="already_processing")
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                structlog.contextvars.clear_contextvars()
+                return
+        except redis.RedisError as e:
+            log.warning("dedup_check_skipped", reason="redis_unavailable", error=str(e))
+        try:
+            log.info("processing_started")
+            def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
+                # Every progress tick doubles as a cancellation point (per-chunk granularity for
+                # audio), so a cancel lands within seconds instead of after the whole file.
+                if _is_cancelled(analysis_id):
+                    raise AnalysisCancelled()
+                payload = {
+                    "analysis_id": analysis_id,
+                    "correlation_id": correlation_id,
+                    "source": SOURCE,
+                    "progress": pct,
+                    "stage": stage,
+                }
+                if details is not None:
+                    payload["details"] = details
+                _publish(ch, "analysis.progress", payload)
+            result = process(msg, progress_callback=progress_callback)
+            _publish(ch, "analysis.results", {
                 "analysis_id": analysis_id,
                 "correlation_id": correlation_id,
                 "source": SOURCE,
-                "progress": pct,
-                "stage": stage,
-            }
-            if details is not None:
-                payload["details"] = details
-            _publish(ch, "analysis.progress", payload)
-        result = process(msg, progress_callback=progress_callback)
-        _publish(ch, "analysis.results", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "status": "COMPLETED",
-            "result": result,
-            "error": None,
-        })
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-        PROCESSED_AUDIO_TOTAL.labels(status="success").inc()
-        log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
-    except Exception as e:
-        PROCESSED_AUDIO_TOTAL.labels(status="error").inc()
-        log.exception("processing_failed")
-        # Release the dedup key: a retried/redelivered message must be processable again,
-        # otherwise it would bounce off SETNX and the analysis would hang until stuck-recovery.
-        try:
-            redis_client.delete(dedup_key)
-        except redis.RedisError:
-            pass  # fail-open; TTL reaps it
-        _publish(ch, "analysis.results", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "status": "FAILED",
-            "result": None,
-            "error": {"code": "PROCESSING_ERROR", "message": str(e)},
-        })
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    finally:
-        structlog.contextvars.clear_contextvars()
+                "status": "COMPLETED",
+                "result": result,
+                "error": None,
+            })
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            PROCESSED_AUDIO_TOTAL.labels(status="success").inc()
+            log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
+        except AnalysisCancelled:
+            # Not a failure: no result is published — the analysis is already terminal CANCELLED
+            # upstream and the Orchestrator would ignore anything we send. Ack to drop the task.
+            PROCESSED_AUDIO_TOTAL.labels(status="cancelled").inc()
+            log.info("processing_cancelled")
+            span.set_attribute("analysis.cancelled", True)
+            try:
+                redis_client.delete(dedup_key)
+            except redis.RedisError:
+                pass  # fail-open; TTL reaps it
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as e:
+            PROCESSED_AUDIO_TOTAL.labels(status="error").inc()
+            log.exception("processing_failed")
+            # The except swallows the exception, so the span must be marked failed by hand.
+            span.record_exception(e)
+            span.set_status(StatusCode.ERROR, str(e))
+            # Release the dedup key: a retried/redelivered message must be processable again,
+            # otherwise it would bounce off SETNX and the analysis would hang until stuck-recovery.
+            try:
+                redis_client.delete(dedup_key)
+            except redis.RedisError:
+                pass  # fail-open; TTL reaps it
+            _publish(ch, "analysis.results", {
+                "analysis_id": analysis_id,
+                "correlation_id": correlation_id,
+                "source": SOURCE,
+                "status": "FAILED",
+                "result": None,
+                "error": {"code": "PROCESSING_ERROR", "message": str(e)},
+            })
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        finally:
+            structlog.contextvars.clear_contextvars()
 def run_consumer(health_state: dict) -> None:
     while True:
         try:
