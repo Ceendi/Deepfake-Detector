@@ -1,0 +1,128 @@
+.player {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-background);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Play / pauza — okrągły przycisk akcentowy */
+.playButton {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.playButton:hover {
+  background: var(--color-accent-hover);
+}
+.playButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Czas — mono, tabular, żeby nie skakał przy odliczaniu */
+.time {
+  flex-shrink: 0;
+  min-width: 3.4ch;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.timeTotal {
+  color: var(--color-text-muted);
+}
+
+/* Pasek przewijania — natywny range ostylowany pod tokeny; fill = gradient do --pct */
+.seek {
+  flex: 1;
+  min-width: 0;
+  height: 16px; /* obszar trafienia większy niż sam tor */
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.seek::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--pct, 0%),
+    var(--color-border) var(--pct, 0%)
+  );
+}
+.seek::-moz-range-track {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--pct, 0%),
+    var(--color-border) var(--pct, 0%)
+  );
+}
+.seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -4px; /* wyśrodkuj 14px gałkę na 6px torze */
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  border: 2px solid var(--color-background);
+  box-shadow: var(--shadow-sm);
+}
+.seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  border: 2px solid var(--color-background);
+  box-shadow: var(--shadow-sm);
+}
+.seek:focus-visible {
+  outline: none;
+}
+.seek:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+.seek:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent);
+}
+
+/* Wyciszenie — przycisk-ikona */
+.iconButton {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+.iconButton:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+}
+.iconButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

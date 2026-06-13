@@ -3,6 +3,9 @@ import { useState } from 'react'
 import { Video as VideoIcon, Music as MusicIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 
+import { AudioPlayer } from '@/components/ui/AudioPlayer/AudioPlayer'
+import { VideoPlayer } from '@/components/ui/VideoPlayer/VideoPlayer'
+
 import { isVideoFile, getExt, formatMB, formatDuration } from '../upload-utils'
 import styles from '../Upload.module.css'
 
@@ -25,19 +28,9 @@ export function MediaPreview({ file, previewUrl }: { file: File; previewUrl: str
     <>
       <div className={clsx(styles.media, !isVideo && styles.mediaAudio)}>
         {isVideo ? (
-          <video
-            className={styles.video}
-            src={previewUrl}
-            controls
-            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-          />
+          <VideoPlayer src={previewUrl} onDuration={setDuration} />
         ) : (
-          <audio
-            className={styles.audio}
-            src={previewUrl}
-            controls
-            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-          />
+          <AudioPlayer className={styles.audio} src={previewUrl} onDuration={setDuration} />
         )}
       </div>
 
