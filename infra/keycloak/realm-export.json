@@ -1,6 +1,7 @@
 {
   "realm": "deepfake",
   "enabled": true,
+  "loginTheme": "deepfake",
   "registrationAllowed": true,
   "registrationEmailAsUsername": false,
   "rememberMe": true,

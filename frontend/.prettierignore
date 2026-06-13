@@ -1,0 +1,33 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# Generated code (nie formatuj — nadpisywane przez openapi-typescript)
+src/api/generated/
+
+# Lock files
+package-lock.json
+
+# Test / coverage artifacts
+coverage
+playwright-report
+test-results
+.playwright
+
+# Logs
+logs
+*.log
+
+# Misc
+.DS_Store
+*.min.js
+*.min.css
+
+# Lokalne pliki robocze (nie śledzone)
+PLAN.md
+DOBRE_PRAKTYKI.md
+CLAUDE-DESIGN.md

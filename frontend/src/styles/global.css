@@ -1,0 +1,90 @@
+/* =========================================================================
+   DeepfakeDetector — Global / Base
+   Aplikuje tokeny do dokumentu + globalne defaulty.
+   Kolejność ładowania: reset.css → tokens.css → global.css.
+   Style komponentów NIE tutaj — idą do *.module.css.
+   ========================================================================= */
+
+html {
+  font-family: var(--font-family-sans);
+  color: var(--color-text-primary);
+  background-color: var(--color-background);
+}
+
+body {
+  min-height: 100dvh;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  transition:
+    background-color var(--transition-base),
+    color var(--transition-base);
+}
+
+/* Nagłówki — baza (komponenty mogą nadpisać) */
+h1 {
+  font-size: var(--font-size-2xl);
+  line-height: var(--line-height-tight);
+  font-weight: var(--font-weight-bold);
+}
+h2 {
+  font-size: var(--font-size-xl);
+  line-height: var(--line-height-tight);
+  font-weight: var(--font-weight-semibold);
+}
+h3 {
+  font-size: var(--font-size-lg);
+  line-height: var(--line-height-snug);
+  font-weight: var(--font-weight-semibold);
+}
+
+/* Linki */
+a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+a:hover {
+  color: var(--color-accent-hover);
+  text-decoration: underline;
+}
+
+/* Dane liczbowe / kod — monospace */
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-family-mono);
+  font-size: 0.95em;
+}
+
+/* Spójny focus dla klawiatury (a11y / WCAG) */
+:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 33%, transparent);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

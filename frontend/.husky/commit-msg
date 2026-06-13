@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+# Hook commit-msg: waliduje komunikat commita przez commitlint.
+# Git uruchamia hooki z katalogu glownego repo, a zaleznosci (commitlint, konfiguracja)
+# sa w folderze frontend/. Dlatego najpierw liczymy bezwzgledna sciezke pliku z komunikatem,
+# a nastepnie wchodzimy do frontend/ i tam odpalamy commitlint.
+msg=$(cd "$(dirname "$1")" && pwd)/$(basename "$1")
+cd "$(dirname "$0")/.." || exit 1
+npx --no -- commitlint --edit "$msg"

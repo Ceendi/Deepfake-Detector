@@ -1,0 +1,163 @@
+.player {
+  position: relative; /* układ odniesienia dla kontrolek (absolute) */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface);
+  /* hatch — kratka dopełniająca wideo do ramki (jak tło strefy uploadu) */
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--color-neutral-400) 16%, transparent) 0,
+    color-mix(in srgb, var(--color-neutral-400) 16%, transparent) 2px,
+    transparent 2px,
+    transparent 13px
+  );
+  overflow: hidden;
+}
+.video {
+  display: block;
+  max-width: 100%;
+  max-height: 440px; /* kap wysokości — pionowe wideo nie rozpycha strony */
+  cursor: pointer;
+}
+
+/* Duży przycisk play na środku, gdy zatrzymane */
+.centerPlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  padding-left: 4px; /* trójkąt optycznie wyśrodkowany */
+  border: none;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-accent) 90%, transparent);
+  color: var(--color-on-accent);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    transform var(--transition-fast);
+}
+.centerPlay:hover {
+  background: var(--color-accent);
+  transform: translate(-50%, -50%) scale(1.06);
+}
+.centerPlay:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* Pasek kontrolek na dole z gradientowym scrim (czytelność na jasnym kadrze) */
+.controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding: var(--spacing-5) var(--spacing-3) var(--spacing-2);
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78), rgba(0, 0, 0, 0));
+  color: #ffffff;
+  opacity: 1;
+  transition: opacity var(--transition-base);
+}
+.controlsHidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.iconButton {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.iconButton:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.iconButton:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.time {
+  flex-shrink: 0;
+  min-width: 3.4ch;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.timeTotal {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Pasek przewijania — natywny range ostylowany; tor jasny (na ciemnym scrim), fill = akcent */
+.seek {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.seek::-webkit-slider-runnable-track {
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--pct, 0%),
+    rgba(255, 255, 255, 0.32) var(--pct, 0%)
+  );
+}
+.seek::-moz-range-track {
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--pct, 0%),
+    rgba(255, 255, 255, 0.32) var(--pct, 0%)
+  );
+}
+.seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -4.5px; /* wyśrodkuj 14px gałkę na 5px torze */
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  border: 2px solid #ffffff;
+}
+.seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  border: 2px solid #ffffff;
+}
+.seek:focus-visible {
+  outline: none;
+}
+.seek:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.4);
+}
+.seek:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.4);
+}

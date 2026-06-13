@@ -1,0 +1,535 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-6);
+}
+
+/* ---- Nagłówek strony --------------------------------------------------- */
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  flex-wrap: wrap;
+}
+.head h1 {
+  margin: 0;
+}
+.subtitle {
+  margin: var(--spacing-1) 0 0;
+  color: var(--color-text-muted);
+}
+
+/* ---- Pasek narzędzi (search + filtry) ---------------------------------- */
+/* Karta paska + rząd chipów aktywnych filtrów trzymane razem (mniejszy odstęp niż gap strony) */
+.toolbarWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Pole wyszukiwania — ikona + input w jednej ramce (label = klik w ikonę fokusuje input) */
+.search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex: 1 1 240px;
+  min-width: 200px;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+.search:focus-within {
+  outline: 3px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  outline-offset: 1px;
+  border-color: var(--color-accent);
+}
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+}
+.searchInput:focus {
+  outline: none;
+}
+.searchInput::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* Dropdown filtra — wrapper jest układem odniesienia dla menu (position: absolute) */
+.filterWrap {
+  position: relative;
+}
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.filter:hover {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+/* Filtr aktywny (≠ wartość domyślna) — obwódka i tekst w akcencie */
+.filterActive {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.filterChevron {
+  color: var(--color-text-muted);
+}
+
+/* Popover z opcjami */
+.menu {
+  position: absolute;
+  top: calc(100% + var(--spacing-1));
+  left: 0;
+  z-index: var(--z-popover);
+  min-width: 100%;
+  margin: 0;
+  padding: var(--spacing-1);
+  list-style: none;
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+}
+.menuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-4);
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menuItem:hover {
+  background: var(--color-surface);
+}
+.menuItemActive {
+  color: var(--color-accent);
+  font-weight: var(--font-weight-medium);
+}
+
+/* „Wyczyść" — tekstowy, wygaszony gdy brak aktywnych filtrów */
+.clear {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2);
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+.clear:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+.clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- Aktywne filtry (chipy) -------------------------------------------- */
+.activeFilters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+.activeLabel {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-1) var(--spacing-3);
+  background: var(--color-accent-surface);
+  color: var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+.chip:hover {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+/* ---- Toolbar: zwijanie filtrów na mobile -------------------------------- */
+/* Przycisk „Filtry" — tylko mobile (na desktopie filtry są zawsze widoczne). */
+.filtersToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.filtersToggle:hover {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+.filtersToggleActive {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* Grupa dropdownów: mobile = zwinięta (rozwijana przyciskiem); desktop = przezroczysty wrapper
+   (display:contents), więc selecty zachowują się jak bezpośrednie elementy paska. */
+.filterGroup {
+  display: none;
+}
+.filterGroupOpen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  flex-basis: 100%;
+}
+.filterGroupOpen .filterWrap {
+  width: 100%;
+}
+.filterGroupOpen .filter {
+  width: 100%;
+  justify-content: space-between;
+}
+
+/* ---- Lista analiz ------------------------------------------------------- */
+.list {
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+/* Nagłówek kolumn — tylko desktop (na mobile układ jest samoopisowy) */
+.listHead {
+  display: none;
+}
+
+/* Wiersz: MOBILE-FIRST. Domyślnie układ z mockupu — miniatura | nazwa+data | werdykt+status. */
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'thumb name verdict'
+    'thumb sub  status';
+  align-items: center;
+  column-gap: var(--spacing-3);
+  row-gap: var(--spacing-1);
+  padding: var(--spacing-3) var(--spacing-4);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--transition-fast);
+}
+.row + .row {
+  border-top: 1px solid var(--color-border);
+}
+/* Nadpisuje globalne a:hover (podkreślenie + kolor akcentu) — hover wiersza to tylko zmiana tła */
+.row:hover {
+  background: var(--color-surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+.thumb {
+  position: relative;
+  grid-area: thumb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  /* paskowane (hatch) tło — ukośne kreski nad miękką powierzchnią */
+  background-color: var(--color-surface);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--color-neutral-400) 18%, transparent) 0,
+    color-mix(in srgb, var(--color-neutral-400) 18%, transparent) 1.5px,
+    transparent 1.5px,
+    transparent 7px
+  );
+}
+/* Etykieta typu w prawym dolnym rogu (mała plakietka nad paskami dla czytelności) */
+.thumbLabel {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  padding: 0 2px;
+  border-radius: 2px;
+  background: var(--color-surface);
+  font-family: var(--font-family-mono);
+  font-size: 8px;
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.03em;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+.name {
+  grid-area: name;
+  min-width: 0;
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Linia pod nazwą — czas trwania (+ data na mobile). */
+.sub {
+  grid-area: sub;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+/* Osobna kolumna DATA — tylko desktop (na mobile data siedzi w .sub). */
+.date {
+  grid-area: date;
+  display: none;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.verdict {
+  grid-area: verdict;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.miniProgress {
+  width: 72px;
+}
+.dash {
+  color: var(--color-text-muted);
+}
+.status {
+  grid-area: status;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-sm);
+  white-space: nowrap;
+}
+.statusDanger {
+  color: var(--color-danger);
+  font-weight: var(--font-weight-semibold);
+}
+.dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+}
+.dotSuccess {
+  background: var(--color-success);
+}
+.dotAccent {
+  background: var(--color-accent);
+}
+.dotDanger {
+  background: var(--color-danger);
+}
+.dotMuted {
+  background: var(--color-neutral-400);
+}
+.chevron {
+  display: none;
+}
+
+/* ---- Stopka listy: licznik + paginacja (wewnątrz karty .list) ---------- */
+.listFooter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  padding: var(--spacing-4) var(--spacing-5);
+  border-top: 1px solid var(--color-border);
+}
+.count {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  flex-wrap: wrap;
+}
+.pageBtn,
+.pageArrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 var(--spacing-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.pageBtn:hover:not(:disabled),
+.pageArrow:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+.pageBtnActive,
+.pageBtnActive:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.pageArrow:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pageEllipsis {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--spacing-1);
+  color: var(--color-text-muted);
+}
+
+/* ---- Ładowanie --------------------------------------------------------- */
+.center {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-8);
+}
+
+/* ======================================================================== */
+/* DESKTOP (≥ 768px) — toolbar rozłożony, wiersz w kolumny tabeli           */
+/* ======================================================================== */
+@media (min-width: 768px) {
+  .filtersToggle {
+    display: none;
+  }
+  /* wrapper znika z layoutu → selecty + „Wyczyść" są bezpośrednimi elementami paska jak wcześniej */
+  .filterGroup,
+  .filterGroupOpen {
+    display: contents;
+  }
+
+  .listHead {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) 170px 160px 150px 24px;
+    align-items: center;
+    column-gap: var(--spacing-4);
+    padding: var(--spacing-3) var(--spacing-5);
+    border-bottom: 1px solid var(--color-border);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+  }
+
+  .row {
+    grid-template-columns: auto minmax(0, 1fr) 170px 160px 150px 24px;
+    grid-template-areas:
+      'thumb name date verdict status chevron'
+      'thumb sub  date verdict status chevron';
+    column-gap: var(--spacing-4);
+    row-gap: 0;
+    padding: var(--spacing-4) var(--spacing-5);
+  }
+  /* DATA wraca jako osobna kolumna; data znika z .sub (zostaje sam czas trwania) */
+  .date {
+    display: flex;
+    align-items: center;
+  }
+  .subDate,
+  .subDot {
+    display: none;
+  }
+  .verdict,
+  .status {
+    justify-self: start;
+  }
+  .chevron {
+    grid-area: chevron;
+    display: inline-flex;
+    justify-self: end;
+    color: var(--color-text-muted);
+  }
+
+  .listFooter {
+    justify-content: space-between;
+  }
+}
+
+/* Szukajka pełnej szerokości na całym mobile (do 767px) */
+@media (max-width: 767px) {
+  .search {
+    flex-basis: 100%;
+  }
+  /* Na wąskich ekranach chowamy czas trwania, który się nie mieści w linii pod nazwą */
+  .subDot,
+  .subDuration {
+    display: none; /* linia pod nazwą = sama data (bez czasu trwania) */
+  }
+}

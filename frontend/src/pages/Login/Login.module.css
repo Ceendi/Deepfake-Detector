@@ -1,0 +1,100 @@
+/* =========================================================================
+   Login — pełnoekranowy ekran wejścia (renderowany poza Layoutem/Headerem).
+   Wyśrodkowana karta na delikatnym tle; mobile-first.
+   Logowanie/rejestracja delegowane do Keycloaka (redirect PKCE).
+   ========================================================================= */
+
+.screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100dvh;
+  padding: var(--spacing-5) var(--spacing-4);
+  /* Delikatna poświata akcentu za kartą — działa w obu motywach (tokeny flipują):
+     light: indygo 50 → slate 50; dark: głębokie indygo → slate 800. */
+  background: radial-gradient(
+    120% 80% at 50% -10%,
+    var(--color-accent-surface) 0%,
+    var(--color-surface) 55%
+  );
+}
+
+/* ---- Karta (spójna z resztą: tło, obwódka, cień, promień) -------------- */
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--spacing-4);
+  width: 100%;
+  max-width: 400px;
+  padding: var(--spacing-6) var(--spacing-5);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+/* ---- Marka (ten sam motyw co Header: ShieldCheck w kwadracie akcentu) --- */
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+.brandMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.title {
+  margin: 0;
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: var(--line-height-tight);
+}
+.subtitle {
+  margin: 0;
+  max-width: 32ch;
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-snug);
+  color: var(--color-text-muted);
+}
+
+/* ---- Akcje (przyciski pełnej szerokości, stos) ------------------------- */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: 100%;
+  margin-top: var(--spacing-1);
+}
+/* Button to inline-flex bez własnej szerokości — rozciągamy i centrujemy treść */
+.actionBtn {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ---- Stopka (hairline + nota o Keycloaku, jak chip „managed" w Profilu) - */
+.footer {
+  width: 100%;
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--color-border);
+}
+.note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.note svg {
+  flex-shrink: 0;
+  color: var(--color-accent);
+}

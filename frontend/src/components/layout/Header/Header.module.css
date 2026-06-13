@@ -1,0 +1,222 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inner {
+  max-width: var(--container-max);
+  margin: 0 auto;
+  padding: var(--spacing-3) var(--spacing-5);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-5);
+}
+
+/* ---- Marka ------------------------------------------------------------- */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+.brand:hover {
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.brandMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.brandName {
+  white-space: nowrap;
+}
+
+/* ---- Nawigacja (desktop) ---------------------------------------------- */
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+.navLink {
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+.navLink:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  text-decoration: none;
+}
+.navLinkActive,
+.navLinkActive:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-surface);
+}
+
+/* ---- Prawa strona (użytkownik + hamburger) ---------------------------- */
+.right {
+  margin-left: auto; /* dopycha blok użytkownika do prawej krawędzi */
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.userMenu {
+  position: relative;
+}
+
+.userButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-1) var(--spacing-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.userButton:hover {
+  background: var(--color-surface);
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-surface);
+  color: var(--color-accent);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-bold);
+}
+
+.userName {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + var(--spacing-2));
+  right: 0;
+  min-width: 180px;
+  padding: var(--spacing-1);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: var(--z-popover);
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  text-decoration: none; /* .dropdownItem bywa też <Link> — bez podkreślenia z global a */
+  cursor: pointer;
+}
+.dropdownItem:hover {
+  background: var(--color-surface);
+  text-decoration: none;
+  color: var(--color-text-primary);
+}
+
+.dropdownItemDanger,
+.dropdownItemDanger:hover {
+  color: var(--color-danger); /* ikona dziedziczy currentColor → też czerwona */
+}
+.dropdownItemDanger:hover {
+  background: var(--color-danger-surface);
+}
+
+.dropdownSep {
+  height: 0;
+  margin: var(--spacing-1) 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.hamburger {
+  display: none; /* widoczny tylko poniżej breakpointu (patrz @media) */
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+.hamburger:hover {
+  background: var(--color-surface);
+}
+
+/* ---- Nawigacja mobilna (rozwijana pod paskiem) ------------------------ */
+.mobileNav {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .nav {
+    display: none;
+  }
+  .userName {
+    display: none;
+  }
+  .hamburger {
+    display: inline-flex;
+  }
+  .mobileNav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-1);
+    padding: var(--spacing-2) var(--spacing-5) var(--spacing-4);
+    border-top: 1px solid var(--color-border);
+  }
+  .mobileLink {
+    padding: var(--spacing-3);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-primary);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-medium);
+  }
+  .mobileLink:hover {
+    background: var(--color-surface);
+    text-decoration: none;
+  }
+}

@@ -1,0 +1,2 @@
+# Hooki husky to skrypty sh — wymuszamy LF, inaczej core.autocrlf=true psuje je na Windows
+* text eol=lf

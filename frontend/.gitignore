@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Wszystkie pliki .md (lokalne notatki, plany) — nie śledzone, poza README.md
+*.md
+!README.md

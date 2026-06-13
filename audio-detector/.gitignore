@@ -28,6 +28,8 @@ lightning_logs/
 # Modele wagowe i checkpointy (wielkie pliki)
 training/checkpoints/**/*.ckpt
 *.ckpt
+*.onnx
+*.onnx.data
 *.bin
 *.pth
 

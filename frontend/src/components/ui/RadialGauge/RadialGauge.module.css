@@ -1,0 +1,53 @@
+.gauge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--size, 160px);
+  height: var(--size, 160px);
+  border-radius: var(--radius-full);
+  /* Pierścień: --value% w kolorze --gauge-color, reszta = neutralny track. */
+  background: conic-gradient(var(--gauge-color) calc(var(--value, 0) * 1%), var(--color-border) 0);
+}
+
+/* Wycięty środek → donut. inset = grubość pierścienia. */
+.gauge::before {
+  content: '';
+  position: absolute;
+  inset: var(--thickness, 16px);
+  border-radius: var(--radius-full);
+  background: var(--color-background);
+}
+
+.inner {
+  position: relative; /* nad ::before */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-0);
+  text-align: center;
+}
+
+.value {
+  font-family: var(--font-family-mono);
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-2xl);
+  line-height: 1;
+  color: var(--gauge-color);
+}
+
+.label {
+  max-width: calc(var(--size, 160px) - 2 * var(--thickness, 16px));
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* Tony — tylko kolor wypełnienia/liczby. */
+.accent {
+  --gauge-color: var(--color-accent);
+}
+.danger {
+  --gauge-color: var(--color-danger);
+}
+.success {
+  --gauge-color: var(--color-success);
+}

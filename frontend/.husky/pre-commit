@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# Hook pre-commit: lintuje i formatuje zmieniane pliki frontendu (lint-staged).
+# Git uruchamia hooki z katalogu glownego repo, a zaleznosci/konfiguracja sa w frontend/,
+# dlatego wchodzimy do frontend/ i tam odpalamy lint-staged.
+cd "$(dirname "$0")/.." || exit 1
+npx --no -- lint-staged
