@@ -1,6 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 
 import { Link, useParams } from 'react-router-dom'
+
+import { ChevronLeft } from 'lucide-react'
 
 import { getAnalysis } from '@/api/analysis'
 import { ApiError } from '@/api/errors'
@@ -8,16 +10,25 @@ import type { Analysis } from '@/api/types'
 
 import { Spinner } from '@/components/ui/Spinner/Spinner'
 import { Alert } from '@/components/ui/Alert/Alert'
-import { Badge } from '@/components/ui/Badge/Badge'
+import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
+
+import { ResultHeader } from './components/ResultHeader'
+import { VerdictHero } from './components/VerdictHero'
+import { MediaPreview } from './components/MediaPreview'
+import { ModalitySection } from './components/ModalitySection'
+import { GradcamSection } from './components/GradcamSection'
+import { AudioTimeline } from './components/AudioTimeline'
+import { SummarySection } from './components/SummarySection'
+import { ReportPdfButton } from './components/ReportPdfButton'
+import { AnalysisStatusState } from './components/AnalysisStatusState'
 
 import styles from './AnalysisResult.module.css'
 
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error'
 
-const pct = (v: number) => `${Math.round(v * 100)}%`
-
-// MEGA bazowy podgląd wyniku — tylko surowe pola z GET /api/analysis/{id}. Pełna wizualizacja
-// (werdykt, confidence bar, Grad-CAM, raport PDF, live-stream gdy PROCESSING) dochodzi osobno.
+// Strona wyniku analizy. Na razie odwzorowuje makietę — część treści (wnioski, etykiety klatek,
+// nazwa modelu) to placeholder; obrazy Grad-CAM są realne (pobierane z endpointu artefaktów).
+// Live-stream postępu (gdy PENDING/PROCESSING) i raport PDF dochodzą osobno.
 export default function AnalysisResult() {
   const { id } = useParams<{ id: string }>()
   const [state, setState] = useState<LoadState>('loading')
@@ -29,6 +40,7 @@ export default function AnalysisResult() {
 
     getAnalysis(id, controller.signal)
       .then((a) => {
+        console.log('[AnalysisResult] GET /api/analysis/%s →', id, a)
         setAnalysis(a)
         setState('ready')
       })
@@ -74,54 +86,37 @@ export default function AnalysisResult() {
     )
   }
 
+  const isCompleted =
+    analysis.status === 'COMPLETED' && analysis.verdict != null && analysis.confidence != null
+
   return (
     <div className={styles.page}>
-      <header className={styles.head}>
-        <h1>Wynik analizy</h1>
-        <p className={styles.subtitle}>
-          Bazowy podgląd surowych danych — pełna wizualizacja (Grad-CAM, raport) w kolejnym kroku.
-        </p>
-      </header>
-
-      <div className={styles.card}>
-        <Row label="ID" value={<code>{analysis.id}</code>} />
-        <Row label="Status" value={analysis.status} />
-        <Row label="Typ" value={analysis.type} />
-        {analysis.verdict && (
-          <Row
-            label="Werdykt"
-            value={
-              <Badge variant={analysis.verdict === 'FAKE' ? 'danger' : 'success'}>
-                {analysis.verdict}
-              </Badge>
-            }
-          />
-        )}
-        {analysis.confidence != null && <Row label="Pewność" value={pct(analysis.confidence)} />}
-        {analysis.videoProb != null && (
-          <Row label="Prawd. wideo (FAKE)" value={pct(analysis.videoProb)} />
-        )}
-        {analysis.audioProb != null && (
-          <Row label="Prawd. audio (FAKE)" value={pct(analysis.audioProb)} />
-        )}
-        {analysis.errorMessage && <Row label="Błąd" value={analysis.errorMessage} />}
-      </div>
-
-      {/* tymczasowy zrzut całości — do wywalenia przy właściwej wizualizacji */}
-      <pre className={styles.raw}>{JSON.stringify(analysis, null, 2)}</pre>
-
-      <Link to="/history" className={styles.back}>
-        ‹ Historia analiz
+      <Link to="/history" className={styles.backLink}>
+        <ChevronLeft size={16} strokeWidth={2.4} aria-hidden="true" />
+        Wróć do historii
       </Link>
-    </div>
-  )
-}
 
-function Row({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div className={styles.row}>
-      <span className={styles.rowLabel}>{label}</span>
-      <span className={styles.rowValue}>{value}</span>
+      <ResultHeader analysis={analysis} />
+
+      {isCompleted && analysis.verdict != null && analysis.confidence != null ? (
+        <>
+          <VerdictHero verdict={analysis.verdict} confidence={analysis.confidence} />
+          <MediaPreview fileId={analysis.fileId} type={analysis.type} />
+          <ModalitySection analysis={analysis} />
+          <GradcamSection details={analysis.details} />
+          <AudioTimeline metadata={analysis.details?.audio?.metadata} />
+          <SummarySection analysis={analysis} />
+
+          <footer className={styles.footer}>
+            <LinkButton to="/history" variant="ghost" size="md" leftIcon={ChevronLeft}>
+              Wróć do historii
+            </LinkButton>
+            <ReportPdfButton variant="primary" label="Pobierz raport PDF" />
+          </footer>
+        </>
+      ) : (
+        <AnalysisStatusState analysis={analysis} />
+      )}
     </div>
   )
 }

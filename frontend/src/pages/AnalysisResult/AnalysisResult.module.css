@@ -1,61 +1,530 @@
+/* ============================================================
+   Strona wyniku analizy
+   ============================================================ */
 .page {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-5);
 }
 
-.head h1 {
-  margin: 0;
-}
-.subtitle {
-  margin: var(--spacing-1) 0 0;
-  color: var(--color-text-muted);
-}
-
-.card {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-background);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
-}
-.row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-4);
-  padding: var(--spacing-3) var(--spacing-5);
-}
-.row + .row {
-  border-top: 1px solid var(--color-border);
-}
-.rowLabel {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-.rowValue {
-  font-weight: var(--font-weight-medium);
-}
-
-.raw {
-  margin: 0;
-  padding: var(--spacing-4);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
-  overflow: auto;
-}
-
-.back {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-}
-
 .center {
   display: flex;
   justify-content: center;
   padding: var(--spacing-8);
+}
+
+/* ===== Breadcrumb „wróć" ===== */
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  align-self: flex-start;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+}
+.backLink:hover {
+  color: var(--color-text-primary);
+}
+
+/* ===== Nagłówek pliku + akcje ===== */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--spacing-4);
+  flex-wrap: wrap;
+}
+.headerMain {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  min-width: 0;
+}
+.fileThumb {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-surface);
+  color: var(--color-accent);
+}
+.headerText {
+  min-width: 0;
+}
+.headerTitle {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  overflow-wrap: anywhere;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-1);
+}
+.typeChip {
+  padding: var(--spacing-0) var(--spacing-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+.metaText {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+.metaDot {
+  color: var(--color-text-muted);
+}
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex-shrink: 0;
+}
+
+/* ===== Przycisk PDF z plakietką „V2" ===== */
+.pdfWrap {
+  position: relative;
+  display: inline-flex;
+}
+.v2Badge {
+  position: absolute;
+  top: calc(-1 * var(--spacing-2));
+  right: calc(-1 * var(--spacing-1));
+  padding: 0 var(--spacing-1);
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+/* ===== Hero werdyktu ===== */
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-5);
+  padding: var(--spacing-5) var(--spacing-6);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-lg);
+  background: var(--color-danger-surface);
+}
+.hero[data-tone='real'] {
+  border-color: var(--color-success);
+  background: var(--color-success-surface);
+}
+.heroMain {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  min-width: 0;
+}
+.verdictPill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-4);
+  border-radius: var(--radius-md);
+  background: var(--color-danger);
+  color: var(--color-on-danger);
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+.hero[data-tone='real'] .verdictPill {
+  background: var(--color-success);
+  color: var(--color-on-success);
+}
+.heroTitle {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+}
+.heroText {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--color-text-muted);
+  line-height: var(--line-height-normal);
+}
+.heroAside {
+  flex-shrink: 0;
+}
+
+/* ===== Podgląd analizowanego pliku ===== */
+.mediaPlaceholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.mediaNote {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+/* ===== Sekcje (etykieta + treść) ===== */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+.sectionLabel {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.blockText,
+.summaryText {
+  margin: 0;
+  color: var(--color-text-muted);
+  line-height: var(--line-height-normal);
+}
+
+/* ===== Modalności (wideo / audio) ===== */
+.modalityGrid {
+  display: grid;
+  /* auto-fit: 1 źródło wypełnia rząd, 2 stają obok siebie, na wąsko same się układają w pion */
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--spacing-4);
+}
+.modalityHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+}
+.modalityTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-weight: var(--font-weight-semibold);
+}
+.modalityDesc {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  line-height: var(--line-height-snug);
+}
+
+/* ===== Grad-CAM ===== */
+.legend {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+.legendText {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.legendBar {
+  width: 160px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  /* Spektrum „jet": niebieski → cyjan → zielony → żółty → czerwony. Stały, nietematyzowany. */
+  background: linear-gradient(90deg, #1d4ed8, #06b6d4, #22c55e, #eab308, #ef4444);
+}
+.gradcamGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--spacing-3);
+}
+.frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-neutral-900); /* ciemne tło kafelka, niezależne od motywu */
+}
+.frameImg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.frameNote {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-400);
+}
+.frameTagStart {
+  position: absolute;
+  bottom: var(--spacing-1);
+  left: var(--spacing-1);
+  margin: 0;
+  padding: 0 var(--spacing-1);
+  border-radius: var(--radius-sm);
+  background: rgba(15, 23, 42, 0.7);
+  font-family: var(--font-family-mono);
+  font-size: 0.625rem;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.6;
+  color: #ffffff;
+}
+
+/* ===== Podsumowanie ===== */
+.findings {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+.finding {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  line-height: var(--line-height-snug);
+}
+.findingIcon {
+  flex-shrink: 0;
+  margin-top: 0.1em;
+}
+.icon_success {
+  color: var(--color-success);
+}
+.icon_warning {
+  color: var(--color-warning);
+}
+.icon_muted {
+  color: var(--color-text-muted);
+}
+.divider {
+  height: 1px;
+  margin: var(--spacing-1) 0;
+  background: var(--color-border);
+}
+.summaryMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-4);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+/* ===== Oś czasu ryzyka audio (pasek-heatmapa) ===== */
+.riskLegendBar {
+  width: 160px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  /* Skala ryzyka: zielony → bursztyn → czerwony (zgodna z riskColor()). */
+  background: linear-gradient(90deg, hsl(130 70% 45%), hsl(65 70% 45%), hsl(0 70% 45%));
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2);
+}
+.audioTrack {
+  position: relative;
+  width: 100%;
+  height: 60px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  /* delikatny, miękki tor pod pigułkami (luki = brak mowy widać przez prześwit) */
+  background:
+    radial-gradient(120% 140% at 50% 0%, rgba(255, 255, 255, 0.04), transparent 60%),
+    var(--color-surface);
+  overflow: hidden;
+}
+/* szklisty połysk nad kolorami — góra rozjaśniona, dół lekko przyciemniony */
+.audioTrack::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16),
+    rgba(255, 255, 255, 0) 42%,
+    rgba(0, 0, 0, 0.12)
+  );
+}
+.audioRuns {
+  position: absolute;
+  inset: 0;
+  animation: audioReveal 720ms ease both; /* skanowanie lewo→prawo przy wejściu */
+}
+.audioRun {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  min-width: 4px; /* bardzo krótkie fragmenty wciąż widoczne */
+  border-radius: var(--radius-sm); /* lekko zaokrąglone, nie pigułka */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 1px 3px rgba(16, 18, 28, 0.25);
+}
+.audioHits {
+  position: absolute;
+  inset: 0;
+}
+.audioHit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+@keyframes audioReveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .audioRuns {
+    animation: none;
+  }
+}
+.audioAxis {
+  position: relative;
+  height: 1.25rem;
+  margin-top: calc(-1 * var(--spacing-2)); /* kompensuje gap CardBody — oś tuż pod torem */
+}
+.audioTick {
+  position: absolute;
+  transform: translateX(-50%);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.audioTick:first-child {
+  transform: none; /* „0 s" przy lewym brzegu */
+}
+.audioTick:last-child {
+  transform: translateX(-100%); /* ostatni tick przy prawym brzegu */
+}
+.audioPeak {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3em; /* odstępy między częściami niezależne od whitespace w JSX */
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+.peakDot {
+  flex-shrink: 0;
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 14%, transparent);
+}
+.peakValue {
+  color: var(--color-text-primary);
+}
+
+/* ===== Placeholder stanu (anulowana / błąd / w toku) ===== */
+.statusCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-4);
+  min-height: 340px;
+  padding: var(--spacing-7) var(--spacing-5);
+  text-align: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-background);
+  box-shadow: var(--shadow-sm);
+}
+.statusIcon {
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border-radius: var(--radius-full);
+}
+.statusIcon[data-tone='danger'] {
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+}
+.statusIcon[data-tone='warning'] {
+  border: 1px solid var(--color-warning);
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+.statusIcon[data-tone='accent'] {
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent-surface);
+  color: var(--color-accent);
+}
+.statusTitle {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+}
+.statusText {
+  margin: 0;
+  max-width: 48ch;
+  color: var(--color-text-muted);
+  line-height: var(--line-height-normal);
+}
+.statusDetail {
+  margin: 0;
+  max-width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.statusActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-1);
+}
+
+/* ===== Stopka akcji ===== */
+.footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+/* ===== Responsywność ===== */
+@media (max-width: 720px) {
+  .hero {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+  }
 }
