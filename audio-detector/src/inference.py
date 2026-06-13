@@ -20,7 +20,7 @@ from training.train_mel import MelCNNLightningModule  # noqa: E402
 
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
 MEL_CKPT_PATH = os.path.join(
-    PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "mel_model-epoch=04-val_eer=0.1279.ckpt"
+    PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "mel_model-epoch=49-val_eer=0.0816.ckpt"
 )
 
 MEL_EER_THRESHOLD = float(os.getenv("MEL_EER_THRESHOLD", "0.3049"))
