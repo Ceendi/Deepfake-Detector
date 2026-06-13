@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 import time
 import pika
 import structlog
@@ -48,20 +49,42 @@ try:
 except Exception as e:
     log.error("Failed to load AudioInference", error=str(e))
     audio_inference = None
+
+
+class AnalysisCancelled(Exception):
+    """Task aborted because the user cancelled the analysis (cooperative cancel)."""
+
+
+def _is_cancelled(analysis_id: str) -> bool:
+    # Cooperative cancel: the Orchestrator flags cancel:{analysis_id} in Redis after a committed
+    # DELETE (amqp-messages.md). Fail-open — Redis down just means we finish the work and the
+    # late result bounces off the Orchestrator's terminal-state guard.
+    try:
+        return redis_client.exists(f"cancel:{analysis_id}") > 0
+    except redis.RedisError:
+        return False
+
+
 def process(msg: dict, progress_callback=None) -> dict:
     if not audio_inference:
         raise RuntimeError("AudioInference module not initialized properly.")
-    
+
     mode = msg.get("mode", "accurate")
-    input_path = f"/tmp/{msg['analysis_id']}_input"
-    # Start-ping before the S3 download: flips the analysis PENDING -> PROCESSING immediately,
-    # so a long download doesn't look like a stuck PENDING job (amqp-messages.md).
-    if progress_callback:
-        progress_callback(0, "LOADING")
-    log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"], mode=mode)
-    s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
-    
-    result = audio_inference.analyze(input_path, mode=mode, progress_callback=progress_callback)
+    input_path = os.path.join(tempfile.gettempdir(), f"{msg['analysis_id']}_input")
+    try:
+        # Start-ping before the S3 download: flips the analysis PENDING -> PROCESSING immediately,
+        # so a long download doesn't look like a stuck PENDING job (amqp-messages.md).
+        if progress_callback:
+            progress_callback(0, "LOADING")
+        log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"], mode=mode)
+        s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
+
+        result = audio_inference.analyze(input_path, mode=mode, progress_callback=progress_callback)
+    finally:
+        # Runs on failure and AnalysisCancelled too, not just the happy path — a 20-minute
+        # input left in /tmp per aborted task would fill the container disk.
+        if os.path.exists(input_path):
+            os.remove(input_path)
     # Contract (amqp-messages.md): gradcam_keys = bare object keys following
     # {analysisId}/{source}/{name}.png from object-storage.md. No URI scheme, no bucket prefix.
     gradcam_keys = []
@@ -80,8 +103,6 @@ def process(msg: dict, progress_callback=None) -> dict:
         finally:
             os.remove(result["local_gradcam_path"])
             del result["local_gradcam_path"]
-    if os.path.exists(input_path):
-        os.remove(input_path)
     result["gradcam_keys"] = gradcam_keys
     return result
 def _trace_log_fields(span) -> dict:
@@ -122,6 +143,15 @@ def _handle_message(ch, method, properties, body):
             source=SOURCE,
             **_trace_log_fields(span),
         )
+        # Cancelled while waiting in the queue (common behind a long job with prefetch=1):
+        # ack and drop before downloading or touching the dedup key.
+        if _is_cancelled(analysis_id):
+            log.info("task_cancelled_before_start")
+            span.set_attribute("analysis.cancelled", True)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            PROCESSED_AUDIO_TOTAL.labels(status="cancelled").inc()
+            structlog.contextvars.clear_contextvars()
+            return
         # Per-source dedup key (CLAUDE.md): a FULL analysis is two independent tasks under one id —
         # without :{source} the second detector would see "duplicate" and drop its task. Fail-open:
         # Redis down must not fail the analysis (the Orchestrator's dedup + DB guard is the authority).
@@ -137,6 +167,10 @@ def _handle_message(ch, method, properties, body):
         try:
             log.info("processing_started")
             def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
+                # Every progress tick doubles as a cancellation point (per-chunk granularity for
+                # audio), so a cancel lands within seconds instead of after the whole file.
+                if _is_cancelled(analysis_id):
+                    raise AnalysisCancelled()
                 payload = {
                     "analysis_id": analysis_id,
                     "correlation_id": correlation_id,
@@ -159,6 +193,17 @@ def _handle_message(ch, method, properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
             PROCESSED_AUDIO_TOTAL.labels(status="success").inc()
             log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
+        except AnalysisCancelled:
+            # Not a failure: no result is published — the analysis is already terminal CANCELLED
+            # upstream and the Orchestrator would ignore anything we send. Ack to drop the task.
+            PROCESSED_AUDIO_TOTAL.labels(status="cancelled").inc()
+            log.info("processing_cancelled")
+            span.set_attribute("analysis.cancelled", True)
+            try:
+                redis_client.delete(dedup_key)
+            except redis.RedisError:
+                pass  # fail-open; TTL reaps it
+            ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as e:
             PROCESSED_AUDIO_TOTAL.labels(status="error").inc()
             log.exception("processing_failed")

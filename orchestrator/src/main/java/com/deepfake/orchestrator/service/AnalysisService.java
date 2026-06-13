@@ -168,8 +168,11 @@ public class AnalysisService {
 
     /**
      * Soft-cancel an in-progress analysis. IDOR -> 404 (like get()). Idempotent on CANCELLED;
-     * a finished analysis (COMPLETED/FAILED) -> 409. Frees the in-flight slot, publishes
-     * analysis.cancel (forward-compat for detectors), and closes the SSE stream as CANCELLED.
+     * a finished analysis (COMPLETED/FAILED) -> 409. Frees the in-flight slot, closes the SSE
+     * stream as CANCELLED, and flags cancel:{id} in Redis so detectors abort in-flight/queued
+     * work early (cooperative cancellation, amqp-messages.md). Best-effort: the DB terminal
+     * state stays the correctness authority — without the flag detectors just finish and their
+     * late result is ignored.
      */
     public AnalysisResponse cancel(UUID id, String currentUserId) {
         Analysis a = repository.findById(id)
@@ -195,10 +198,7 @@ public class AnalysisService {
         }
 
         Analysis fresh = onTerminal(id); // evict + release + metric + SSE {status: CANCELLED} after commit
-        String correlationId = MDC.get("correlationId");
-        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_CANCEL,
-                Map.of("analysis_id", id.toString(),
-                        "correlation_id", correlationId != null ? correlationId : ""));
+        flagCancelAfterCommit(id);
         return AnalysisResponse.from(fresh);
     }
 
@@ -342,6 +342,28 @@ public class AnalysisService {
             });
         } else {
             idempotency.markProcessed(id, source);
+        }
+    }
+
+    // Set after commit so a rolled-back cancel can't leave a flag that aborts a live analysis
+    // (same reasoning as markProcessedAfterCommit). Fail-open: Redis down degrades to today's
+    // behavior — detectors finish and the late result bounces off the DB terminal-state guard.
+    // TTL covers queue wait + processing of the longest accepted file; an expired flag has the
+    // same benign degradation.
+    private void flagCancelAfterCommit(UUID id) {
+        Runnable setFlag = () -> {
+            try {
+                redis.opsForValue().set("cancel:" + id, "1", Duration.ofHours(2));
+            } catch (DataAccessException e) {
+                log.warn("cancel flag skipped (Redis down) for {}: {}", id, e.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { setFlag.run(); }
+            });
+        } else {
+            setFlag.run();
         }
     }
 

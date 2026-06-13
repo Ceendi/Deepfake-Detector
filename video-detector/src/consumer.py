@@ -4,6 +4,7 @@ import random
 import time
 
 import pika
+import redis
 import structlog
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, StatusCode
@@ -25,6 +26,28 @@ init_tracing(f"{SOURCE}-detector")
 tracer = trace.get_tracer(__name__)
 _propagator = TraceContextTextMapPropagator()  # W3C traceparent, same as the Java services
 
+redis_client = redis.Redis(
+    host=os.environ.get("REDIS_HOST", "localhost"),
+    port=int(os.environ.get("REDIS_PORT", 6379)),
+    password=os.environ.get("REDIS_PASSWORD"),
+    db=0,
+    decode_responses=True,
+)
+
+
+class AnalysisCancelled(Exception):
+    """Task aborted because the user cancelled the analysis (cooperative cancel)."""
+
+
+def _is_cancelled(analysis_id: str) -> bool:
+    # Cooperative cancel: the Orchestrator flags cancel:{analysis_id} in Redis after a committed
+    # DELETE (amqp-messages.md). Fail-open — Redis down just means we finish the work and the
+    # late result bounces off the Orchestrator's terminal-state guard.
+    try:
+        return redis_client.exists(f"cancel:{analysis_id}") > 0
+    except redis.RedisError:
+        return False
+
 # --- Business metrics (starter; exposed at /metrics, see main.py) -------------------------------
 # TODO(Osoba 3/4): extend with per-stage timings (face-detect / inference / grad-cam), model_version
 # label, queue-wait, etc. Labelled by source so video + audio share one series name.
@@ -36,12 +59,15 @@ INFERENCE_LATENCY = Histogram(
 DETECTOR_RESULTS = Counter(
     "detector_results_total",
     "Detector outcomes",
-    ["source", "outcome"],  # outcome: fake | real | failed
+    ["source", "outcome"],  # outcome: fake | real | failed | cancelled
 )
 
 # ============================================================
 # REPLACEMENT POINT — swap with the real ML pipeline.
 # Input:   msg (dict with analysis_id, file_bucket, file_key, correlation_id)
+#          progress_callback(pct, stage, details=None) — call it periodically (per frame batch):
+#          it publishes analysis.progress AND raises AnalysisCancelled when the user cancelled,
+#          so every tick is a cancellation point. Let the exception propagate.
 # Output:  dict matching the contract in docs/contracts/amqp-messages.md
 # Scaffolding deps: prometheus-client, boto3 — ready to use, not yet imported.
 #
@@ -59,7 +85,9 @@ DETECTOR_RESULTS = Counter(
 #     )
 #     s3.download_file(msg["file_bucket"], msg["file_key"], "/tmp/input")
 # ============================================================
-def process(msg: dict) -> dict:
+def process(msg: dict, progress_callback=None) -> dict:
+    if progress_callback:
+        progress_callback(50, "INFERENCE")
     time.sleep(2)  # inference simulation
     prob = round(random.uniform(0.1, 0.95), 4)
     return {
@@ -115,27 +143,40 @@ def _handle_message(ch, method, properties, body):
             source=SOURCE,
             **_trace_log_fields(span),
         )
+        # Cancelled while waiting in the queue (common behind a long job with prefetch=1):
+        # ack and drop before doing any work.
+        if _is_cancelled(analysis_id):
+            log.info("task_cancelled_before_start")
+            span.set_attribute("analysis.cancelled", True)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            DETECTOR_RESULTS.labels(SOURCE, "cancelled").inc()
+            structlog.contextvars.clear_contextvars()
+            return
         try:
             log.info("processing_started")
+
+            def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
+                # Every progress tick doubles as a cancellation point, so a cancel lands within
+                # one frame batch instead of after the whole file.
+                if _is_cancelled(analysis_id):
+                    raise AnalysisCancelled()
+                payload = {
+                    "analysis_id": analysis_id,
+                    "correlation_id": correlation_id,
+                    "source": SOURCE,
+                    "progress": pct,
+                    "stage": stage,
+                }
+                if details is not None:
+                    payload["details"] = details
+                _publish(ch, "analysis.progress", payload)
+
             # Start-ping: lets the Orchestrator flip PENDING->PROCESSING the moment the task is picked up
             # (not just at 50%). Lives outside process(), so swapping in the real model keeps it.
-            _publish(ch, "analysis.progress", {
-                "analysis_id": analysis_id,
-                "correlation_id": correlation_id,
-                "source": SOURCE,
-                "progress": 0,
-                "stage": "LOADING",
-            })
+            progress_callback(0, "LOADING")
             # TODO D6: idempotency check via Redis SETNX(processing:{analysis_id}:{source}) before publishing results.
-            _publish(ch, "analysis.progress", {
-                "analysis_id": analysis_id,
-                "correlation_id": correlation_id,
-                "source": SOURCE,
-                "progress": 50,
-                "stage": "INFERENCE",
-            })
             with INFERENCE_LATENCY.labels(SOURCE).time():
-                result = process(msg)
+                result = process(msg, progress_callback=progress_callback)
             DETECTOR_RESULTS.labels(SOURCE, result["verdict"].lower()).inc()
             _publish(ch, "analysis.results", {
                 "analysis_id": analysis_id,
@@ -147,6 +188,13 @@ def _handle_message(ch, method, properties, body):
             })
             ch.basic_ack(delivery_tag=method.delivery_tag)
             log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
+        except AnalysisCancelled:
+            # Not a failure: no result is published — the analysis is already terminal CANCELLED
+            # upstream and the Orchestrator would ignore anything we send. Ack to drop the task.
+            DETECTOR_RESULTS.labels(SOURCE, "cancelled").inc()
+            log.info("processing_cancelled")
+            span.set_attribute("analysis.cancelled", True)
+            ch.basic_ack(delivery_tag=method.delivery_tag)
         except Exception as e:
             log.exception("processing_failed")
             # The except swallows the exception, so the span must be marked failed by hand.
