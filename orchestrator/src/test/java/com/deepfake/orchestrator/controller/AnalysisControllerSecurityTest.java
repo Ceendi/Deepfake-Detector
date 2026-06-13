@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
@@ -28,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import com.deepfake.orchestrator.config.SecurityConfig;
 import com.deepfake.orchestrator.config.WebConfig;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
+import com.deepfake.orchestrator.dto.response.UserStatsResponse;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.report.ReportPdfService;
@@ -124,6 +126,32 @@ class AnalysisControllerSecurityTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fileId\":\"\",\"fileKey\":\"key-1\",\"type\":\"VIDEO\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void statsWithoutTokenReturns401() throws Exception {
+        mvc.perform(get("/api/analysis/stats"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void statsReturns200AndIsScopedToJwtSubject() throws Exception {
+        // also proves "/stats" resolves to the stats handler, not the "/{id}" template
+        when(service.stats("user-a")).thenReturn(new UserStatsResponse(
+                3,
+                new UserStatsResponse.StatusCounts(2, 1, 0, 0),
+                new UserStatsResponse.TypeCounts(2, 1, 0),
+                new UserStatsResponse.VerdictCounts(1, 1),
+                0.74, 3, Instant.now()));
+
+        mvc.perform(get("/api/analysis/stats")
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(3))
+                .andExpect(jsonPath("$.byStatus.completed").value(2))
+                .andExpect(jsonPath("$.verdicts.fake").value(1));
+
+        verify(service).stats("user-a");
     }
 
     @Test

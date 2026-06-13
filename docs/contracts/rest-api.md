@@ -159,6 +159,30 @@ Paginated history for the authenticated user. Query params: `page` (default `0`)
 `confidence`, `createdAt`, `updatedAt`) follow the same types and nullability as
 the matching `Analysis` fields below.
 
+### `GET /api/analysis/stats`
+
+Aggregate stats of the authenticated user's analyses (homepage dashboard). Scoped
+to `jwt.sub` by construction (like `GET /api/analysis`), so there is no IDOR
+surface. `200 OK`:
+
+```json
+{
+  "total": 42,
+  "byStatus": { "completed": 30, "failed": 5, "cancelled": 2, "inProgress": 5 },
+  "byType": { "video": 20, "audio": 10, "full": 12 },
+  "verdicts": { "fake": 12, "real": 18 },
+  "avgConfidence": 0.83,
+  "last7Days": 9,
+  "lastAnalysisAt": "2026-06-12T10:30:00Z"
+}
+```
+
+- `inProgress` = `PENDING` + `PROCESSING`.
+- `verdicts` counts `COMPLETED` analyses by verdict (`fake + real == byStatus.completed`).
+- `avgConfidence` averages `COMPLETED` analyses only; `null` until the first one completes.
+- `last7Days` counts analyses created in the trailing 7 days (any status).
+- `lastAnalysisAt` is the `createdAt` of the newest analysis; `null` for a fresh user.
+
 ### `DELETE /api/analysis/{id}`
 
 Soft-cancels an in-progress analysis. `200 OK` with the `Analysis` (now
