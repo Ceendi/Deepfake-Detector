@@ -130,6 +130,51 @@ class TestProgressContract:
             assert used <= allowed, f"{module} emits non-contract stages: {used - allowed}"
 
 
+class TestTracePropagation:
+    """traceparent flows AMQP-header -> consumer span -> published results (amqp-messages.md)."""
+
+    INCOMING_TRACE_ID = "0af7651916cd43dd8448eb211c80319c"
+    TRACEPARENT = f"00-{INCOMING_TRACE_ID}-b7ad6b7169203331-01"
+
+    def _deliver(self, monkeypatch, headers, error=None):
+        ch, method = MagicMock(), MagicMock(delivery_tag=7)
+        fake_process = MagicMock()
+        if error is not None:
+            fake_process.side_effect = error
+        else:
+            fake_process.return_value = {"prob_fake": 0.9, "verdict": "FAKE", "gradcam_keys": []}
+        monkeypatch.setattr(consumer, "process", fake_process)
+        rds = MagicMock()
+        rds.set.return_value = True
+        monkeypatch.setattr(consumer, "redis_client", rds)
+        props = MagicMock()
+        props.headers = headers
+        consumer._handle_message(ch, method, props, json.dumps(_task_msg()).encode())
+        return ch
+
+    def test_result_publish_continues_incoming_trace(self, monkeypatch):
+        ch = self._deliver(monkeypatch, headers={"traceparent": self.TRACEPARENT})
+
+        published = ch.basic_publish.call_args[1]["properties"].headers
+        assert published["traceparent"].split("-")[1] == self.INCOMING_TRACE_ID
+        # child span, not an echo of the orchestrator's span id
+        assert published["traceparent"].split("-")[2] != "b7ad6b7169203331"
+
+    def test_failure_result_also_carries_the_trace(self, monkeypatch):
+        ch = self._deliver(monkeypatch, headers={"traceparent": self.TRACEPARENT},
+                           error=RuntimeError("boom"))
+
+        published = ch.basic_publish.call_args[1]["properties"].headers
+        assert published["traceparent"].split("-")[1] == self.INCOMING_TRACE_ID
+
+    def test_missing_header_roots_a_new_trace(self, monkeypatch):
+        ch = self._deliver(monkeypatch, headers=None)
+
+        published = ch.basic_publish.call_args[1]["properties"].headers
+        assert "traceparent" in published
+        assert published["traceparent"].split("-")[1] != self.INCOMING_TRACE_ID
+
+
 class TestHandleMessageIdempotency:
     def _deliver(self, monkeypatch, rds, result=None, error=None):
         ch, method = MagicMock(), MagicMock(delivery_tag=7)
