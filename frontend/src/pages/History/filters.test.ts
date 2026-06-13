@@ -66,6 +66,26 @@ describe('applyFilters', () => {
     expect(out.map((i) => i.id)).toEqual(['b'])
   })
 
+  it('„Wideo" obejmuje też analizy FULL (obraz+dźwięk), nie tylko czyste VIDEO', () => {
+    const items = [
+      summary({ id: 'video', type: 'VIDEO' }),
+      summary({ id: 'full', type: 'FULL' }),
+      summary({ id: 'audio', type: 'AUDIO' }),
+    ]
+    const out = applyFilters(items, filters({ type: 'VIDEO' }), '')
+    expect(out.map((i) => i.id)).toEqual(['video', 'full'])
+  })
+
+  it('„W trakcie" obejmuje PENDING i PROCESSING', () => {
+    const items = [
+      summary({ id: 'pending', status: 'PENDING' }),
+      summary({ id: 'processing', status: 'PROCESSING' }),
+      summary({ id: 'done', status: 'COMPLETED' }),
+    ]
+    const out = applyFilters(items, filters({ status: 'PROCESSING' }), '')
+    expect(out.map((i) => i.id)).toEqual(['pending', 'processing'])
+  })
+
   it('filtruje po werdykcie', () => {
     const items = [summary({ id: 'a', verdict: 'REAL' }), summary({ id: 'b', verdict: 'FAKE' })]
     const out = applyFilters(items, filters({ verdict: 'FAKE' }), '')

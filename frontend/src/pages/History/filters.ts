@@ -1,6 +1,6 @@
 // Definicje filtrów historii — opcje, typy i helpery. Współdzielone przez toolbar (dropdowny),
 // chipy aktywnych filtrów i filtrowanie listy.
-import type { AnalysisSummary } from '@/api/types'
+import type { AnalysisSummary, AnalysisStatus, AnalysisType } from '@/api/types'
 
 export interface FilterOption {
   value: string
@@ -64,6 +64,23 @@ export function labelOf(options: FilterOption[], value: string): string {
 const DAY_MS = 24 * 60 * 60 * 1000
 const RANGE_MS: Record<string, number> = { '1d': DAY_MS, '7d': 7 * DAY_MS, '30d': 30 * DAY_MS }
 
+// „W trakcie" (wartość PROCESSING) obejmuje też PENDING — wiersz listy grupuje oba jako „W toku",
+// więc świeżo zakolejkowana analiza nie znika po wybraniu tego filtra.
+function statusMatches(filter: string, status: AnalysisStatus): boolean {
+  if (filter === 'all') return true
+  if (filter === 'PROCESSING') return status === 'PENDING' || status === 'PROCESSING'
+  return status === filter
+}
+
+// „Wideo" (wartość VIDEO) obejmuje też FULL (obraz + dźwięk): apka tworzy FULL dla KAŻDEGO pliku
+// wideo (patrz pickAnalysisType w upload-utils) i nigdy czystego VIDEO — bez tego „Wideo" nie
+// pokazałoby żadnej analizy wideo.
+function typeMatches(filter: string, type: AnalysisType): boolean {
+  if (filter === 'all') return true
+  if (filter === 'VIDEO') return type === 'VIDEO' || type === 'FULL'
+  return type === filter
+}
+
 // Filtrowanie po stronie klienta. TODO(backend): gdy GET /api/analysis dostanie query params
 // (status/type/verdict/from/to) + `name` w projekcji → przejść na server-side filter + paginację.
 // Szukajka działa po `fileId` (lista nie zwraca nazwy pliku — patrz AnalysisSummary).
@@ -77,8 +94,8 @@ export function applyFilters(
   const now = Date.now()
 
   return items.filter((it) => {
-    if (filters.status !== 'all' && it.status !== filters.status) return false
-    if (filters.type !== 'all' && it.type !== filters.type) return false
+    if (!statusMatches(filters.status, it.status)) return false
+    if (!typeMatches(filters.type, it.type)) return false
     if (filters.verdict !== 'all' && it.verdict !== filters.verdict) return false
     if (rangeMs && now - new Date(it.createdAt).getTime() > rangeMs) return false
     if (q && !it.fileId.toLowerCase().includes(q)) return false
