@@ -35,10 +35,10 @@ import torch.nn.functional as F
 
 try:
     from datasets import IMAGENET_MEAN, IMAGENET_STD, FFPPClipDataset
-    from model import SEQ_LEN, VideoLightningModule
+    from model import VideoLightningModule
 except ImportError:
     from .datasets import IMAGENET_MEAN, IMAGENET_STD, FFPPClipDataset
-    from .model import SEQ_LEN, VideoLightningModule
+    from .model import VideoLightningModule
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
