@@ -2,6 +2,8 @@ package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.math.BigDecimal;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,17 +20,32 @@ class ResultDetailsExtractorTest {
     private final ResultDetailsExtractor extractor = new ResultDetailsExtractor();
 
     @Test
-    void mapsModelVersionGradcamKeysAndMetadata() {
+    void mapsModelVersionConfidenceVerdictGradcamKeysAndMetadata() {
         Map<String, Object> details = extractor.extract(Map.of(
                 "prob_fake", 0.87,
+                "verdict", "FAKE",
+                "confidence", 0.74,
                 "model_version", "v1.2.0-accurate",
                 "gradcam_keys", List.of("id/audio/gradcam.png"),
                 "metadata", Map.of("duration_seconds", 12.5)));
 
         assertThat(details)
                 .containsEntry("modelVersion", "v1.2.0-accurate")
+                .containsEntry("confidence", new BigDecimal("0.74"))
+                .containsEntry("verdict", "FAKE")
                 .containsEntry("gradcamKeys", List.of("id/audio/gradcam.png"))
                 .containsEntry("metadata", Map.of("duration_seconds", 12.5));
+    }
+
+    @Test
+    void confidenceIsPersistedAsBigDecimalAndVerdictAsString() {
+        Map<String, Object> details = extractor.extract(Map.of(
+                "confidence", 0.82,
+                "verdict", "REAL"));
+
+        assertThat(details.get("confidence")).isInstanceOf(BigDecimal.class);
+        assertThat(details.get("confidence")).isEqualTo(new BigDecimal("0.82"));
+        assertThat(details.get("verdict")).isEqualTo("REAL");
     }
 
     @Test
