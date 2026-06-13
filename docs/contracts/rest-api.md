@@ -190,7 +190,10 @@ Soft-cancels an in-progress analysis. `200 OK` with the `Analysis` (now
 returns `200`. `409 Conflict` (code `CONFLICT`) if the analysis already finished
 (`COMPLETED`/`FAILED`). `404 Not Found` for a missing or non-owned analysis (IDOR —
 never `403`). Any open SSE stream (below) receives a `result` event with
-`status: CANCELLED` and is then closed.
+`status: CANCELLED` and is then closed. A committed cancel also sets the Redis
+flag `cancel:{analysis_id}` (best-effort) so detectors abort queued/in-flight
+work early instead of processing the whole file — see the Cancellation section
+in [`amqp-messages.md`](./amqp-messages.md).
 
 ## `Analysis` shape
 

@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,12 +21,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
-import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
@@ -34,9 +37,10 @@ import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
- * Cancel semantics: owner cancels an in-progress analysis (CANCELLED + slot freed + cancel event +
- * SSE close); IDOR -> 404; finished -> 409; repeat cancel -> idempotent 200; and a late detector
- * result on a CANCELLED analysis is ignored (no overwrite, no double release).
+ * Cancel semantics: owner cancels an in-progress analysis (CANCELLED + slot freed + Redis cancel
+ * flag for the detectors + SSE close); IDOR -> 404; finished -> 409; repeat cancel -> idempotent
+ * 200; and a late detector result on a CANCELLED analysis is ignored (no overwrite, no double
+ * release). The flag is best-effort: a Redis outage must not fail the cancel.
  */
 @ExtendWith(MockitoExtension.class)
 class AnalysisServiceCancelTest {
@@ -47,6 +51,8 @@ class AnalysisServiceCancelTest {
     RabbitTemplate rabbitTemplate;
     @Mock
     StringRedisTemplate redis;
+    @Mock
+    ValueOperations<String, String> valueOps;
     @Mock
     AnalysisCache cache;
     @Mock
@@ -68,13 +74,35 @@ class AnalysisServiceCancelTest {
         Analysis cancelled = analysis("alice", AnalysisStatus.CANCELLED, AnalysisType.VIDEO);
         when(repository.findById(id)).thenReturn(Optional.of(processing), Optional.of(cancelled));
         when(repository.cancelIfActive(eq(id), eq(AnalysisStatus.CANCELLED), any(), any())).thenReturn(1);
+        when(redis.opsForValue()).thenReturn(valueOps);
 
         AnalysisResponse response = service.cancel(id, "alice");
 
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
         verify(backpressure).release();
-        verify(rabbitTemplate).convertAndSend(eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_CANCEL), any(Map.class));
+        // Cooperative cancellation: detectors poll this flag and abort queued/in-flight work.
+        verify(valueOps).set(eq("cancel:" + id), eq("1"), any(Duration.class));
         verify(streams).sendResult(eq(id), any());
+        verify(streams).complete(id);
+        verifyNoInteractions(rabbitTemplate); // cancel is not an AMQP event
+    }
+
+    @Test
+    void redisOutageDoesNotFailTheCancel() {
+        Analysis processing = analysis("alice", AnalysisStatus.PROCESSING, AnalysisType.VIDEO);
+        Analysis cancelled = analysis("alice", AnalysisStatus.CANCELLED, AnalysisType.VIDEO);
+        when(repository.findById(id)).thenReturn(Optional.of(processing), Optional.of(cancelled));
+        when(repository.cancelIfActive(eq(id), eq(AnalysisStatus.CANCELLED), any(), any())).thenReturn(1);
+        when(redis.opsForValue()).thenReturn(valueOps);
+        doThrow(new RedisConnectionFailureException("down"))
+                .when(valueOps).set(any(), any(), any(Duration.class));
+
+        AnalysisResponse response = service.cancel(id, "alice");
+
+        // Fail-open: the DB CANCELLED state is the authority; detectors just finish and their
+        // late result bounces off the terminal-state guard.
+        assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
+        verify(backpressure).release();
         verify(streams).complete(id);
     }
 
@@ -90,7 +118,7 @@ class AnalysisServiceCancelTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
         verify(backpressure, never()).release();
-        verifyNoInteractions(rabbitTemplate, streams);
+        verifyNoInteractions(rabbitTemplate, streams, redis);
     }
 
     @Test
@@ -102,7 +130,7 @@ class AnalysisServiceCancelTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
         verify(repository, never()).cancelIfActive(any(), any(), any(), any());
-        verifyNoInteractions(backpressure, rabbitTemplate, streams);
+        verifyNoInteractions(backpressure, rabbitTemplate, streams, redis);
     }
 
     @Test
@@ -127,7 +155,7 @@ class AnalysisServiceCancelTest {
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
         verify(repository, never()).cancelIfActive(any(), any(), any(), any());
         verify(backpressure, never()).release();
-        verifyNoInteractions(rabbitTemplate, streams);
+        verifyNoInteractions(rabbitTemplate, streams, redis);
     }
 
     @Test

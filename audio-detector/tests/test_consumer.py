@@ -62,6 +62,7 @@ def inference(monkeypatch):
 def rds(monkeypatch):
     fake = MagicMock()
     fake.set.return_value = True  # SETNX acquired
+    fake.exists.return_value = 0  # no cancel flag
     monkeypatch.setattr(consumer, "redis_client", fake)
     return fake
 
@@ -146,6 +147,7 @@ class TestTracePropagation:
         monkeypatch.setattr(consumer, "process", fake_process)
         rds = MagicMock()
         rds.set.return_value = True
+        rds.exists.return_value = 0
         monkeypatch.setattr(consumer, "redis_client", rds)
         props = MagicMock()
         props.headers = headers
@@ -173,6 +175,73 @@ class TestTracePropagation:
         published = ch.basic_publish.call_args[1]["properties"].headers
         assert "traceparent" in published
         assert published["traceparent"].split("-")[1] != self.INCOMING_TRACE_ID
+
+
+class TestCancellation:
+    """Cooperative cancel via the Redis flag cancel:{analysis_id} (amqp-messages.md):
+    checked at task pickup and on every progress tick; ack + drop, never a FAILED result."""
+
+    def _deliver(self, monkeypatch, process=None):
+        ch, method = MagicMock(), MagicMock(delivery_tag=7)
+        fake_process = process or MagicMock(
+            return_value={"prob_fake": 0.9, "verdict": "FAKE", "gradcam_keys": []})
+        monkeypatch.setattr(consumer, "process", fake_process)
+        consumer._handle_message(ch, method, MagicMock(), json.dumps(_task_msg()).encode())
+        return ch, fake_process
+
+    def test_cancelled_while_queued_is_acked_without_any_work(self, monkeypatch, rds):
+        rds.exists.return_value = 1
+
+        ch, fake_process = self._deliver(monkeypatch)
+
+        rds.exists.assert_called_with(f"cancel:{ANALYSIS_ID}")
+        fake_process.assert_not_called()
+        ch.basic_publish.assert_not_called()
+        ch.basic_ack.assert_called_once()
+        rds.set.assert_not_called()  # dedup key never touched
+
+    def test_cancelled_mid_inference_acks_without_publishing_a_result(self, monkeypatch, rds):
+        # Flag appears after the task started: pickup check and first tick are clean,
+        # the second tick sees the flag and aborts.
+        rds.exists.side_effect = [0, 0, 1]
+
+        def fake_process(msg, progress_callback=None):
+            progress_callback(0, "LOADING")
+            progress_callback(40, "INFERENCE")
+            raise AssertionError("unreachable — the cancelled tick must raise")
+
+        ch, _ = self._deliver(monkeypatch, process=fake_process)
+
+        bodies = [json.loads(c[1]["body"]) for c in ch.basic_publish.call_args_list]
+        assert all("status" not in b for b in bodies)  # progress only — no COMPLETED/FAILED
+        ch.basic_ack.assert_called_once()
+        rds.delete.assert_called_once_with(f"processing:{ANALYSIS_ID}:audio")
+
+    def test_redis_down_on_cancel_check_fails_open(self, monkeypatch, rds):
+        rds.exists.side_effect = redis_lib.RedisError("connection refused")
+        rds.set.return_value = True
+
+        ch, fake_process = self._deliver(monkeypatch)
+
+        fake_process.assert_called_once()
+        published = json.loads(ch.basic_publish.call_args[1]["body"])
+        assert published["status"] == "COMPLETED"
+        ch.basic_ack.assert_called_once()
+
+
+class TestInputTempCleanup:
+    @pytest.mark.parametrize("abort", [consumer.AnalysisCancelled, RuntimeError])
+    def test_downloaded_input_is_removed_when_analyze_aborts(self, s3, inference, abort):
+        import pathlib
+        import tempfile
+        input_path = pathlib.Path(tempfile.gettempdir()) / f"{ANALYSIS_ID}_input"
+        s3.download_file.side_effect = lambda bucket, key, dst: pathlib.Path(dst).write_bytes(b"x")
+        inference.analyze.side_effect = abort()
+
+        with pytest.raises(abort):
+            consumer.process(_task_msg())
+
+        assert not input_path.exists()
 
 
 class TestHandleMessageIdempotency:
