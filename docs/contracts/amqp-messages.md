@@ -138,6 +138,21 @@ variants (`gradcam_url`, `gradcam_urls`) are ignored.
 as-is, except `segment_predictions` is uniformly downsampled to ≤500 entries
 (`segment_predictions_downsampled: true` is set when that happens).
 
+Video publishes `duration_seconds`, `fps`, `frames_sampled`, `faces_detected` and
+`frame_predictions` — a list of `{ "timestamp": 1.2, "attention": 0.18 }` entries with
+the attention-pooling weights of the sampled frames (they sum to 1). **`attention` is
+the frame's relative contribution to the clip-level verdict, not a per-frame
+`prob_fake`** — the video model emits a single logit per clip, so clients must not
+render it as a fake-probability timeline (audio's `segment_predictions` *are*
+per-segment probabilities; these are not). On a REAL verdict the highest-attention
+frames are the ones that most convinced the model of authenticity. Every `metadata`
+field is source-specific and optional — consumers must not require a field published
+by the other detector.
+
+Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no decodable
+frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
+`PROCESSING_ERROR` (generic fallback, shared with audio).
+
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
 
 ### Cancel — Orchestrator → Detector

@@ -51,6 +51,8 @@ def main():
 
     backbone_path = os.path.join(out_dir, "backbone.onnx")
     print(f"Export CNN -> {backbone_path}")
+    # dynamo=False: nowy exporter (domyslny od torch 2.9) traceuje LSTM ze statyczna
+    # osia czasu i odrzuca dynamic_axes; klasyczny TorchScript exporter je honoruje
     torch.onnx.export(
         backbone,
         torch.randn(1, 3, IMG_SIZE, IMG_SIZE),
@@ -61,6 +63,7 @@ def main():
         input_names=["frames"],
         output_names=["features"],
         dynamic_axes={"frames": {0: "batch"}, "features": {0: "batch"}},
+        dynamo=False,
     )
 
     temporal_path = os.path.join(out_dir, "temporal.onnx")
@@ -75,6 +78,7 @@ def main():
         input_names=["features"],
         output_names=["logits"],
         dynamic_axes={"features": {0: "batch", 1: "time"}, "logits": {0: "batch"}},
+        dynamo=False,
     )
 
     # sanity check: ONNX vs PyTorch na tym samym wejsciu

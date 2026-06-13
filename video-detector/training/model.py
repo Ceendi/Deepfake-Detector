@@ -103,9 +103,8 @@ class VideoLightningModule(pl.LightningModule):
     - OneCycleLR per-step, max 20 epok
     - monitorowana metryka: val_f1 (early stopping + checkpoint w train.py)
 
-    Kompatybilny ze wspolnym frameworkiem ewaluacji audio-detector/eval.py
-    (forward zwraca logity (B, 1), load_from_checkpoint dziala dzieki
-    save_hyperparameters()).
+    Ewaluacja: training/eval.py (forward zwraca logity (B, 1),
+    load_from_checkpoint dziala dzieki save_hyperparameters()).
     """
 
     def __init__(

@@ -96,8 +96,8 @@ class FFPPClipDataset(Dataset):
 
 
 class FFPPDataModule(pl.LightningDataModule):
-    """Sygnatura (cache_dir, batch_size, num_workers) — kompatybilna ze
-    wspolnym audio-detector/eval.py (dynamiczny import + setup("test"))."""
+    """Sygnatura (cache_dir, batch_size, num_workers) — uzywana przez
+    train.py, eval.py i grid_search.py (setup("test") dla ewaluacji)."""
 
     def __init__(self, cache_dir: str, batch_size: int = 8, num_workers: int = 4):
         super().__init__()
