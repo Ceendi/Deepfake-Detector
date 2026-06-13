@@ -36,6 +36,32 @@ export interface StartAnalysisRequest {
   type: AnalysisType
 }
 
+// Wynik jednego źródła (video/audio) w `Analysis.details`. `gradcamUrls` to gotowe ścieżki
+// endpointu artefaktów (TO czytamy), `gradcamKeys` = surowe klucze w buckecie (audyt),
+// `metadata` = wolnoformatowy obiekt detektora (snake_case, np. `frames_analyzed`).
+export interface SourceDetails {
+  modelVersion: string
+  gradcamKeys: string[]
+  gradcamUrls: string[]
+  metadata?: Record<string, unknown>
+}
+
+// `details` grupuje wyniki per źródło — obecne są tylko te, które zdążyły zaraportować.
+export interface AnalysisDetails {
+  video?: SourceDetails
+  audio?: SourceDetails
+}
+
+// Per-segmentowa predykcja audio (`details.audio.metadata.segment_predictions`). Czasy w sekundach,
+// `prob_fake` to realne P(FAKE) okna (kontrakt: amqp-messages.md — w przeciwieństwie do wideo
+// `frame_predictions`, które są wagami attention). Okna nachodzą się (≈1 s okno, 0.5 s skok),
+// mogą mieć luki (cisza/brak mowy) i być downsamplowane do ≤500 wpisów.
+export interface AudioSegmentPrediction {
+  start_time: number
+  end_time: number
+  prob_fake: number
+}
+
 // Pełny zasób — GET /api/analysis/{id}. Nullowalność pól zależy od statusu (patrz komentarze).
 export interface Analysis {
   id: string
@@ -48,7 +74,7 @@ export interface Analysis {
   confidence: number | null // 0..1; null gdy status != COMPLETED
   videoProb: number | null // 0..1; null gdy źródło nieanalizowane
   audioProb: number | null // 0..1; null gdy źródło nieanalizowane
-  details: Record<string, unknown> | null // MVP: null; później URL-e Grad-CAM + metadane
+  details: AnalysisDetails | null // null dopóki żaden detektor nie zaraportował
   errorMessage: string | null // null gdy status != FAILED
   createdAt: string // ISO 8601
   updatedAt: string
@@ -64,6 +90,31 @@ export interface AnalysisSummary {
   confidence: number | null
   createdAt: string
   updatedAt: string
+}
+
+// Agregaty analiz usera — GET /api/analysis/stats (dashboard). Scoped do jwt.sub (brak IDOR).
+// verdicts liczy tylko COMPLETED (fake + real == byStatus.completed). avgConfidence null do
+// pierwszego COMPLETED; lastAnalysisAt null dla usera bez analiz.
+export interface UserStats {
+  total: number
+  byStatus: {
+    completed: number
+    failed: number
+    cancelled: number
+    inProgress: number // PENDING + PROCESSING
+  }
+  byType: {
+    video: number
+    audio: number
+    full: number
+  }
+  verdicts: {
+    fake: number
+    real: number
+  }
+  avgConfidence: number | null // 0..1; null dopóki nic nie ukończone
+  last7Days: number // analizy utworzone w ostatnich 7 dniach (dowolny status)
+  lastAnalysisAt: string | null // ISO 8601 createdAt najnowszej; null dla świeżego usera
 }
 
 // Spring PagedModel — opakowanie listy z metadanymi paginacji.
