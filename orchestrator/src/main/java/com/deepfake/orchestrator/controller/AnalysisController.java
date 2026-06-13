@@ -3,11 +3,13 @@ package com.deepfake.orchestrator.controller;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.response.UserStatsResponse;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.AuthenticatedUser;
 import com.deepfake.orchestrator.security.CurrentUser;
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.service.ArtifactService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
@@ -34,6 +36,7 @@ import java.util.UUID;
 public class AnalysisController {
     private final AnalysisService service;
     private final ReportPdfService reportPdfService;
+    private final ArtifactService artifactService;
 
     @Operation(summary = "Start an analysis for an uploaded file")
     @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
@@ -53,6 +56,13 @@ public class AnalysisController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)
             Pageable pageable) {
         return new PagedModel<>(service.list(user.id(), pageable));
+    }
+
+    // The exact "/stats" pattern outranks the "/{id}" template, so this never resolves as an id.
+    @Operation(summary = "Aggregate stats of the caller's analyses (homepage dashboard)")
+    @GetMapping("/stats")
+    public UserStatsResponse stats(@CurrentUser AuthenticatedUser user) {
+        return service.stats(user.id());
     }
 
     @Operation(summary = "Get one analysis by id")
@@ -85,6 +95,21 @@ public class AnalysisController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"report-" + id + ".pdf\"")
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(reportPdfService.render(a));
+    }
+
+    @Operation(summary = "Download a Grad-CAM artifact (PNG) referenced by details.gradcamKeys")
+    @ApiResponse(responseCode = "200", description = "image/png")
+    @ApiResponse(responseCode = "404", description = "Missing, not owned (IDOR), or not a recorded artifact")
+    @ApiResponse(responseCode = "503", description = "Artifact storage unavailable")
+    @GetMapping(value = "/{id}/artifacts/{source}/{name}", produces = MediaType.IMAGE_PNG_VALUE)
+    public ResponseEntity<byte[]> artifact(@PathVariable UUID id, @PathVariable String source,
+                                           @PathVariable String name, @CurrentUser AuthenticatedUser user) {
+        byte[] png = artifactService.download(id, source, name, user.id());
+        return ResponseEntity.ok()
+                // Artifacts are immutable per analysis; let the browser cache its own heatmaps.
+                .header(HttpHeaders.CACHE_CONTROL, "private, max-age=86400, immutable")
+                .contentType(MediaType.IMAGE_PNG)
+                .body(png);
     }
 
     @Operation(summary = "Cancel an in-progress analysis")

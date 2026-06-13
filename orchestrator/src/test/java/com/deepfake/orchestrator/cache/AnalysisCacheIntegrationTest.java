@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -59,6 +61,7 @@ class AnalysisCacheIntegrationTest {
         assertThat(got.verdict()).isEqualTo("FAKE");
         assertThat(got.confidence()).isEqualByComparingTo("0.7400");
         assertThat(got.createdAt()).isEqualTo(stored.createdAt());
+        assertThat(got.details()).isEqualTo(stored.details()); // nested per-source maps survive JSON
     }
 
     @Test
@@ -77,9 +80,12 @@ class AnalysisCacheIntegrationTest {
     }
 
     private static AnalysisResponse sample(UUID id) {
+        Map<String, Object> details = Map.of("video", Map.of(
+                "modelVersion", "v1.0.0",
+                "gradcamKeys", List.of(id + "/video/frame1.png")));
         return new AnalysisResponse(id, "user-a", "file-1", "key-1", AnalysisType.VIDEO,
                 AnalysisStatus.COMPLETED, "FAKE", new BigDecimal("0.7400"), new BigDecimal("0.8700"),
-                null, null, null, Instant.parse("2026-01-01T00:00:00Z"),
+                null, details, null, Instant.parse("2026-01-01T00:00:00Z"),
                 Instant.parse("2026-01-01T00:00:02Z"));
     }
 }

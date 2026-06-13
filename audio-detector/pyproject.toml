@@ -15,6 +15,8 @@ dependencies = [
     "prometheus-client==0.25.*",
     "structlog==25.*",
     "boto3==1.42.*",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
     "lightning==2.5.0",
     "audiomentations[extras]>=0.37",
     "librosa>=0.10",
@@ -35,6 +37,11 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+# Consumer tests stub src.inference, so they run without the ML stack:
+#   uv pip install pika structlog boto3 redis prometheus-client opentelemetry-sdk pytest && pytest tests
+[dependency-groups]
+dev = ["pytest>=8"]
 
 [[tool.uv.index]]
 name = "pytorch-cu126"

@@ -3,7 +3,9 @@ package com.deepfake.fileservice.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -63,6 +65,52 @@ class FileMetadataRepositoryIntegrationTest {
         assertThat(m.getObjectKey()).isEqualTo(fileId + "_clip.mp4");
         assertThat(m.getSizeBytes()).isEqualTo(10_485_760L);
         assertThat(m.getCreatedAt()).isNotNull(); // @PrePersist stamped it
+    }
+
+    @Test
+    void findByDeletedAtBeforeReturnsOnlyExpiredSoftDeleted() {
+        Instant cutoff = Instant.now().minusSeconds(72L * 3600);
+        persist("active", null);
+        persist("fresh-deleted", Instant.now().minusSeconds(3600));
+        UUID expired = persist("expired-deleted", Instant.now().minusSeconds(100L * 3600));
+
+        List<FileMetadata> candidates = repository.findByDeletedAtBefore(cutoff);
+
+        assertThat(candidates).extracting(FileMetadata::getFileId).containsExactly(expired);
+    }
+
+    @Test
+    void hardDeleteIfSoftDeletedNeverTouchesActiveRows() {
+        UUID active = persist("active", null);
+        UUID deleted = persist("deleted", Instant.now());
+
+        assertThat(repository.hardDeleteIfSoftDeleted(active)).isZero();
+        assertThat(repository.hardDeleteIfSoftDeleted(deleted)).isEqualTo(1);
+        em.clear();
+        assertThat(repository.findById(active)).isPresent();
+        assertThat(repository.findById(deleted)).isEmpty();
+    }
+
+    @Test
+    void findExistingObjectKeysReturnsIntersectionIncludingSoftDeleted() {
+        persist("a", null);              // object key: a-key
+        persist("b", Instant.now());     // soft-deleted still counts as known
+
+        Set<String> known = repository.findExistingObjectKeys(
+                List.of("a-key", "b-key", "ghost-key"));
+
+        assertThat(known).containsExactlyInAnyOrder("a-key", "b-key");
+    }
+
+    // name doubles as the object-key prefix so orphan assertions stay readable
+    private UUID persist(String name, Instant deletedAt) {
+        UUID fileId = UUID.randomUUID();
+        repository.save(FileMetadata.builder()
+                .fileId(fileId).objectKey(name + "-key").userId("user-a")
+                .mimetype("video/mp4").sizeBytes(1L).deletedAt(deletedAt).build());
+        em.flush();
+        em.clear();
+        return fileId;
     }
 
     @Test

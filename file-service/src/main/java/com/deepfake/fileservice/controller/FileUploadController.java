@@ -65,8 +65,8 @@ public class FileUploadController {
         }
 
         // S3 first, then DB. If the row write fails the object is orphaned in S3 but invisible to
-        // the API (every lookup goes through this row); the bucket TTL job reclaims it later.
-        // TODO(week 5+): reconcile orphans via the same S3 cleanup job as soft-deleted files.
+        // the API (every lookup goes through this row); S3CleanupService reclaims it once it
+        // outlives the orphan-min-age window.
         metadataRepository.save(FileMetadata.builder()
                 .fileId(fileId).objectKey(key).userId(user.id())
                 .originalName(file.getOriginalFilename()).mimetype(validated.mimetype())

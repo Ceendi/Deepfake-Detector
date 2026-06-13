@@ -1,6 +1,7 @@
 package com.deepfake.orchestrator.repository;
 
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.response.UserStats;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import org.springframework.data.domain.Page;
@@ -14,6 +15,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
@@ -23,15 +25,18 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     // Atomic aggregation + terminal transitions. clearAutomatically so the caller
     // can re-read fresh; each returns rows touched (0 => already terminal/unknown).
 
-    // Disjoint single-column writes: concurrent video+audio both survive under the Postgres row-lock.
+    // Disjoint per-source writes (prob + details together): concurrent video+audio both survive
+    // under the Postgres row-lock.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Analysis a SET a.videoProb = :prob, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
+    @Query("UPDATE Analysis a SET a.videoProb = :prob, a.videoDetails = :details, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
     int writeVideoProb(@Param("id") UUID id, @Param("prob") BigDecimal prob,
+            @Param("details") Map<String, Object> details,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Analysis a SET a.audioProb = :prob, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
+    @Query("UPDATE Analysis a SET a.audioProb = :prob, a.audioDetails = :details, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
     int writeAudioProb(@Param("id") UUID id, @Param("prob") BigDecimal prob,
+            @Param("details") Map<String, Object> details,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
     // CAS the status: 1 row => this caller won the transition, so it runs the side effects exactly once.
@@ -59,6 +64,29 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     @Query("UPDATE Analysis a SET a.status = :to, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
     int recordProgress(@Param("id") UUID id, @Param("to") AnalysisStatus to,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
+
+    // Single-row aggregate for the homepage dashboard, scoped to one user (IDOR-free by
+    // construction, like findByUserId). SUMs are COALESCEd: over zero rows they yield NULL,
+    // which can't unbox into the record's long fields. AVG skips NULL confidences, so it
+    // averages COMPLETED analyses only.
+    @Query("""
+            SELECT new com.deepfake.orchestrator.dto.response.UserStats(
+                COUNT(a),
+                COALESCE(SUM(CASE WHEN a.status = COMPLETED THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.status = FAILED THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.status = CANCELLED THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.status IN (PENDING, PROCESSING) THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.type = VIDEO THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.type = AUDIO THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.type = FULL THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.verdict = 'FAKE' THEN 1 ELSE 0 END), 0L),
+                COALESCE(SUM(CASE WHEN a.verdict = 'REAL' THEN 1 ELSE 0 END), 0L),
+                AVG(a.confidence),
+                COALESCE(SUM(CASE WHEN a.createdAt >= :since THEN 1 ELSE 0 END), 0L),
+                MAX(a.createdAt))
+            FROM Analysis a WHERE a.userId = :userId
+            """)
+    UserStats userStats(@Param("userId") String userId, @Param("since") Instant since);
 
     // Native + literal statuses so the planner can use the partial index idx_analysis_active
     // (WHERE status IN ('PENDING','PROCESSING')); a bound IN list wouldn't match the index predicate.

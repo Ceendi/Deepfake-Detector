@@ -31,6 +31,7 @@ import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.service.ArtifactService;
 
 /**
  * SSE stream endpoint at the HTTP edge: owner opens a 200 text/event-stream; foreign/missing → 404
@@ -46,6 +47,9 @@ class AnalysisStreamControllerTest {
 
     @MockitoBean
     AnalysisService service;
+
+    @MockitoBean
+    ArtifactService artifactService;
 
     @MockitoBean
     JwtDecoder jwtDecoder;

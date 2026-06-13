@@ -33,7 +33,7 @@ import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
-/** The terminal SSE push must fire on afterCommit, not inside the tx — a rollback can't leak it. */
+/** The terminal SSE push must fire on afterCommit, not inside the tx â€” a rollback can't leak it. */
 @ExtendWith(MockitoExtension.class)
 class AnalysisServicePushAfterCommitTest {
 
@@ -94,7 +94,7 @@ class AnalysisServicePushAfterCommitTest {
         Analysis a = Analysis.builder().id(id).userId("alice").type(AnalysisType.VIDEO)
                 .status(AnalysisStatus.PROCESSING).videoProb(new BigDecimal("0.8")).build();
         when(repository.findById(id)).thenReturn(Optional.of(a));
-        when(repository.writeVideoProb(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
         when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
     }
 

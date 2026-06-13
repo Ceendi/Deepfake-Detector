@@ -28,8 +28,7 @@ public class FileMetadataService {
         FileMetadata m = loadOwned(fileId, currentUserId);
         m.setDeletedAt(Instant.now());
         repository.save(m);
-        // S3 object is kept; a TTL job reclaims deleted/orphaned objects later.
-        // TODO(week 5+): S3 cleanup job for deleted_at older than the retention window.
+        // S3 object is kept; S3CleanupService purges it (and this row) after the retention window.
     }
 
     // IDOR guard: 404 not 403, so a foreign (or already soft-deleted) file looks like a missing one.

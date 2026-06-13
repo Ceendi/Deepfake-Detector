@@ -15,10 +15,17 @@ dependencies = [
     "prometheus-client==0.25.*",
     "structlog==25.*",
     "boto3==1.42.*",
+    "opentelemetry-sdk>=1.30",
+    "opentelemetry-exporter-otlp-proto-http>=1.30",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+# Consumer tests need no ML stack (the video pipeline is still a stub):
+#   uv pip install pika structlog prometheus-client opentelemetry-sdk pytest && pytest tests
+[dependency-groups]
+dev = ["pytest>=8"]
 
 [tool.ruff]
 target-version = "py312"

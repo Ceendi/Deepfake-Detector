@@ -5,6 +5,7 @@ import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.response.UserStatsResponse;
 import com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent;
 import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
@@ -33,7 +34,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -60,6 +63,7 @@ public class AnalysisService {
     private final BackpressureGuard backpressure;
     private final IdempotencyGuard idempotency;
     private final AnalysisMetrics metrics;
+    private final ResultDetailsExtractor detailsExtractor = new ResultDetailsExtractor();
 
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
         backpressure.acquire(); // 429 here -> nothing persisted or published
@@ -96,7 +100,13 @@ public class AnalysisService {
             rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_VIDEO, payload);
         }
         if (req.type() == AnalysisType.AUDIO || req.type() == AnalysisType.FULL) {
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, payload);
+            // mode is audio-only: it selects the audio model (fast = spectrogram, accurate = Wav2Vec2).
+            // Always sent explicitly (request normalizes null -> accurate) so queue payloads are
+            // self-describing; the video task keeps the unchanged contract.
+            Span.current().setAttribute("analysis.mode", req.mode().wire());
+            Map<String, Object> audioPayload = new HashMap<>(payload);
+            audioPayload.put("mode", req.mode().wire());
+            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, audioPayload);
         }
 
         return AnalysisResponse.from(analysis);
@@ -145,6 +155,15 @@ public class AnalysisService {
     public Page<AnalysisSummary> list(String currentUserId, Pageable pageable) {
         // IDOR is enforced by scoping to currentUserId — the query never returns foreign rows.
         return repository.findByUserId(currentUserId, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public UserStatsResponse stats(String currentUserId) {
+        // Same IDOR-by-construction scoping as list(). Uncached: the aggregate rides the covering
+        // index idx_analysis_user_created, and a stale in-progress count on the homepage would
+        // contradict the live SSE updates.
+        return UserStatsResponse.from(
+                repository.userStats(currentUserId, Instant.now().minus(7, ChronoUnit.DAYS)));
     }
 
     /**
@@ -211,10 +230,11 @@ public class AnalysisService {
         @SuppressWarnings("unchecked")
         Map<String, Object> result = (Map<String, Object>) payload.get("result");
         BigDecimal prob = new BigDecimal(result.get("prob_fake").toString());
+        Map<String, Object> details = detailsExtractor.extract(result);
 
         int rows = "video".equals(source)
-                ? repository.writeVideoProb(id, prob, ACTIVE, Instant.now())
-                : repository.writeAudioProb(id, prob, ACTIVE, Instant.now());
+                ? repository.writeVideoProb(id, prob, details, ACTIVE, Instant.now())
+                : repository.writeAudioProb(id, prob, details, ACTIVE, Instant.now());
         if (rows == 0) {
             log.warn("Result for terminal/unknown analysis {} ({}), ignoring", id, source);
             return;

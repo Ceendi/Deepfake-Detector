@@ -74,7 +74,7 @@ class RedisDownDegradationIntegrationTest {
 
     @Test
     void analysisStillCompletesAfterRedisDies() {
-        UUID id = service.create(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO), "alice").id();
+        UUID id = service.create(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO, null), "alice").id();
 
         redis.stop();
 

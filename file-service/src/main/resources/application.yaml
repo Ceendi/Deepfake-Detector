@@ -47,6 +47,13 @@ storage:
   access-key: ${S3_FILE_SERVICE_KEY}
   secret-key: ${S3_FILE_SERVICE_SECRET}
   bucket: deepfake-uploads
+  cleanup:
+    # Lifecycle sweep (S3CleanupService): purge soft-deleted files past retention, reclaim
+    # orphaned objects older than orphan-min-age (covers the S3-put-then-row-commit race).
+    retention-hours: ${FILE_CLEANUP_RETENTION_HOURS:72}
+    orphan-min-age-hours: ${FILE_CLEANUP_ORPHAN_MIN_AGE_HOURS:24}
+    scan-interval-ms: ${FILE_CLEANUP_SCAN_INTERVAL_MS:3600000}
+    initial-delay-ms: 60000
 management:
   endpoints:
     web:

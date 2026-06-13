@@ -5,7 +5,12 @@ import time
 
 import pika
 import structlog
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind, StatusCode
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from prometheus_client import Counter, Histogram
+
+from .tracing import init_tracing
 
 RABBIT_HOST = os.getenv("RABBITMQ_HOST", "rabbitmq")
 RABBIT_USER = os.getenv("RABBITMQ_USER", "deepfake")
@@ -16,6 +21,9 @@ EXCHANGE    = "analysis.exchange"
 DLX         = "analysis.dlx"
 
 log = structlog.get_logger(__name__)
+init_tracing(f"{SOURCE}-detector")
+tracer = trace.get_tracer(__name__)
+_propagator = TraceContextTextMapPropagator()  # W3C traceparent, same as the Java services
 
 # --- Business metrics (starter; exposed at /metrics, see main.py) -------------------------------
 # TODO(Osoba 3/4): extend with per-stage timings (face-detect / inference / grad-cam), model_version
@@ -59,17 +67,28 @@ def process(msg: dict) -> dict:
         "verdict": "FAKE" if prob > 0.5 else "REAL",
         "confidence": round(abs(prob - 0.5) * 2, 4),
         "model_version": "dummy-v0.1",
-        "gradcam_urls": [],
+        "gradcam_keys": [],
         "metadata": {},
     }
 
 
+def _trace_log_fields(span) -> dict:
+    sc = span.get_span_context()
+    if not sc.is_valid:
+        return {}
+    return {"trace_id": format(sc.trace_id, "032x"), "span_id": format(sc.span_id, "016x")}
+
+
 def _publish(ch, routing_key: str, payload: dict) -> None:
+    # Inject the current span context so the Orchestrator's listener joins this trace.
+    headers = {}
+    _propagator.inject(carrier=headers)
     ch.basic_publish(
         exchange=EXCHANGE,
         routing_key=routing_key,
         body=json.dumps(payload).encode(),
-        properties=pika.BasicProperties(content_type="application/json", delivery_mode=2),
+        properties=pika.BasicProperties(content_type="application/json", delivery_mode=2,
+                                        headers=headers or None),
         mandatory=True,  # with confirm_delivery: raises UnroutableError if no queue is bound to routing_key
     )
 
@@ -84,58 +103,68 @@ def _handle_message(ch, method, properties, body):
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
         return
 
-    structlog.contextvars.bind_contextvars(
-        analysis_id=analysis_id,
-        correlation_id=correlation_id,
-        source=SOURCE,
-    )
-    try:
-        log.info("processing_started")
-        # Start-ping: lets the Orchestrator flip PENDING->PROCESSING the moment the task is picked up
-        # (not just at 50%). Lives outside process(), so swapping in the real model keeps it.
-        _publish(ch, "analysis.progress", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "progress": 0,
-            "stage": "LOADING",
-        })
-        # TODO D6: idempotency check via Redis SETNX(processing:{analysis_id}:{source}) before publishing results.
-        _publish(ch, "analysis.progress", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "progress": 50,
-            "stage": "INFERENCE",
-        })
-        with INFERENCE_LATENCY.labels(SOURCE).time():
-            result = process(msg)
-        DETECTOR_RESULTS.labels(SOURCE, result["verdict"].lower()).inc()
-        _publish(ch, "analysis.results", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "status": "COMPLETED",
-            "result": result,
-            "error": None,
-        })
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-        log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
-    except Exception as e:
-        log.exception("processing_failed")
-        DETECTOR_RESULTS.labels(SOURCE, "failed").inc()
-        _publish(ch, "analysis.results", {
-            "analysis_id": analysis_id,
-            "correlation_id": correlation_id,
-            "source": SOURCE,
-            "status": "FAILED",
-            "result": None,
-            "error": {"code": "PROCESSING_ERROR", "message": str(e)},
-        })
-        # ack — failure info already published; we do not want infinite redelivery
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    finally:
-        structlog.contextvars.clear_contextvars()
+    # Continue the trace the Orchestrator started (W3C traceparent header); a message without
+    # the header simply roots a new trace, so tracing can never block processing.
+    upstream = _propagator.extract(carrier=properties.headers or {})
+    with tracer.start_as_current_span(
+            f"{QUEUE} process", context=upstream, kind=SpanKind.CONSUMER,
+            attributes={"analysis.id": analysis_id, "analysis.source": SOURCE}) as span:
+        structlog.contextvars.bind_contextvars(
+            analysis_id=analysis_id,
+            correlation_id=correlation_id,
+            source=SOURCE,
+            **_trace_log_fields(span),
+        )
+        try:
+            log.info("processing_started")
+            # Start-ping: lets the Orchestrator flip PENDING->PROCESSING the moment the task is picked up
+            # (not just at 50%). Lives outside process(), so swapping in the real model keeps it.
+            _publish(ch, "analysis.progress", {
+                "analysis_id": analysis_id,
+                "correlation_id": correlation_id,
+                "source": SOURCE,
+                "progress": 0,
+                "stage": "LOADING",
+            })
+            # TODO D6: idempotency check via Redis SETNX(processing:{analysis_id}:{source}) before publishing results.
+            _publish(ch, "analysis.progress", {
+                "analysis_id": analysis_id,
+                "correlation_id": correlation_id,
+                "source": SOURCE,
+                "progress": 50,
+                "stage": "INFERENCE",
+            })
+            with INFERENCE_LATENCY.labels(SOURCE).time():
+                result = process(msg)
+            DETECTOR_RESULTS.labels(SOURCE, result["verdict"].lower()).inc()
+            _publish(ch, "analysis.results", {
+                "analysis_id": analysis_id,
+                "correlation_id": correlation_id,
+                "source": SOURCE,
+                "status": "COMPLETED",
+                "result": result,
+                "error": None,
+            })
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
+        except Exception as e:
+            log.exception("processing_failed")
+            # The except swallows the exception, so the span must be marked failed by hand.
+            span.record_exception(e)
+            span.set_status(StatusCode.ERROR, str(e))
+            DETECTOR_RESULTS.labels(SOURCE, "failed").inc()
+            _publish(ch, "analysis.results", {
+                "analysis_id": analysis_id,
+                "correlation_id": correlation_id,
+                "source": SOURCE,
+                "status": "FAILED",
+                "result": None,
+                "error": {"code": "PROCESSING_ERROR", "message": str(e)},
+            })
+            # ack — failure info already published; we do not want infinite redelivery
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        finally:
+            structlog.contextvars.clear_contextvars()
 
 
 def run_consumer(health_state: dict) -> None:
