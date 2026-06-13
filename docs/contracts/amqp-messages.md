@@ -43,11 +43,14 @@ and consumes `analysis.results.dlq`.
 Convention: **snake_case** for AMQP payloads (Python-friendly). All fields
 are required unless explicitly marked optional.
 
-Beyond the JSON body, the Java services propagate the W3C `traceparent` header on
-publish and consume (Micrometer observation → distributed tracing). `correlation_id`
-lives in the body and is the cross-language correlation id — detectors echo it on
-every progress/result. Python detectors do not yet propagate `traceparent` (planned:
-`opentelemetry-instrumentation-pika`).
+Beyond the JSON body, every service propagates the W3C `traceparent` header on
+publish and consume: the Java services via Micrometer observation, the Python
+detectors via a manual `TraceContextTextMapPropagator` extract/inject in
+`consumer.py` (extract on the task message, inject on every progress/result), so
+one Tempo trace spans HTTP → AMQP → detector → result. `correlation_id` lives in
+the body and is the cross-language correlation id — detectors echo it on every
+progress/result. A message without `traceparent` roots a new trace; processing
+never depends on the header.
 
 ### Task — Orchestrator → Detector
 
