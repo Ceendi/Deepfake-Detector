@@ -212,6 +212,8 @@ in [`amqp-messages.md`](./amqp-messages.md).
   "details": {
     "video": {
       "modelVersion": "v1.0.0",
+      "confidence": 0.74,
+      "verdict": "FAKE",
       "gradcamKeys": ["550e8400-e29b-41d4-a716-446655440000/video/frame1.png"],
       "gradcamUrls": ["/api/analysis/550e8400-e29b-41d4-a716-446655440000/artifacts/video/frame1.png"],
       "metadata": { "frames_analyzed": 16 }
@@ -235,10 +237,14 @@ in [`amqp-messages.md`](./amqp-messages.md).
 
 `details` groups per-source detector results under `video` / `audio` keys (only the
 sources that have reported are present). Each entry carries `modelVersion` (string),
-`gradcamUrls` (array of ready-to-fetch artifact endpoint paths — what clients should
-use), `gradcamKeys` (the raw object keys in `analysis-artifacts`, kept for audit) and
-`metadata` (detector-defined free-form object, snake_case keys; see
-[`amqp-messages.md`](./amqp-messages.md) for the audio fields and the segment cap).
+`confidence` (number 0..1 — the **detector's own** confidence, computed with its
+specific threshold and formula; distinct from the top-level `confidence` which is the
+Orchestrator's aggregate), `verdict` (`FAKE` | `REAL` — the detector's individual
+verdict before aggregation), `gradcamUrls` (array of ready-to-fetch artifact endpoint
+paths — what clients should use), `gradcamKeys` (the raw object keys in
+`analysis-artifacts`, kept for audit) and `metadata` (detector-defined free-form
+object, snake_case keys; see [`amqp-messages.md`](./amqp-messages.md) for the audio
+fields and the segment cap).
 
 ## Realtime progress (SSE)
 

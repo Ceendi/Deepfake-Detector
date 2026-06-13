@@ -1,5 +1,6 @@
 package com.deepfake.orchestrator.service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -24,6 +25,14 @@ class ResultDetailsExtractor {
         Object modelVersion = result.get("model_version");
         if (modelVersion != null) {
             details.put("modelVersion", modelVersion.toString());
+        }
+        Object confidence = result.get("confidence");
+        if (confidence != null) {
+            details.put("confidence", new BigDecimal(confidence.toString()));
+        }
+        Object verdict = result.get("verdict");
+        if (verdict != null) {
+            details.put("verdict", verdict.toString());
         }
         List<String> keys = gradcamKeys(result);
         if (!keys.isEmpty()) {

@@ -140,6 +140,12 @@ Orchestrator persists the keys and serves the artifacts itself. Empty list when 
 detector produced no visualizations. This is the only accepted field — URI-style
 variants (`gradcam_url`, `gradcam_urls`) are ignored.
 
+`confidence` and `verdict` are per-source: the Orchestrator persists them in the
+per-source `details` JSON (REST `details.video.confidence` / `details.audio.confidence`)
+alongside the top-level aggregate. Each detector computes confidence with its own
+threshold and formula — the video detector uses `|prob − 0.5| × 2`, while the audio
+detector normalizes against a threshold that may differ from 0.5.
+
 `metadata` — detector-defined free-form object (e.g. audio publishes
 `segment_predictions`, `insights`, `duration_seconds`). The Orchestrator persists it
 as-is, except `segment_predictions` is uniformly downsampled to ≤500 entries
