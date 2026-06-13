@@ -1,0 +1,12 @@
+# Lokalne artefakty video-detectora (root .gitignore łapie już *.pt/*.onnx/*.ckpt,
+# .venv/, wandb/, data/ — tu tylko to, czego tamte reguły NIE obejmują).
+
+# Wagi ONNX w formacie external-data: root ma *.onnx, ale sidecar .onnx.data wymyka się
+*.onnx.data
+
+# Wyniki ewaluacji i heatmapy Grad-CAM z treningu (output, nie wchodzi do repo)
+training/eval_results*/
+training/gradcam_out*/
+
+# Lokalna binarka do ręcznego smoke-testu E2E
+test.mp4
