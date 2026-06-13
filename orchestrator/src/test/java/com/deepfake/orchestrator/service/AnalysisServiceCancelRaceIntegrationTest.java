@@ -1,6 +1,8 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -21,6 +23,7 @@ import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -81,6 +84,9 @@ class AnalysisServiceCancelRaceIntegrationTest {
     void setUp() {
         requiresNew = new TransactionTemplate(txManager);
         requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        // A winning cancel sets the cancel:{id} flag after commit; the bare mock would return a
+        // null ValueOperations and NPE inside the afterCommit synchronization.
+        lenient().when(redis.opsForValue()).thenReturn(mock(ValueOperations.class));
     }
 
     @Test

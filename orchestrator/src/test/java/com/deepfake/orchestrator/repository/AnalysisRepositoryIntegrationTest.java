@@ -1,10 +1,13 @@
 package com.deepfake.orchestrator.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.offset;
+import static org.assertj.core.api.Assertions.within;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,6 +30,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.response.UserStats;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -107,6 +111,65 @@ class AnalysisRepositoryIntegrationTest {
 
         assertThat(rows).isEqualTo(1);
         assertThat(repository.findById(id).orElseThrow().getVideoDetails()).isNull();
+    }
+
+    @Test
+    void userStatsAggregatesAndScopesToOneUser() {
+        Instant now = Instant.now();
+        Instant old = now.minusSeconds(30L * 24 * 3600); // outside the 7-day window
+        statRow("alice", now.minusSeconds(60), AnalysisType.VIDEO, AnalysisStatus.COMPLETED, "FAKE", "0.8000");
+        statRow("alice", old, AnalysisType.FULL, AnalysisStatus.COMPLETED, "REAL", "0.6000");
+        statRow("alice", now.minusSeconds(120), AnalysisType.AUDIO, AnalysisStatus.FAILED, null, null);
+        statRow("alice", now.minusSeconds(180), AnalysisType.VIDEO, AnalysisStatus.PROCESSING, null, null);
+        statRow("alice", old, AnalysisType.AUDIO, AnalysisStatus.CANCELLED, null, null);
+        statRow("bob", now, AnalysisType.VIDEO, AnalysisStatus.COMPLETED, "FAKE", "0.9000"); // must not leak
+
+        UserStats stats = repository.userStats("alice", now.minusSeconds(7L * 24 * 3600));
+
+        assertThat(stats.total()).isEqualTo(5);
+        assertThat(stats.completed()).isEqualTo(2);
+        assertThat(stats.failed()).isEqualTo(1);
+        assertThat(stats.cancelled()).isEqualTo(1);
+        assertThat(stats.inProgress()).isEqualTo(1);
+        assertThat(stats.video()).isEqualTo(2);
+        assertThat(stats.audio()).isEqualTo(2);
+        assertThat(stats.full()).isEqualTo(1);
+        assertThat(stats.fake()).isEqualTo(1);
+        assertThat(stats.real()).isEqualTo(1);
+        assertThat(stats.avgConfidence()).isEqualTo(0.7, offset(1e-9));
+        assertThat(stats.last7Days()).isEqualTo(3);
+        // timestamptz keeps microseconds; Instant.now() may carry nanos — compare with tolerance
+        assertThat(stats.lastAnalysisAt()).isCloseTo(now.minusSeconds(60), within(1, ChronoUnit.MILLIS));
+    }
+
+    @Test
+    void userStatsWithNoAnalysesReturnsZerosNotNulls() {
+        UserStats stats = repository.userStats("nobody", Instant.now().minusSeconds(7L * 24 * 3600));
+
+        assertThat(stats.total()).isZero();
+        assertThat(stats.completed()).isZero();
+        assertThat(stats.inProgress()).isZero();
+        assertThat(stats.fake()).isZero();
+        assertThat(stats.last7Days()).isZero();
+        assertThat(stats.avgConfidence()).isNull();
+        assertThat(stats.lastAnalysisAt()).isNull();
+    }
+
+    // persist() forces PENDING/@PrePersist timestamps; overwrite the stat-relevant columns natively.
+    private UUID statRow(String userId, Instant createdAt, AnalysisType type, AnalysisStatus status,
+            String verdict, String confidence) {
+        UUID id = persist(userId, createdAt);
+        em.getEntityManager()
+                .createNativeQuery("UPDATE analysis SET type = ?1, status = ?2, verdict = ?3, "
+                        + "confidence = ?4 WHERE id = ?5")
+                .setParameter(1, type.name())
+                .setParameter(2, status.name())
+                .setParameter(3, verdict)
+                .setParameter(4, confidence == null ? null : new BigDecimal(confidence))
+                .setParameter(5, id)
+                .executeUpdate();
+        em.clear();
+        return id;
     }
 
     private UUID persist(String userId, Instant createdAt) {
