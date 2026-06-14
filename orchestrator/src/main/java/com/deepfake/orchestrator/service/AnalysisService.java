@@ -37,6 +37,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -202,6 +203,35 @@ public class AnalysisService {
         return AnalysisResponse.from(fresh);
     }
 
+    /**
+     * Permanently delete a finished analysis from the caller's history. IDOR -> 404 (like get()).
+     * Only a terminal analysis (COMPLETED/FAILED/CANCELLED) can be deleted; an in-progress one -> 409
+     * ("cancel it first"): hard-deleting an active analysis would leak its in-flight backpressure slot
+     * (released only on a terminal transition) and race the detector still writing its result.
+     *
+     * <p>Hard delete, by design: the row simply vanishes from every read path (list, get, stats,
+     * stream) with no soft-delete predicate to thread through each query — a stale row could never
+     * skew {@code userStats}. Terminal state is stable (no transition leaves it), so the read here
+     * and the delete need no CAS. The uploaded file and any Grad-CAM artifacts in object storage are
+     * deliberately NOT touched: the orchestrator is read-only on {@code analysis-artifacts} and has
+     * no access to {@code deepfake-uploads} (docs/contracts/object-storage.md); their reclamation is
+     * the storage cleanup job's concern (orphan-by-{analysisId}-prefix), like file soft-delete.
+     */
+    public void delete(UUID id, String currentUserId) {
+        Analysis a = repository.findById(id)
+                .filter(found -> found.getUserId().equals(currentUserId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        if (!a.getStatus().isTerminal()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "cannot delete an in-progress analysis; cancel it first");
+        }
+
+        repository.delete(a);
+        metrics.deleted(a.getStatus());
+        cleanupRedisAfterCommit(id);
+    }
+
     public void handleResult(Map<String, Object> payload) {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
         String source = (String) payload.get("source"); // "video" | "audio"
@@ -364,6 +394,31 @@ public class AnalysisService {
             });
         } else {
             setFlag.run();
+        }
+    }
+
+    // Drop the deleted analysis's whole Redis footprint, but only after the delete commits — a
+    // rollback must leave the cache warm and the keys intact. Evicting the cache is the correctness-
+    // critical part: a cached AnalysisResponse would otherwise let GET serve a row the DB no longer
+    // has (cache hit -> IDOR passes -> stale 200 instead of 404). The progress/cancel/dedup keys are
+    // residual hygiene (TTL'd, UUID never reused), cleaned best-effort. Fail-open: a Redis outage
+    // must never fail a committed delete.
+    private void cleanupRedisAfterCommit(UUID id) {
+        Runnable cleanup = () -> {
+            cache.evictById(id);     // own try/catch (fail-open)
+            idempotency.clear(id);   // own try/catch (fail-open)
+            try {
+                redis.delete(List.of("progress:" + id, "cancel:" + id));
+            } catch (DataAccessException e) {
+                log.warn("post-delete Redis cleanup skipped (Redis down) for {}: {}", id, e.getMessage());
+            }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { cleanup.run(); }
+            });
+        } else {
+            cleanup.run();
         }
     }
 

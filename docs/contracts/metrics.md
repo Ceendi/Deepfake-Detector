@@ -8,6 +8,7 @@ internal scrape). Names below are the **Prometheus exposition** names (verified 
 | Prometheus name              | Type    | Labels                                   | Meaning |
 |------------------------------|---------|------------------------------------------|---------|
 | `analyses_total`             | counter | `status` (completed/failed/cancelled), `type` (video/audio/full) | One per terminal transition. Funneled through `onTerminal`, so result, cancel, DLQ and stuck-recovery all count once. |
+| `analyses_deleted_total`     | counter | `status` (completed/failed/cancelled) | One per analysis the owner permanently deletes (`DELETE /api/analysis/{id}/record`), tagged by the terminal status it carried. Independent of `analyses_total` (a cumulative event counter, never decremented) — the live `GET /api/analysis/stats` aggregate is what drops the deleted row. |
 | `analysis_duration_seconds`  | timer   | `type`                                   | End-to-end latency (created → completed). Recorded for `COMPLETED` only — duration is meaningless for an aborted analysis. |
 | `cache_requests_total`       | counter | `result` (hit/miss)                      | `GET /api/analysis/{id}` cache lookups. Redis-down counts as `miss` (fail-open to DB), so a miss spike during a Redis outage is expected, not a bug. |
 | `analyses_inflight`          | gauge   | —                                        | In-flight analyses (the backpressure counter `analyses:inflight` in Redis). Sampled each scrape, fail-open to `0` if Redis is down. This is the brief's `queue_depth`. |

@@ -45,6 +45,11 @@ public class AnalysisMetrics {
                 "type", type.name().toLowerCase()).increment();
     }
 
+    /** One analysis permanently deleted by its owner, tagged by the terminal status it carried. */
+    public void deleted(AnalysisStatus status) {
+        registry.counter("analyses.deleted", "status", status.name().toLowerCase()).increment();
+    }
+
     /** End-to-end latency (created -> completed); recorded for COMPLETED only — see the caller. */
     public void duration(AnalysisType type, Duration elapsed) {
         registry.timer("analysis.duration", "type", type.name().toLowerCase()).record(elapsed);
