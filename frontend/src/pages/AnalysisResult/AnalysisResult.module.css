@@ -461,22 +461,22 @@
 .statusIcon {
   display: grid;
   place-items: center;
-  width: 88px;
-  height: 88px;
-  border-radius: var(--radius-full);
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-lg);
 }
 .statusIcon[data-tone='danger'] {
-  border: 1px solid var(--color-danger);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 25%, transparent);
   background: var(--color-danger-surface);
   color: var(--color-danger);
 }
 .statusIcon[data-tone='warning'] {
-  border: 1px solid var(--color-warning);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 25%, transparent);
   background: var(--color-warning-surface);
   color: var(--color-warning);
 }
 .statusIcon[data-tone='accent'] {
-  border: 1px solid var(--color-accent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 25%, transparent);
   background: var(--color-accent-surface);
   color: var(--color-accent);
 }
@@ -491,16 +491,17 @@
   color: var(--color-text-muted);
   line-height: var(--line-height-normal);
 }
+/* Kod/komunikat błędu — pigułka w tonie danger (hugbox: align-items:center karty nie rozciąga). */
 .statusDetail {
   margin: 0;
   max-width: 100%;
-  padding: var(--spacing-2) var(--spacing-3);
-  border: 1px solid var(--color-border);
+  padding: var(--spacing-1) var(--spacing-3);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 30%, transparent);
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--color-danger-surface);
   font-family: var(--font-family-mono);
   font-size: var(--font-size-xs);
-  color: var(--color-text-muted);
+  color: var(--color-danger);
   overflow-wrap: anywhere;
 }
 .statusActions {
@@ -678,6 +679,15 @@
 .footer {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+/* Akcje nawigacja + usuń (lewa strona) — odsunięte od głównego CTA „Pobierz PDF" (prawa strona),
+   żeby destrukcyjne „Usuń analizę" nie sąsiadowało z przyciskiem klikanym z przyzwyczajenia. */
+.footerEnd {
+  display: flex;
   align-items: center;
   gap: var(--spacing-3);
   flex-wrap: wrap;

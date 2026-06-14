@@ -1,4 +1,4 @@
-import { TriangleAlert, Ban, Plus, ChevronLeft } from 'lucide-react'
+import { TriangleAlert, Ban, RotateCcw, ChevronLeft } from 'lucide-react'
 
 import type { Analysis } from '@/api/types'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
@@ -15,18 +15,19 @@ export function AnalysisStatusState({ analysis }: { analysis: Analysis }) {
         <span className={styles.statusIcon} data-tone="danger" aria-hidden="true">
           <TriangleAlert size={40} strokeWidth={2} />
         </span>
-        <h2 className={styles.statusTitle}>Analiza zakończona błędem</h2>
+        <h2 className={styles.statusTitle}>Analiza nie powiodła się</h2>
         <p className={styles.statusText}>
-          Nie udało się dokończyć przetwarzania tego materiału. Możesz spróbować ponownie z nowym
-          zgłoszeniem.
+          Nie udało się dokończyć przetwarzania tego materiału. Plik może być uszkodzony lub
+          zapisany w nieobsługiwanym formacie. Spróbuj ponownie lub wgraj inny plik.
         </p>
         {analysis.errorMessage && <p className={styles.statusDetail}>{analysis.errorMessage}</p>}
         <div className={styles.statusActions}>
-          <LinkButton to="/upload" variant="primary" size="md" leftIcon={Plus}>
-            Nowa analiza
-          </LinkButton>
           <LinkButton to="/history" variant="ghost" size="md" leftIcon={ChevronLeft}>
             Wróć do historii
+          </LinkButton>
+          {/* Brak endpointu re-run — „Spróbuj ponownie" = nowe zgłoszenie przez /upload */}
+          <LinkButton to="/upload" variant="primary" size="md" leftIcon={RotateCcw}>
+            Spróbuj ponownie
           </LinkButton>
         </div>
       </div>
@@ -41,15 +42,15 @@ export function AnalysisStatusState({ analysis }: { analysis: Analysis }) {
         </span>
         <h2 className={styles.statusTitle}>Analiza anulowana</h2>
         <p className={styles.statusText}>
-          Przetwarzanie tego materiału zostało przerwane, więc nie ma wyniku. Wgraj plik ponownie,
-          aby przeanalizować go od nowa.
+          Przetwarzanie tego materiału zostało przerwane, więc nie ma wyniku. Spróbuj ponownie, aby
+          przeanalizować plik od nowa.
         </p>
         <div className={styles.statusActions}>
-          <LinkButton to="/upload" variant="primary" size="md" leftIcon={Plus}>
-            Nowa analiza
-          </LinkButton>
           <LinkButton to="/history" variant="ghost" size="md" leftIcon={ChevronLeft}>
             Wróć do historii
+          </LinkButton>
+          <LinkButton to="/upload" variant="primary" size="md" leftIcon={RotateCcw}>
+            Spróbuj ponownie
           </LinkButton>
         </div>
       </div>

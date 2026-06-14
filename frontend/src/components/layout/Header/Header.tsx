@@ -45,99 +45,129 @@ export function Header() {
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [userMenuOpen])
 
+  // Otwarte menu mobilne: Esc zamyka, blokujemy scroll tła, a przejście na
+  // desktop (powyżej breakpointu) auto-zamyka, by stan nie został „przyklejony”.
+  useEffect(() => {
+    if (!mobileOpen) return
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMobileOpen(false)
+    }
+    const desktopQuery = window.matchMedia('(min-width: 769px)')
+    function onBreakpointChange(event: MediaQueryListEvent) {
+      if (event.matches) setMobileOpen(false)
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    desktopQuery.addEventListener('change', onBreakpointChange)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      desktopQuery.removeEventListener('change', onBreakpointChange)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [mobileOpen])
+
   return (
-    <header className={styles.header}>
-      <div className={styles.inner}>
-        <NavLink to="/dashboard" className={styles.brand} onClick={() => setMobileOpen(false)}>
-          <span className={styles.brandMark} aria-hidden="true">
-            <ShieldCheck size={20} strokeWidth={2.4} />
-          </span>
-          <span className={styles.brandName}>DeepfakeDetector</span>
-        </NavLink>
+    <>
+      <header className={styles.header}>
+        <div className={styles.inner}>
+          <NavLink to="/dashboard" className={styles.brand} onClick={() => setMobileOpen(false)}>
+            <span className={styles.brandMark} aria-hidden="true">
+              <ShieldCheck size={20} strokeWidth={2.4} />
+            </span>
+            <span className={styles.brandName}>DeepfakeDetector</span>
+          </NavLink>
 
-        <nav className={styles.nav} aria-label="Główna nawigacja">
-          {NAV_LINKS.map(({ to, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) => clsx(styles.navLink, isActive && styles.navLinkActive)}
-            >
-              {label}
-            </NavLink>
-          ))}
-        </nav>
+          <nav className={styles.nav} aria-label="Główna nawigacja">
+            {NAV_LINKS.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => clsx(styles.navLink, isActive && styles.navLinkActive)}
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
 
-        <div className={styles.right}>
-          <div className={styles.userMenu} ref={userMenuRef}>
+          <div className={styles.right}>
+            <div className={styles.userMenu} ref={userMenuRef}>
+              <button
+                type="button"
+                className={styles.userButton}
+                onClick={() => setUserMenuOpen((open) => !open)}
+                aria-haspopup="menu"
+                aria-expanded={userMenuOpen}
+              >
+                <span className={styles.avatar} aria-hidden="true">
+                  {initials(displayName)}
+                </span>
+                <span className={styles.userName}>{displayName}</span>
+                <ChevronDown size={16} strokeWidth={2.4} aria-hidden="true" />
+              </button>
+
+              {userMenuOpen && (
+                <div className={styles.dropdown} role="menu">
+                  <Link
+                    to="/profile"
+                    role="menuitem"
+                    className={styles.dropdownItem}
+                    onClick={() => setUserMenuOpen(false)}
+                  >
+                    <User size={16} strokeWidth={2.4} aria-hidden="true" />
+                    Profil
+                  </Link>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={styles.dropdownItem}
+                    onClick={() => {
+                      setUserMenuOpen(false)
+                      accountManagement()
+                    }}
+                  >
+                    <Settings size={16} strokeWidth={2.4} aria-hidden="true" />
+                    Ustawienia
+                  </button>
+                  <hr className={styles.dropdownSep} />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={clsx(styles.dropdownItem, styles.dropdownItemDanger)}
+                    onClick={logout}
+                  >
+                    <LogOut size={16} strokeWidth={2.4} aria-hidden="true" />
+                    Wyloguj
+                  </button>
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
-              className={styles.userButton}
-              onClick={() => setUserMenuOpen((open) => !open)}
-              aria-haspopup="menu"
-              aria-expanded={userMenuOpen}
+              className={styles.hamburger}
+              onClick={() => setMobileOpen((open) => !open)}
+              aria-label={mobileOpen ? 'Zamknij menu' : 'Otwórz menu'}
+              aria-expanded={mobileOpen}
             >
-              <span className={styles.avatar} aria-hidden="true">
-                {initials(displayName)}
-              </span>
-              <span className={styles.userName}>{displayName}</span>
-              <ChevronDown size={16} strokeWidth={2.4} aria-hidden="true" />
+              {mobileOpen ? (
+                <X size={22} strokeWidth={2.4} aria-hidden="true" />
+              ) : (
+                <Menu size={22} strokeWidth={2.4} aria-hidden="true" />
+              )}
             </button>
-
-            {userMenuOpen && (
-              <div className={styles.dropdown} role="menu">
-                <Link
-                  to="/profile"
-                  role="menuitem"
-                  className={styles.dropdownItem}
-                  onClick={() => setUserMenuOpen(false)}
-                >
-                  <User size={16} strokeWidth={2.4} aria-hidden="true" />
-                  Profil
-                </Link>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={styles.dropdownItem}
-                  onClick={() => {
-                    setUserMenuOpen(false)
-                    accountManagement()
-                  }}
-                >
-                  <Settings size={16} strokeWidth={2.4} aria-hidden="true" />
-                  Ustawienia
-                </button>
-                <hr className={styles.dropdownSep} />
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={clsx(styles.dropdownItem, styles.dropdownItemDanger)}
-                  onClick={logout}
-                >
-                  <LogOut size={16} strokeWidth={2.4} aria-hidden="true" />
-                  Wyloguj
-                </button>
-              </div>
-            )}
           </div>
-
-          <button
-            type="button"
-            className={styles.hamburger}
-            onClick={() => setMobileOpen((open) => !open)}
-            aria-label={mobileOpen ? 'Zamknij menu' : 'Otwórz menu'}
-            aria-expanded={mobileOpen}
-          >
-            {mobileOpen ? (
-              <X size={22} strokeWidth={2.4} aria-hidden="true" />
-            ) : (
-              <Menu size={22} strokeWidth={2.4} aria-hidden="true" />
-            )}
-          </button>
         </div>
-      </div>
 
-      {mobileOpen && (
-        <nav className={styles.mobileNav} aria-label="Główna nawigacja (mobilna)">
+        {/* Zawsze w DOM — klasa .mobileNavOpen animuje wejście/wyjście. */}
+        <nav
+          className={clsx(styles.mobileNav, mobileOpen && styles.mobileNavOpen)}
+          aria-label="Główna nawigacja (mobilna)"
+          aria-hidden={!mobileOpen}
+        >
           {NAV_LINKS.map(({ to, label }) => (
             <NavLink
               key={to}
@@ -151,7 +181,14 @@ export function Header() {
             </NavLink>
           ))}
         </nav>
-      )}
-    </header>
+      </header>
+
+      {/* Ciemna nakładka na resztę ekranu — klik poza menu je zamyka. */}
+      <div
+        className={clsx(styles.backdrop, mobileOpen && styles.backdropOpen)}
+        onClick={() => setMobileOpen(false)}
+        aria-hidden="true"
+      />
+    </>
   )
 }

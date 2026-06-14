@@ -13,6 +13,11 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-5);
+  /* Nieprzezroczyste tło + warstwa nad menu mobilnym: panel wysuwa się
+     spod paska i chowa za nim (translateY ujemny), nie nachodząc na bar. */
+  position: relative;
+  z-index: 1;
+  background: var(--color-background);
 }
 
 /* ---- Marka ------------------------------------------------------------- */
@@ -187,7 +192,10 @@
 }
 
 /* ---- Nawigacja mobilna (rozwijana pod paskiem) ------------------------ */
-.mobileNav {
+/* Panel i backdrop są zawsze w DOM — animujemy wejście i wyjście klasą
+   .*Open. Poza breakpointem mobilnym znikają całkowicie (display: none). */
+.mobileNav,
+.backdrop {
   display: none;
 }
 
@@ -201,13 +209,59 @@
   .hamburger {
     display: inline-flex;
   }
+
   .mobileNav {
     display: flex;
     flex-direction: column;
     gap: var(--spacing-1);
     padding: var(--spacing-2) var(--spacing-5) var(--spacing-4);
     border-top: 1px solid var(--color-border);
+    /* Poza flow — nie przesuwa treści pod nagłówkiem. Sticky .header jest
+       blokiem zawierającym dla absolute. */
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--color-background);
+    box-shadow: var(--shadow-md);
+    /* Stan zamknięty: wsunięty za pasek, niewidoczny i nieklikalny. */
+    transform: translateY(-100%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      transform var(--transition-base),
+      opacity var(--transition-base),
+      visibility var(--transition-base);
   }
+  .mobileNavOpen {
+    transform: translateY(0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  /* Ciemna nakładka na resztę ekranu — pod nagłówkiem (z-index 100),
+     nad treścią. Łapie kliknięcia → zamyka menu. */
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    background: rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity var(--transition-base),
+      visibility var(--transition-base);
+  }
+  .backdropOpen {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
   .mobileLink {
     padding: var(--spacing-3);
     border-radius: var(--radius-sm);
@@ -218,5 +272,13 @@
   .mobileLink:hover {
     background: var(--color-surface);
     text-decoration: none;
+  }
+}
+
+/* Szanuj preferencję ograniczenia ruchu — bez slajdu, tylko stan końcowy. */
+@media (prefers-reduced-motion: reduce) {
+  .mobileNav,
+  .backdrop {
+    transition: none;
   }
 }

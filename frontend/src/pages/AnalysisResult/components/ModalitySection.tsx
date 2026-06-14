@@ -26,7 +26,7 @@ const DESC: Record<Source, Record<Verdict, string>> = {
 function ModalityCard({ source, prob }: { source: Source; prob: number }) {
   const isVideo = source === 'video'
   const Icon = isVideo ? Video : AudioLines
-  const { verdict, confidence } = sourceOutcome(prob)
+  const { verdict } = sourceOutcome(prob)
   const isFake = verdict === 'FAKE'
 
   return (
@@ -43,8 +43,8 @@ function ModalityCard({ source, prob }: { source: Source; prob: number }) {
         </div>
 
         <ProgressBar
-          label="Pewność"
-          value={confidence * 100}
+          label="Prawdopodobieństwo fake"
+          value={prob * 100}
           showValue
           tone={isFake ? 'danger' : 'success'}
         />
