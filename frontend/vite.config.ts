@@ -31,6 +31,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     passWithNoTests: true, // no tests yet; CI must stay green until the vitest suite lands
+    exclude: ['tests/e2e/**', 'node_modules/**'],
   },
   server: {
     proxy: {
