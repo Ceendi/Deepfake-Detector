@@ -1,5 +1,6 @@
 package com.deepfake.orchestrator.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -12,6 +13,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -72,8 +74,9 @@ class AnalysisServiceDeleteTest {
         Analysis completed = analysis("alice", AnalysisStatus.COMPLETED);
         when(repository.findById(id)).thenReturn(Optional.of(completed));
 
-        service.delete(id, "alice");
+        List<String> reclaimable = service.delete(id, "alice");
 
+        assertThat(reclaimable).isEmpty(); // no detector details -> no Grad-CAM objects to reclaim
         verify(repository).delete(completed);
         verify(metrics).deleted(AnalysisStatus.COMPLETED);
         // After-commit cleanup (inline, no tx): cache evict is the correctness-critical part, the
@@ -82,6 +85,23 @@ class AnalysisServiceDeleteTest {
         verify(idempotency).clear(id);
         verify(redis).delete(List.of("progress:" + id, "cancel:" + id));
         verifyNoInteractions(rabbitTemplate, streams, backpressure);
+    }
+
+    @Test
+    void returnsGradcamKeysFromBothSourcesForReclaim() {
+        // The caller (controller) reclaims these object keys from analysis-artifacts after commit.
+        Analysis a = Analysis.builder().id(id).userId("alice")
+                .status(AnalysisStatus.COMPLETED).type(AnalysisType.FULL)
+                .videoDetails(Map.of("gradcamKeys", List.of(id + "/video/f1.png", id + "/video/f2.png")))
+                .audioDetails(Map.of("gradcamKeys", List.of(id + "/audio/a1.png")))
+                .build();
+        when(repository.findById(id)).thenReturn(Optional.of(a));
+
+        List<String> reclaimable = service.delete(id, "alice");
+
+        assertThat(reclaimable).containsExactlyInAnyOrder(
+                id + "/video/f1.png", id + "/video/f2.png", id + "/audio/a1.png");
+        verify(repository).delete(a);
     }
 
     @Test

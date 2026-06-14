@@ -1,10 +1,13 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -28,6 +31,7 @@ import com.deepfake.orchestrator.repository.AnalysisRepository;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -103,6 +107,37 @@ class ArtifactServiceTest {
         assertThatThrownBy(() -> service.download(id, "audio", "gradcam.png", "alice"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
+    }
+
+    @Test
+    void deleteArtifactsRemovesEachKeyFromTheBucket() {
+        service.deleteArtifacts(List.of(id + "/video/a.png", id + "/audio/b.png"));
+
+        ArgumentCaptor<DeleteObjectRequest> req = ArgumentCaptor.forClass(DeleteObjectRequest.class);
+        verify(s3, times(2)).deleteObject(req.capture());
+        assertThat(req.getAllValues()).allSatisfy(r -> assertThat(r.bucket()).isEqualTo("analysis-artifacts"));
+        assertThat(req.getAllValues()).extracting(DeleteObjectRequest::key)
+                .containsExactly(id + "/video/a.png", id + "/audio/b.png");
+    }
+
+    @Test
+    void deleteArtifactsIsFailOpenAndAttemptsEveryKey() {
+        // A storage error on one object must not throw (the row is already gone) nor skip the rest.
+        when(s3.deleteObject(any(DeleteObjectRequest.class)))
+                .thenThrow(SdkClientException.create("storage down"));
+
+        assertThatCode(() -> service.deleteArtifacts(List.of(id + "/video/a.png", id + "/audio/b.png")))
+                .doesNotThrowAnyException();
+
+        verify(s3, times(2)).deleteObject(any(DeleteObjectRequest.class));
+    }
+
+    @Test
+    void deleteArtifactsIsNoOpForEmptyOrNull() {
+        service.deleteArtifacts(List.of());
+        service.deleteArtifacts(null);
+
+        verifyNoInteractions(s3);
     }
 
     private void givenAnalysis(Map<String, Object> audioDetails) {

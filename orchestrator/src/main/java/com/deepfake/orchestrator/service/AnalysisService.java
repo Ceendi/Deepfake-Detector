@@ -35,6 +35,8 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
@@ -212,12 +214,17 @@ public class AnalysisService {
      * <p>Hard delete, by design: the row simply vanishes from every read path (list, get, stats,
      * stream) with no soft-delete predicate to thread through each query — a stale row could never
      * skew {@code userStats}. Terminal state is stable (no transition leaves it), so the read here
-     * and the delete need no CAS. The uploaded file and any Grad-CAM artifacts in object storage are
-     * deliberately NOT touched: the orchestrator is read-only on {@code analysis-artifacts} and has
-     * no access to {@code deepfake-uploads} (docs/contracts/object-storage.md); their reclamation is
-     * the storage cleanup job's concern (orphan-by-{analysisId}-prefix), like file soft-delete.
+     * and the delete need no CAS.
+     *
+     * <p>Returns the raw {@code analysis-artifacts} object keys this analysis referenced (its Grad-CAM
+     * heatmaps), so the caller can reclaim them from storage <b>after</b> the row delete commits —
+     * best-effort and out of band, since a failed object delete must not fail the (committed) row
+     * delete. The uploaded file in {@code deepfake-uploads} is NOT reclaimed here: it lives in another
+     * service/bucket the orchestrator has no access to, and may be shared by other analyses — its
+     * lifecycle is the file service's (docs/contracts/object-storage.md). A storage bucket sweep stays
+     * the safety net for any object orphaned by a crash between the row delete and its reclaim.
      */
-    public void delete(UUID id, String currentUserId) {
+    public List<String> delete(UUID id, String currentUserId) {
         Analysis a = repository.findById(id)
                 .filter(found -> found.getUserId().equals(currentUserId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
@@ -227,9 +234,27 @@ public class AnalysisService {
                     "cannot delete an in-progress analysis; cancel it first");
         }
 
+        List<String> artifactKeys = gradcamKeysOf(a); // capture before the row (and its details) go away
         repository.delete(a);
         metrics.deleted(a.getStatus());
         cleanupRedisAfterCommit(id);
+        return artifactKeys;
+    }
+
+    // The raw analysis-artifacts object keys recorded across this analysis's per-source details
+    // (video + audio); empty when no detector produced a heatmap. Same gradcamKeys shape the
+    // ArtifactService membership check and AnalysisResponse URL mapping read.
+    private List<String> gradcamKeysOf(Analysis a) {
+        List<String> keys = new ArrayList<>();
+        addGradcamKeys(a.getVideoDetails(), keys);
+        addGradcamKeys(a.getAudioDetails(), keys);
+        return keys;
+    }
+
+    private static void addGradcamKeys(Map<String, Object> details, List<String> out) {
+        if (details != null && details.get("gradcamKeys") instanceof Collection<?> keys) {
+            keys.forEach(k -> out.add(k.toString()));
+        }
     }
 
     public void handleResult(Map<String, Object> payload) {
