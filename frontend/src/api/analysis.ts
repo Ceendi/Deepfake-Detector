@@ -36,6 +36,14 @@ export function cancelAnalysis(id: string): Promise<Analysis> {
   return apiFetch<Analysis>(`/analysis/${id}`, { method: 'DELETE' })
 }
 
+// DELETE /api/analysis/{id}/record → 204. Trwałe (hard) usunięcie ZAKOŃCZONEJ analizy z historii
+// (znika z list/get/stats/stream + sprzątane artefakty Grad-CAM z S3). 409 gdy wciąż w toku
+// (anuluj najpierw przez cancelAnalysis), 404 gdy brak/usunięta/cudza (IDOR). To INNA trasa niż
+// cancelAnalysis (DELETE /{id}) — soft-cancel działającej vs hard-delete skończonej.
+export function deleteAnalysisRecord(id: string): Promise<void> {
+  return apiFetch<void>(`/analysis/${id}/record`, { method: 'DELETE' })
+}
+
 // GET artefaktu Grad-CAM (image/png). `url` pochodzi z `details.*.gradcamUrls` i ZAWIERA już
 // prefiks '/api', więc NIE idzie przez apiFetch (który dokleiłby env.apiBaseUrl drugi raz).
 // Endpoint wymaga Bearer → pobieramy surowo jako Blob z tokenem; wołający robi URL.createObjectURL
