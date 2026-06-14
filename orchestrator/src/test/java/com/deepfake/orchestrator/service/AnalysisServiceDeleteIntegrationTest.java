@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -85,6 +86,14 @@ class AnalysisServiceDeleteIntegrationTest {
         Instant now = Instant.now();
         Instant since = now.minus(7, ChronoUnit.DAYS);
         UUID completed = persist("alice", AnalysisStatus.COMPLETED, "FAKE", "0.8000", now.minusSeconds(60));
+        // Record a Grad-CAM object on the completed row (real jsonb) so we can assert its key round-trips
+        // back through delete() for the caller to reclaim from storage.
+        em.getEntityManager()
+                .createNativeQuery("UPDATE analysis SET video_details = CAST(?1 AS jsonb) WHERE id = ?2")
+                .setParameter(1, "{\"gradcamKeys\": [\"" + completed + "/video/cam.png\"]}")
+                .setParameter(2, completed)
+                .executeUpdate();
+        em.clear();
         UUID failed = persist("alice", AnalysisStatus.FAILED, null, null, now.minusSeconds(120));
         UUID processing = persist("alice", AnalysisStatus.PROCESSING, null, null, now.minusSeconds(180));
         UUID bob = persist("bob", AnalysisStatus.COMPLETED, "REAL", "0.6000", now.minusSeconds(60));
@@ -93,10 +102,12 @@ class AnalysisServiceDeleteIntegrationTest {
         assertThat(before.total()).isEqualTo(3);
         assertThat(before.completed()).isEqualTo(1);
 
-        service.delete(completed, "alice");
+        List<String> reclaimable = service.delete(completed, "alice");
         em.flush(); // force the DELETE to the DB, then read fresh
         em.clear();
 
+        // The Grad-CAM key round-trips out of the real jsonb column for the caller to reclaim.
+        assertThat(reclaimable).containsExactly(completed + "/video/cam.png");
         assertThat(repository.findById(completed)).isEmpty();
         // Siblings untouched: the active analysis and the other user's row are left alone.
         assertThat(repository.findById(failed)).isPresent();

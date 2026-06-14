@@ -1,8 +1,9 @@
 package com.deepfake.orchestrator.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -10,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -62,15 +64,17 @@ class AnalysisDeleteControllerTest {
     }
 
     @Test
-    void deleteReturns204() throws Exception {
+    void deleteReturns204AndReclaimsArtifacts() throws Exception {
         UUID id = UUID.randomUUID();
-        doNothing().when(service).delete(eq(id), eq("user-a"));
+        when(service.delete(eq(id), eq("user-a"))).thenReturn(List.of(id + "/video/cam.png"));
 
         mvc.perform(delete("/api/analysis/{id}/record", id)
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
                 .andExpect(status().isNoContent());
 
         verify(service).delete(id, "user-a");
+        // Keys the service returned are reclaimed from object storage after the row delete commits.
+        verify(artifactService).deleteArtifacts(List.of(id + "/video/cam.png"));
     }
 
     @Test
@@ -83,6 +87,8 @@ class AnalysisDeleteControllerTest {
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
+
+        verify(artifactService, never()).deleteArtifacts(any()); // nothing deleted, nothing to reclaim
     }
 
     @Test
@@ -95,6 +101,8 @@ class AnalysisDeleteControllerTest {
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        verify(artifactService, never()).deleteArtifacts(any());
     }
 
     // Regression guard: /{id}/record must not shadow the cancel route. DELETE /{id} (no suffix)

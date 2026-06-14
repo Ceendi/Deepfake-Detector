@@ -206,11 +206,12 @@ already-deleted, or non-owned analysis (IDOR — never `403`).
 
 Distinct route from cancel on purpose: `DELETE /api/analysis/{id}` soft-stops a *running* analysis
 (and is idempotent on an already-`CANCELLED` one), whereas this removes a *finished* one — the two
-map to different UI affordances and must not collide. The uploaded file (`deepfake-uploads`) and any
-Grad-CAM artifacts (`analysis-artifacts`) are **not** removed here: the Orchestrator is read-only on
-artifacts and has no access to uploads by design (see [`object-storage.md`](./object-storage.md));
-their reclamation is the storage cleanup job's concern (orphan-by-`{analysisId}`-prefix), the same
-way a file `DELETE` retains the object for a later sweep.
+map to different UI affordances and must not collide. The analysis's Grad-CAM objects in
+`analysis-artifacts` **are** reclaimed (best-effort, after the row delete commits — a failed object
+delete just leaves an orphan for a later bucket sweep, never a `5xx`). The uploaded file in
+`deepfake-uploads` is **not** removed: it lives in another service/bucket the Orchestrator cannot
+touch and may be shared by other analyses — its lifecycle is the file service's (see
+[`object-storage.md`](./object-storage.md)).
 
 ## `Analysis` shape
 

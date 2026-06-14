@@ -132,6 +132,9 @@ public class AnalysisController {
     @DeleteMapping("/{id}/record")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
-        service.delete(id, user.id());
+        // delete() commits the row removal and returns the analysis's Grad-CAM object keys; reclaim
+        // them from storage afterwards (post-commit, best-effort — a failed object delete just leaves
+        // an orphan for a later sweep and must not turn a successful delete into a 5xx).
+        artifactService.deleteArtifacts(service.delete(id, user.id()));
     }
 }

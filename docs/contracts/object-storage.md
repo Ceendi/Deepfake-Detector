@@ -26,13 +26,15 @@ and [`infra/seaweedfs/bucket-init.sh`](../../infra/seaweedfs/bucket-init.sh) (bu
 | Admin (init) | `S3_ADMIN_KEY`        | `S3_ADMIN_SECRET`        | `Admin` — used only by `seaweedfs-bucket-init` to create buckets                     |
 | File Service | `S3_FILE_SERVICE_KEY` | `S3_FILE_SERVICE_SECRET` | `Read/Write/List/Tagging` on `deepfake-uploads`                                      |
 | Detectors    | `S3_DETECTOR_KEY`     | `S3_DETECTOR_SECRET`     | `Read/List` on `deepfake-uploads`; `Read/Write/List/Tagging` on `analysis-artifacts` |
-| Orchestrator | `S3_ORCHESTRATOR_KEY` | `S3_ORCHESTRATOR_SECRET` | `Read/List` on `analysis-artifacts` only                                             |
+| Orchestrator | `S3_ORCHESTRATOR_KEY` | `S3_ORCHESTRATOR_SECRET` | `Read/Write/List` on `analysis-artifacts` only                                       |
 
 Credentials are split by purpose: detectors must not be able to write user
 uploads, the file service must not be able to overwrite ML artifacts, and the
-orchestrator (which only serves Grad-CAM PNGs back to their owner) must not be
-able to read user uploads or write anything. The admin identity exists only
-for bootstrap and is never embedded in app config.
+orchestrator must not be able to read user uploads at all. The orchestrator
+holds `Write` on `analysis-artifacts` only to reclaim an analysis's Grad-CAM
+objects when that analysis is deleted (`DELETE /api/analysis/{id}/record`) — it
+never produces artifacts, only serves and deletes them. The admin identity
+exists only for bootstrap and is never embedded in app config.
 
 ## S3 client configuration
 
