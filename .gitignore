@@ -19,6 +19,7 @@ Thumbs.db
 # Java
 target/
 *.jar
+!frontend/dist_keycloak/keycloak-theme.jar
 *.class
 
 # Python
