@@ -22,7 +22,9 @@ datasources:
           matcherType: label
           matcherRegex: trace_id
           datasourceUid: tempo
-          url: '${__value.raw}'
+          # $$ — Grafana provisioning expands ${VAR} as env vars at load; $$ escapes to a literal $
+          # so ${__value.raw} survives to the link query (single $ → empty trace id in Tempo).
+          url: '$${__value.raw}'
 
   - name: Tempo
     uid: tempo
