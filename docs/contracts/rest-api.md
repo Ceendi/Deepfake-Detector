@@ -195,6 +195,23 @@ flag `cancel:{analysis_id}` (best-effort) so detectors abort queued/in-flight
 work early instead of processing the whole file — see the Cancellation section
 in [`amqp-messages.md`](./amqp-messages.md).
 
+### `DELETE /api/analysis/{id}/record`
+
+Permanently deletes a **finished** analysis from the caller's history (hard delete — the row is
+gone from list/get/stats/stream, not soft-flagged). `204 No Content` on success. `409 Conflict`
+(code `CONFLICT`) if the analysis is still in progress (`PENDING`/`PROCESSING`) — cancel it first
+(see `DELETE /api/analysis/{id}`), because deleting an active analysis would leak its in-flight
+backpressure slot and race the detector still writing its result. `404 Not Found` for a missing,
+already-deleted, or non-owned analysis (IDOR — never `403`).
+
+Distinct route from cancel on purpose: `DELETE /api/analysis/{id}` soft-stops a *running* analysis
+(and is idempotent on an already-`CANCELLED` one), whereas this removes a *finished* one — the two
+map to different UI affordances and must not collide. The uploaded file (`deepfake-uploads`) and any
+Grad-CAM artifacts (`analysis-artifacts`) are **not** removed here: the Orchestrator is read-only on
+artifacts and has no access to uploads by design (see [`object-storage.md`](./object-storage.md));
+their reclamation is the storage cleanup job's concern (orphan-by-`{analysisId}`-prefix), the same
+way a file `DELETE` retains the object for a later sweep.
+
 ## `Analysis` shape
 
 ```json

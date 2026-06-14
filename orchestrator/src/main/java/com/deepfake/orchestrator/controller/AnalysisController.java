@@ -120,4 +120,18 @@ public class AnalysisController {
     public AnalysisResponse cancel(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return service.cancel(id, user.id());
     }
+
+    // Distinct from cancel (DELETE /{id}): that soft-stops a running analysis; this permanently
+    // removes a finished one from history. They map to two different UI affordances and must not
+    // collide — overloading DELETE /{id} would turn a retried/double-clicked cancel on an already
+    // CANCELLED analysis (idempotent 200 today) into a silent hard delete.
+    @Operation(summary = "Permanently delete a finished analysis from the caller's history")
+    @ApiResponse(responseCode = "204", description = "Deleted")
+    @ApiResponse(responseCode = "409", description = "Still in progress — cancel it first")
+    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
+    @DeleteMapping("/{id}/record")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
+        service.delete(id, user.id());
+    }
 }

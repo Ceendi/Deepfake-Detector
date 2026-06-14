@@ -1,6 +1,7 @@
 package com.deepfake.orchestrator.service;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -49,6 +50,16 @@ public class IdempotencyGuard {
             redis.opsForValue().set(key(analysisId, source), "1", ttl);
         } catch (DataAccessException e) {
             log.warn("idempotency mark skipped (Redis down): {}", e.getMessage());
+        }
+    }
+
+    // Drop both per-source dedup keys when the analysis is deleted, so its Redis footprint doesn't
+    // linger until TTL. Fail-open like the rest of the guard — keys self-expire anyway.
+    public void clear(UUID analysisId) {
+        try {
+            redis.delete(List.of(key(analysisId, "video"), key(analysisId, "audio")));
+        } catch (DataAccessException e) {
+            log.warn("idempotency clear skipped (Redis down) for {}: {}", analysisId, e.getMessage());
         }
     }
 }
