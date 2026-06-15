@@ -2,11 +2,16 @@
 
 Web application for video/audio deepfake detection. Microservices (Spring Boot + Python ML) behind an API gateway, async pipeline on RabbitMQ, OIDC via Keycloak.
 
+> **Setting the project up from scratch (e.g. instructor review)?** A full step-by-step
+> guide — `.env` files, downloading and placing the ML models, running the backend and
+> frontend — is in **[`SETUP.md`](SETUP.md)**. The README below is a condensed developer overview.
+
 ## Requirements
 
 - Docker Engine 24+ with Compose v2
-- ~8 GB RAM for the full stack (core + auth)
-- Free ports: 5432, 5672, 6379, 8180, 8333, 15672
+- Node.js 20+ and npm (frontend)
+- ~8 GB RAM for core + auth; ~14–16 GB with the `ml` profile (two 3 GB detectors)
+- Free ports: 5432, 5672, 6379, 8080, 8180, 8333, 15672, 8761 (backend) and 5173 (frontend)
 
 ## Quick start (development)
 
@@ -36,7 +41,8 @@ docker compose --profile core --profile auth up -d
 and unsafe outside localhost.
 
 Add `--profile ml` to also start the detectors and run a full analysis
-(upload → analysis → progress → verdict) end to end.
+(upload → analysis → progress → verdict) end to end. The `ml` profile needs the
+model checkpoints in place first — see [Models](#models-checkpoints) below.
 
 Add `--profile monitoring` for the observability stack (Grafana at
 http://localhost:3000, admin / `GF_SECURITY_ADMIN_PASSWORD`); set
@@ -57,8 +63,47 @@ All services should report `healthy` within ~60 seconds.
 | ------------ | ----------------------------------------------------------------------------------------------- | ------------------------------ |
 | `core`       | eureka, gateway, orchestrator, file-service + postgres, redis, rabbitmq, seaweedfs (+ 2 inits)  | any backend/frontend dev       |
 | `auth`       | keycloak + dedicated keycloak-db (Postgres) + realm config one-shot                             | login flow needed              |
-| `ml`         | video-detector, audio-detector (dummy inference for now, full pipeline otherwise)               | running the analysis pipeline  |
+| `ml`         | video-detector, audio-detector (real inference — **requires** the checkpoints, see [Models](#models-checkpoints)) | running the analysis pipeline  |
 | `monitoring` | prometheus, loki, tempo, grafana, alloy                                                         | metrics + logs + traces (D2/D3)|
+
+## Models (checkpoints)
+
+The ML detectors run **real inference** and load trained checkpoints at startup.
+The checkpoints are not in the repo (multi-GB; ignored by `.gitignore`) — download
+them and place them under each detector's `training/checkpoints/` **before** building
+the images, because they are baked into the image at build time
+(`COPY training ./training` in each Dockerfile; whitelisted in `.dockerignore`).
+Without them the `ml` containers start but every analysis ends `FAILED`.
+
+Download (SharePoint folder `MODELE-AUDIO-DETECTOR`):
+<https://tulodz-my.sharepoint.com/shared?id=%2Fpersonal%2F247770%5Fedu%5Fp%5Flodz%5Fpl%2FDocuments%2FMODELE%2DAUDIO%2DDETECTOR&listurl=%2Fpersonal%2F247770%5Fedu%5Fp%5Flodz%5Fpl%2FDocuments>
+
+Exact paths and filenames expected by the code (`*/src/inference.py`):
+
+```
+audio-detector/training/checkpoints/w2v2/w2v2.onnx
+audio-detector/training/checkpoints/w2v2/w2v2.onnx.data            # if present (external-data sidecar)
+audio-detector/training/checkpoints/mel_resnet/mel_model-epoch=49-val_eer=0.0816.ckpt
+video-detector/training/checkpoints/effnet_lstm/backbone.onnx
+video-detector/training/checkpoints/effnet_lstm/temporal.onnx
+video-detector/training/checkpoints/effnet_lstm/last.ckpt
+```
+
+Filenames must match exactly. Full walkthrough (including a verification command and
+how to rebuild after adding models): **[`SETUP.md`](SETUP.md)**.
+
+## Frontend (dev)
+
+The React/Vite frontend runs locally, not in Compose. It proxies `/api` to the gateway
+(`localhost:8080`) and redirects login to Keycloak (`localhost:8180`), so start the backend
+(`core` + `auth`) first.
+
+```bash
+cd frontend
+cp .env.example .env   # required — the app throws on missing VITE_* vars
+npm install
+npm run dev            # http://localhost:5173
+```
 
 ## URLs (dev)
 
