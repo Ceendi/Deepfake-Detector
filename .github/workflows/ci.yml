@@ -21,7 +21,7 @@ jobs:
       matrix:
         service: [gateway, eureka-server, orchestrator, file-service]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -42,7 +42,7 @@ jobs:
       matrix:
         service: [video-detector, audio-detector]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v8.2.0 # pinned: setup-uv has no floating v8 major tag
       # Lint only for now: detectors are placeholders with no tests; pytest with real ML deps is week 11.
       - name: ruff
@@ -55,7 +55,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
