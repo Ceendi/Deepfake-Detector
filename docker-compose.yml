@@ -143,7 +143,7 @@ services:
     networks: [deepfake]
 
   rabbitmq:
-    image: rabbitmq:4.3.1-management-alpine
+    image: rabbitmq:4.3.2-management-alpine
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # flush queues to disk before exit
@@ -185,7 +185,7 @@ services:
     networks: [deepfake]
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.32
+    image: chrislusf/seaweedfs:4.37
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # volume server flushes outstanding writes on SIGTERM
@@ -251,7 +251,7 @@ services:
     # Runs before the main seaweedfs service starts (via depends_on).
     # Runs as root: the seaweedfs image entrypoint also runs as root, so a
     # 0644 file written here is readable downstream regardless of ownership.
-    image: alpine:3.23
+    image: alpine:3.24
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -285,7 +285,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.34.63
+    image: amazon/aws-cli:2.35.11
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -339,7 +339,7 @@ services:
     networks: [deepfake]
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.3
+    image: quay.io/keycloak/keycloak:26.6.4
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s # let in-flight HTTP / DB connections drain
@@ -619,7 +619,7 @@ services:
     networks: [deepfake]
 
   loki:
-    image: grafana/loki:3.7.2
+    image: grafana/loki:3.7.3
     profiles: ["monitoring"]
     restart: unless-stopped
     user: "0:0"
@@ -635,7 +635,7 @@ services:
     networks: [deepfake]
 
   tempo:
-    image: grafana/tempo:2.10.6
+    image: grafana/tempo:3.0.2
     profiles: ["monitoring"]
     restart: unless-stopped
     user: "0:0"
@@ -651,7 +651,7 @@ services:
     networks: [deepfake]
 
   grafana:
-    image: grafana/grafana:11.6.15
+    image: grafana/grafana:13.1.0
     profiles: ["monitoring"]
     restart: unless-stopped
     depends_on:
@@ -677,7 +677,7 @@ services:
     networks: [deepfake]
 
   alloy:
-    image: grafana/alloy:v1.16.3
+    image: grafana/alloy:v1.17.0
     profiles: ["monitoring"]
     restart: unless-stopped
     user: "0:0" # reads the root-owned docker socket
