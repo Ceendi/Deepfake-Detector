@@ -7,8 +7,7 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import com.deepfake.orchestrator.repository.AnalysisRepository;
 
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -19,12 +18,12 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 
 class AnalysisMetricsTest {
 
-    private final StringRedisTemplate redis = mock(StringRedisTemplate.class);
+    private final AnalysisRepository repository = mock(AnalysisRepository.class);
 
     @Test
     void terminalIncrementsCounterWithStatusAndTypeTags() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        AnalysisMetrics metrics = new AnalysisMetrics(registry, redis);
+        AnalysisMetrics metrics = new AnalysisMetrics(registry, repository);
 
         metrics.terminal(AnalysisStatus.COMPLETED, AnalysisType.FULL);
 
@@ -35,7 +34,7 @@ class AnalysisMetricsTest {
     @Test
     void cacheHitAndMissAreSeparateSeries() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        AnalysisMetrics metrics = new AnalysisMetrics(registry, redis);
+        AnalysisMetrics metrics = new AnalysisMetrics(registry, repository);
 
         metrics.cache(false);
         metrics.cache(true);
@@ -47,7 +46,7 @@ class AnalysisMetricsTest {
     @Test
     void durationRecordsTimerForType() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        AnalysisMetrics metrics = new AnalysisMetrics(registry, redis);
+        AnalysisMetrics metrics = new AnalysisMetrics(registry, repository);
 
         metrics.duration(AnalysisType.VIDEO, Duration.ofSeconds(5));
 
@@ -59,7 +58,7 @@ class AnalysisMetricsTest {
     @Test
     void reliabilityCountersAreEagerlyRegisteredAndIncrement() {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        AnalysisMetrics metrics = new AnalysisMetrics(registry, redis);
+        AnalysisMetrics metrics = new AnalysisMetrics(registry, repository);
 
         assertThat(registry.get("analyses.dlq").counter().count()).isZero();
         assertThat(registry.get("analyses.stuck.recovered").counter().count()).isZero();
@@ -76,10 +75,8 @@ class AnalysisMetricsTest {
     @Test
     void prometheusScrapeUsesExpectedNames() {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
-        when(redis.opsForValue()).thenReturn(ops);
-        when(ops.get("analyses:inflight")).thenReturn("3");
-        AnalysisMetrics metrics = new AnalysisMetrics(registry, redis);
+        when(repository.countActive()).thenReturn(3L);
+        AnalysisMetrics metrics = new AnalysisMetrics(registry, repository);
 
         metrics.terminal(AnalysisStatus.FAILED, AnalysisType.AUDIO);
         metrics.cache(true);
@@ -89,7 +86,7 @@ class AnalysisMetricsTest {
         assertThat(scrape).doesNotContain("analyses_total_total");
         assertThat(scrape).contains("cache_requests_total{");
         assertThat(scrape).doesNotContain("cache_requests_total_total");
-        assertThat(scrape).contains("analyses_inflight");
+        assertThat(scrape).contains("analyses_inflight 3.0");
         assertThat(scrape).contains("analyses_dlq_total");
         assertThat(scrape).doesNotContain("analyses_dlq_total_total");
         assertThat(scrape).contains("analyses_stuck_recovered_total");

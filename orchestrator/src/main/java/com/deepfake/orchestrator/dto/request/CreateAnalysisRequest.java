@@ -4,10 +4,11 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 public record CreateAnalysisRequest(
-        @NotBlank String fileId,
-        @NotBlank String fileKey,
+        @NotBlank @Size(max = 255) String fileId,
+        @NotBlank @Size(max = 500) String fileKey,
         @NotNull AnalysisType type,
         AnalysisMode mode) {
 

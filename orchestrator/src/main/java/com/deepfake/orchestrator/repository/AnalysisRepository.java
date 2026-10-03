@@ -20,6 +20,10 @@ import java.util.UUID;
 
 public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
 
+    // Literal statuses allow PostgreSQL to use the existing partial active-analysis index.
+    @Query(value = "SELECT COUNT(*) FROM analysis WHERE status IN ('PENDING', 'PROCESSING')", nativeQuery = true)
+    long countActive();
+
     Page<AnalysisSummary> findByUserId(String userId, Pageable pageable);
 
     // Atomic aggregation + terminal transitions. clearAutomatically so the caller

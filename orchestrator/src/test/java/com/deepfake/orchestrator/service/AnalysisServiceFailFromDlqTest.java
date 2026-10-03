@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -27,7 +28,7 @@ import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
-/** failFromDlq is idempotent: an active analysis goes FAILED + releases once; a terminal one is a no-op. */
+/** failFromDlq is idempotent: an active analysis goes FAILED; a terminal one is a no-op. */
 @ExtendWith(MockitoExtension.class)
 class AnalysisServiceFailFromDlqTest {
 
@@ -43,7 +44,7 @@ class AnalysisServiceFailFromDlqTest {
     private final UUID id = UUID.randomUUID();
 
     @Test
-    void activeAnalysisFailsAndReleasesOnce() {
+    void activeAnalysisFailsAndPublishesTerminalState() {
         when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
         when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
 
@@ -52,7 +53,7 @@ class AnalysisServiceFailFromDlqTest {
         ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
         verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
         assertThat(msg.getValue()).isEqualTo("dead-letter: boom");
-        verify(backpressure).release();
+        verifyNoInteractions(backpressure);
         verify(streams).complete(id);
         verify(metrics).dlqFailure();
         verify(metrics, never()).stuckRecovery();
@@ -68,7 +69,7 @@ class AnalysisServiceFailFromDlqTest {
         ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
         verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
         assertThat(msg.getValue()).contains("stuck > 600s");
-        verify(backpressure).release();
+        verifyNoInteractions(backpressure);
         verify(metrics).stuckRecovery();
         verify(metrics, never()).dlqFailure();
     }
@@ -81,7 +82,7 @@ class AnalysisServiceFailFromDlqTest {
 
         verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any());
         verify(repository, never()).findById(any());
-        verify(backpressure, never()).release();
+        verifyNoInteractions(backpressure);
         verify(streams, never()).sendResult(any(), any());
         verify(metrics, never()).dlqFailure();
     }
