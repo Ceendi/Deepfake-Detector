@@ -392,8 +392,8 @@ services:
     networks: [deepfake]
 
   keycloak-config-cli:
-    # Version pin: cli was built/tested against KC 26.5.4; our KC is 26.6.1.
-    # Forward-compatible for the API surface we use — see ADR-0001 §Consequences.
+    # The pinned CLI was smoke-tested against Keycloak 26.7.1 with this realm.
+    # See docs/compose-upgrade.md for validation and rollout limits.
     image: adorsys/keycloak-config-cli:6.5.1-26.5.5
     profiles: ["auth"]
     restart: "no"

@@ -1,5 +1,5 @@
-# Tempo 2.x single-binary, local storage (dev). The OTLP receiver is the export target the Java
-# services point OTEL_OTLP_ENDPOINT at (http:4318); without it traces never arrive.
+# Tempo 3.x monolithic, local storage (dev); no Kafka is required.
+# Java services export to the OTLP HTTP receiver at http://tempo:4318/v1/traces.
 server:
   http_listen_port: 3200
 
@@ -12,12 +12,15 @@ distributor:
         http:
           endpoint: 0.0.0.0:4318
 
-ingester:
+live_store:
   max_block_duration: 5m
+  wal:
+    path: /var/tempo/live-store/traces
 
-compactor:
-  compaction:
-    block_retention: 72h        # traces are heavy — shorter than logs/metrics
+overrides:
+  defaults:
+    compaction:
+      block_retention: 72h        # traces are heavy — shorter than logs/metrics
 
 storage:
   trace:

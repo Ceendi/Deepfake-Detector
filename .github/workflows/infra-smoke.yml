@@ -1,0 +1,31 @@
+name: Infrastructure smoke
+
+on:
+  pull_request:
+    paths:
+      - docker-compose.yml
+      - .env.example
+      - infra/tempo/**
+      - infra/tests/test_tempo.py
+      - .github/workflows/infra-smoke.yml
+  push:
+    branches: [main]
+    paths:
+      - docker-compose.yml
+      - .env.example
+      - infra/tempo/**
+      - infra/tests/test_tempo.py
+      - .github/workflows/infra-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tempo:
+    name: Tempo ingest and persistence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 infra/tests/test_tempo.py
