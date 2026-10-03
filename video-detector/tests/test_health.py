@@ -9,7 +9,7 @@ _fake_inference = types.ModuleType("src.inference")
 _fake_inference.VideoInference = MagicMock()
 sys.modules.setdefault("src.inference", _fake_inference)
 
-import src.main as main  # noqa: E402
+from src import main
 
 
 def test_up_with_fresh_heartbeat():

@@ -49,7 +49,7 @@ from .utils import (
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(PROJECT_ROOT)
-from training.model import VideoLightningModule  # noqa: E402
+from training.model import VideoLightningModule
 
 MODEL_DIR = os.getenv("MODEL_DIR", os.path.join(PROJECT_ROOT, "training", "checkpoints", "effnet_lstm"))
 BACKBONE_ONNX_PATH = os.path.join(MODEL_DIR, "backbone.onnx")

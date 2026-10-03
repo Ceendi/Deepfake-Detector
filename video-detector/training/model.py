@@ -17,11 +17,11 @@ inferencja produkcyjna liczy cechy per-klatka (micro-batching, early-stop po
 sekwencje cech.
 """
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import lightning.pytorch as pl
 import timm
+import torch
+import torch.nn.functional as F
+from torch import nn
 from torchmetrics.classification import BinaryAccuracy, BinaryAUROC, BinaryF1Score
 
 SEQ_LEN = 16

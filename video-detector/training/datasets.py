@@ -21,11 +21,11 @@ import os
 
 import albumentations as A
 import cv2
+import lightning.pytorch as pl
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader, Dataset
-import lightning.pytorch as pl
 
 SEQ_LEN = 16
 IMG_SIZE = 224

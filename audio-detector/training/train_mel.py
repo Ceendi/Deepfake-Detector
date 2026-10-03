@@ -1,13 +1,15 @@
 import os
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision import models
+import sys
+
 import lightning.pytorch as pl
-from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar, EarlyStopping
-import torchaudio
-from sklearn.metrics import roc_curve
 import numpy as np
+import torch
+import torch.nn.functional as F
+import torchaudio
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, TQDMProgressBar
+from sklearn.metrics import roc_curve
+from torch import nn
+from torchvision import models
 
 try:
     from datasets import ASVspoofDataModule
@@ -17,9 +19,9 @@ torch.set_float32_matmul_precision("high")
 
 
 def compute_eer(y_true, y_score):
-    fpr, tpr, thresholds = roc_curve(y_true, y_score)
+    fpr, tpr, _thresholds = roc_curve(y_true, y_score)
     fnr = 1 - tpr
-    idx = np.nanargmin(np.absolute((fnr - fpr)))
+    idx = np.nanargmin(np.absolute(fnr - fpr))
     eer = fpr[idx]
     return eer
 
@@ -129,7 +131,7 @@ if __name__ == "__main__":
     if not torch.cuda.is_available():
         print("BŁĄD: Karta graficzna (GPU) nie została wykryta! Trening modelu Mel-CNN wymaga GPU.")
         print("Przerwanie działania skryptu.")
-        exit(1)
+        sys.exit(1)
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_ROOT = os.path.join(SCRIPT_DIR, "data/archive/LA/LA")
     EXTRA_FAKE_DIR = os.path.join(SCRIPT_DIR, "data/generated_audio")

@@ -1,24 +1,25 @@
-import os
 import glob
+import os
 import random
-import torch
-import pandas as pd
-import torchaudio
-import soundfile as sf
-from torch.utils.data import Dataset, DataLoader
+
 import lightning.pytorch as pl
+import pandas as pd
+import soundfile as sf
+import torch
+import torchaudio
 from audiomentations import (
-    Compose,
     AddGaussianNoise,
-    PitchShift,
-    TimeStretch,
-    RoomSimulator,
-    Mp3Compression,
-    LowPassFilter,
-    HighPassFilter,
-    Gain,
     ClippingDistortion,
+    Compose,
+    Gain,
+    HighPassFilter,
+    LowPassFilter,
+    Mp3Compression,
+    PitchShift,
+    RoomSimulator,
+    TimeStretch,
 )
+from torch.utils.data import DataLoader, Dataset
 
 
 def get_audio_augmentations():
