@@ -1,22 +1,25 @@
 import os
 import subprocess
-import torch
-import numpy as np
-import soundfile as sf
-import onnxruntime as ort
+
 import matplotlib
+import numpy as np
+import onnxruntime as ort
+import soundfile as sf
+import torch
+
 matplotlib.use('Agg')
-import matplotlib.pyplot as plt
 import math
-import time
-from prometheus_client import Histogram, Gauge
 import sys
+import time
+
+import matplotlib.pyplot as plt
+from prometheus_client import Gauge, Histogram
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(PROJECT_ROOT)
 
-from training.train_mel import MelCNNLightningModule  # noqa: E402
+from training.train_mel import MelCNNLightningModule
 
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
 MEL_CKPT_PATH = os.path.join(
@@ -52,7 +55,7 @@ class AudioInference:
         proc = subprocess.run([
             "ffmpeg", "-y", "-i", input_path,
             "-ar", str(sr), "-ac", "1", out_path
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False)
         if proc.returncode != 0:
             tail = proc.stderr.decode(errors="replace").strip()[-500:]
             raise RuntimeError(f"ffmpeg extraction failed (rc={proc.returncode}): {tail}")

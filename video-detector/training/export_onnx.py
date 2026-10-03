@@ -20,9 +20,9 @@ import os
 import torch
 
 try:
-    from model import VideoLightningModule, SEQ_LEN, IMG_SIZE
+    from model import IMG_SIZE, SEQ_LEN, VideoLightningModule
 except ImportError:
-    from .model import VideoLightningModule, SEQ_LEN, IMG_SIZE
+    from .model import IMG_SIZE, SEQ_LEN, VideoLightningModule
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 

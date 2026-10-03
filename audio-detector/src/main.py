@@ -2,11 +2,14 @@ import logging
 import threading
 import time
 from contextlib import asynccontextmanager
+
 import structlog
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
+
 from .consumer import run_consumer
+
 structlog.configure(
     processors=[
         structlog.contextvars.merge_contextvars,

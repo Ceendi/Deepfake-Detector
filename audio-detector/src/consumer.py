@@ -2,17 +2,20 @@ import json
 import os
 import tempfile
 import time
-import pika
-import structlog
+
 import boto3
+import pika
 import redis
+import structlog
 from botocore.client import Config
 from opentelemetry import trace
 from opentelemetry.trace import SpanKind, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from prometheus_client import Counter
+
 from .inference import AudioInference
 from .tracing import init_tracing
+
 PROCESSED_AUDIO_TOTAL = Counter(
     "audio_processed_total",
     "Total number of audio files processed",
@@ -39,7 +42,7 @@ s3_client = boto3.client(
 )
 redis_client = redis.Redis(
     host=os.environ.get("REDIS_HOST", "localhost"),
-    port=int(os.environ.get("REDIS_PORT", 6379)),
+    port=int(os.environ.get("REDIS_PORT", "6379")),
     password=os.environ.get("REDIS_PASSWORD"),
     db=0,
     decode_responses=True
@@ -47,7 +50,7 @@ redis_client = redis.Redis(
 try:
     audio_inference = AudioInference()
 except Exception as e:
-    log.error("Failed to load AudioInference", error=str(e))
+    log.exception("failed_to_load_audio_inference", error=str(e))
     audio_inference = None
 
 
@@ -99,7 +102,7 @@ def process(msg: dict, progress_callback=None) -> dict:
             )
             gradcam_keys.append(gradcam_key)
         except Exception as e:
-            log.error("gradcam_upload_failed", error=str(e))
+            log.exception("gradcam_upload_failed", error=str(e))
         finally:
             os.remove(result["local_gradcam_path"])
             del result["local_gradcam_path"]
@@ -166,7 +169,7 @@ def _handle_message(ch, method, properties, body):
             log.warning("dedup_check_skipped", reason="redis_unavailable", error=str(e))
         try:
             log.info("processing_started")
-            def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
+            def progress_callback(pct: int, stage: str = "INFERENCE", details: dict | None = None):
                 # Every progress tick doubles as a cancellation point (per-chunk granularity for
                 # audio), so a cancel lands within seconds instead of after the whole file.
                 if _is_cancelled(analysis_id):
@@ -265,5 +268,5 @@ def run_consumer(health_state: dict) -> None:
                 _handle_message(ch, method, properties, body)
         except Exception as e:
             health_state["ok"] = False
-            log.error("consumer_crashed_reconnecting", error=str(e), backoff_seconds=5)
+            log.exception("consumer_crashed_reconnecting", error=str(e), backoff_seconds=5)
             time.sleep(5)

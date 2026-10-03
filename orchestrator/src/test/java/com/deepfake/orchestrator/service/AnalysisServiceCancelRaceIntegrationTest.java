@@ -3,8 +3,7 @@ package com.deepfake.orchestrator.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.util.Map;
 import java.util.UUID;
@@ -127,7 +126,7 @@ class AnalysisServiceCancelRaceIntegrationTest {
         } finally {
             pool.shutdownNow();
         }
-        verify(backpressure, times(rounds)).release(); // one winner per round -> one release, never two
+        verifyNoInteractions(backpressure);
     }
 
     private UUID newAnalysis() {

@@ -44,10 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.2.0 # pinned: setup-uv has no floating v8 major tag
-      # Lint only for now: detectors are placeholders with no tests; pytest with real ML deps is week 11.
+      # Pin the verified lint version so future rule changes do not break unrelated PRs.
       - name: ruff
         working-directory: ${{ matrix.service }}
-        run: uvx ruff check .
+        run: uvx ruff==0.16.10 check .
 
   frontend:
     runs-on: ubuntu-latest
