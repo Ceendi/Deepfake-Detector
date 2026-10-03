@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -33,8 +32,8 @@ import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
- * Backpressure accounting: create() reserves a slot (and persists nothing when rejected); a terminal
- * result frees exactly one slot, but a partial multi-task result does not.
+ * Admission rejects before persistence or publication. Terminal and partial results do not
+ * update an external capacity counter; transaction integration tests assert the database count.
  */
 @ExtendWith(MockitoExtension.class)
 class AnalysisServiceBackpressureTest {
@@ -83,7 +82,7 @@ class AnalysisServiceBackpressureTest {
     }
 
     @Test
-    void completedResultReleasesSlot() {
+    void completedResultNeedsNoExternalCounterUpdate() {
         givenAnalysis(AnalysisType.VIDEO, new BigDecimal("0.8"), null);
         when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
         when(repository.complete(eq(id), eq(AnalysisStatus.COMPLETED), any(), any(), any(), any())).thenReturn(1);
@@ -92,11 +91,11 @@ class AnalysisServiceBackpressureTest {
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
                 "result", Map.of("prob_fake", "0.8")));
 
-        verify(backpressure).release();
+        verifyNoInteractions(backpressure);
     }
 
     @Test
-    void failedResultReleasesSlot() {
+    void failedResultNeedsNoExternalCounterUpdate() {
         givenAnalysis(AnalysisType.VIDEO, null, null);
         when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
 
@@ -104,11 +103,11 @@ class AnalysisServiceBackpressureTest {
                 "analysis_id", id.toString(), "source", "video", "status", "FAILED",
                 "error", Map.of("code", "X", "message", "boom")));
 
-        verify(backpressure).release();
+        verifyNoInteractions(backpressure);
     }
 
     @Test
-    void partialResultDoesNotReleaseUntilDone() {
+    void partialResultNeedsNoExternalCounterUpdate() {
         givenAnalysis(AnalysisType.FULL, new BigDecimal("0.7"), null); // still needs audio
         when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
 
@@ -116,7 +115,7 @@ class AnalysisServiceBackpressureTest {
                 "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
                 "result", Map.of("prob_fake", "0.7")));
 
-        verify(backpressure, never()).release();
+        verifyNoInteractions(backpressure);
     }
 
     // The CAS write/complete is mocked, so seed the probs the post-write fresh read would observe.

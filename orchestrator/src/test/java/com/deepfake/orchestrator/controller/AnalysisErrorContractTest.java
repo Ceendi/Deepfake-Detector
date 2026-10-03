@@ -3,6 +3,7 @@ package com.deepfake.orchestrator.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -101,6 +102,22 @@ class AnalysisErrorContractTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.fields.fileId").exists());
+    }
+
+    @Test
+    void oversizedIdentifiersReturn400BeforeCallingService() throws Exception {
+        for (String field : List.of("fileId", "fileKey")) {
+            String fileId = field.equals("fileId") ? "x".repeat(256) : "file";
+            String fileKey = field.equals("fileKey") ? "x".repeat(501) : "key";
+            mvc.perform(post("/api/analysis")
+                            .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole()))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"fileId\":\"" + fileId + "\",\"fileKey\":\"" + fileKey + "\",\"type\":\"VIDEO\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                    .andExpect(jsonPath("$.fields." + field).exists());
+        }
+        verifyNoInteractions(service);
     }
 
     @Test

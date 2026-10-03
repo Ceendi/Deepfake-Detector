@@ -3,11 +3,11 @@ package com.deepfake.orchestrator.metrics;
 import java.time.Duration;
 
 import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.repository.AnalysisRepository;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
@@ -21,17 +21,15 @@ import io.micrometer.core.instrument.MeterRegistry;
 @Component
 public class AnalysisMetrics {
 
-    private static final String INFLIGHT_KEY = "analyses:inflight";
-
     private final MeterRegistry registry;
-    private final StringRedisTemplate redis;
+    private final AnalysisRepository repository;
     private final Counter dlqFailures;
     private final Counter stuckRecoveries;
 
-    public AnalysisMetrics(MeterRegistry registry, StringRedisTemplate redis) {
+    public AnalysisMetrics(MeterRegistry registry, AnalysisRepository repository) {
         this.registry = registry;
-        this.redis = redis;
-        // Registered once; sampled on each scrape, fail-open to 0 so a Redis outage never 500s a scrape.
+        this.repository = repository;
+        // Registered once; sampled on each scrape, fail-open to 0 so a database outage never 500s a scrape.
         Gauge.builder("analyses.inflight", this, AnalysisMetrics::readInflight).register(registry);
         // D6 reliability counters, registered eagerly so the series exist at 0 from the first
         // scrape — rate()/alerts need them present before the first failure ever happens.
@@ -71,9 +69,8 @@ public class AnalysisMetrics {
 
     private double readInflight() {
         try {
-            String v = redis.opsForValue().get(INFLIGHT_KEY);
-            return v == null ? 0 : Double.parseDouble(v);
-        } catch (DataAccessException | NumberFormatException e) {
+            return repository.countActive();
+        } catch (DataAccessException e) {
             return 0; // gauge fail-open
         }
     }

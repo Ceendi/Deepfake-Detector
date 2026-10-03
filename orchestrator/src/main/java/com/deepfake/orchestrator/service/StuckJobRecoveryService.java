@@ -16,7 +16,7 @@ import lombok.extern.slf4j.Slf4j;
  * Periodically fails analyses that have been active but silent past a threshold — a detector that
  * crashed or never picked up the task (D6). Each job is failed in its own transaction (via
  * AnalysisService) so one failure doesn't roll back the rest, and failing the job releases its
- * in-flight slot, reconciling the backpressure gauge after a mid-flight crash.
+ * in-flight capacity when the terminal database update commits.
  */
 @Slf4j
 @Service

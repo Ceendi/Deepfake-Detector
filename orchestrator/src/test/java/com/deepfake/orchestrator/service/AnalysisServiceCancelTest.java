@@ -79,7 +79,7 @@ class AnalysisServiceCancelTest {
         AnalysisResponse response = service.cancel(id, "alice");
 
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
-        verify(backpressure).release();
+        verifyNoInteractions(backpressure);
         // Cooperative cancellation: detectors poll this flag and abort queued/in-flight work.
         verify(valueOps).set(eq("cancel:" + id), eq("1"), any(Duration.class));
         verify(streams).sendResult(eq(id), any());
@@ -102,7 +102,7 @@ class AnalysisServiceCancelTest {
         // Fail-open: the DB CANCELLED state is the authority; detectors just finish and their
         // late result bounces off the terminal-state guard.
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
-        verify(backpressure).release();
+        verifyNoInteractions(backpressure);
         verify(streams).complete(id);
     }
 
@@ -117,7 +117,7 @@ class AnalysisServiceCancelTest {
         assertThatThrownBy(() -> service.cancel(id, "alice"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
-        verify(backpressure, never()).release();
+        verifyNoInteractions(backpressure);
         verifyNoInteractions(rabbitTemplate, streams, redis);
     }
 
@@ -142,7 +142,7 @@ class AnalysisServiceCancelTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
         verify(repository, never()).cancelIfActive(any(), any(), any(), any());
-        verify(backpressure, never()).release();
+        verifyNoInteractions(backpressure);
     }
 
     @Test
@@ -154,7 +154,7 @@ class AnalysisServiceCancelTest {
 
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
         verify(repository, never()).cancelIfActive(any(), any(), any(), any());
-        verify(backpressure, never()).release();
+        verifyNoInteractions(backpressure);
         verifyNoInteractions(rabbitTemplate, streams, redis);
     }
 
@@ -176,7 +176,7 @@ class AnalysisServiceCancelTest {
                 "result", Map.of("prob_fake", "0.8")));
 
         verify(repository, never()).complete(any(), any(), any(), any(), any(), any());
-        verify(backpressure, never()).release();
+        verifyNoInteractions(backpressure);
         verify(streams, never()).sendResult(any(), any());
     }
 
