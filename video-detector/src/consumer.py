@@ -63,7 +63,7 @@ try:
 except Exception as e:
     # Brak modeli (np. niewyeksportowany ONNX) nie moze polozyc /health calego serwisu;
     # kazde zadanie konczy sie wtedy publikacja FAILED z czytelnym bledem.
-    log.error("failed_to_load_video_inference", error=str(e))
+    log.exception("failed_to_load_video_inference", error=str(e))
     video_inference = None
 
 
@@ -112,7 +112,7 @@ def process(msg: dict, progress_callback=None) -> dict:
                                   ExtraArgs={"ContentType": "image/png"})
             gradcam_keys.append(key)
         except Exception as e:
-            log.error("gradcam_upload_failed", error=str(e), key=key)
+            log.exception("gradcam_upload_failed", error=str(e), key=key)
         finally:
             if os.path.exists(local_path):
                 os.remove(local_path)
@@ -201,7 +201,7 @@ def _handle_message(ch, method, properties, body):
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
-            def progress_callback(pct: int, stage: str = "INFERENCE", details: dict = None):
+            def progress_callback(pct: int, stage: str = "INFERENCE", details: dict | None = None):
                 # Every progress tick doubles as a cancellation point, so a cancel lands within
                 # one frame batch instead of after the whole file.
                 if _is_cancelled(analysis_id):
@@ -305,5 +305,5 @@ def run_consumer(health_state: dict) -> None:
                 health_state["last_beat"] = time.time()
         except Exception as e:
             health_state["ok"] = False
-            log.error("consumer_crashed_reconnecting", error=str(e), backoff_seconds=5)
+            log.exception("consumer_crashed_reconnecting", error=str(e), backoff_seconds=5)
             time.sleep(5)

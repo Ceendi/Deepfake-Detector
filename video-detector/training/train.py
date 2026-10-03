@@ -12,8 +12,8 @@ Przy OOM na T4: --batch-size 4 --accumulate 4 --grad-checkpointing.
 import argparse
 import os
 
-import torch
 import lightning.pytorch as pl
+import torch
 from lightning.pytorch.callbacks import (
     EarlyStopping,
     LearningRateMonitor,

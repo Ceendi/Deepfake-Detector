@@ -1,9 +1,10 @@
 import os
 
-import torchaudio
 import pandas as pd
-from tqdm import tqdm
+import torchaudio
 from datasets import ASVspoofDataset
+from tqdm import tqdm
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(SCRIPT_DIR, "data/archive/LA/LA")
 CACHE_DIR = os.path.join(SCRIPT_DIR, "data/data_cache")

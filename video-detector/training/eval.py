@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
+from datasets import FFPPDataModule
+from model import VideoLightningModule
 from sklearn.metrics import (
     confusion_matrix,
     f1_score,
@@ -25,9 +27,6 @@ from sklearn.metrics import (
     roc_curve,
 )
 from tqdm import tqdm
-
-from datasets import FFPPDataModule
-from model import VideoLightningModule
 
 
 def compute_eer(y_true, y_score):

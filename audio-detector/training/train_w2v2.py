@@ -1,11 +1,13 @@
 import os
-import torch
-import torch.nn as nn
+import sys
+
 import lightning.pytorch as pl
-from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar, EarlyStopping
-from transformers import Wav2Vec2ForSequenceClassification
-from sklearn.metrics import roc_curve
 import numpy as np
+import torch
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, TQDMProgressBar
+from sklearn.metrics import roc_curve
+from torch import nn
+from transformers import Wav2Vec2ForSequenceClassification
 
 try:
     from datasets import ASVspoofDataModule
@@ -15,9 +17,9 @@ torch.set_float32_matmul_precision("high")
 
 
 def compute_eer(y_true, y_score):
-    fpr, tpr, thresholds = roc_curve(y_true, y_score)
+    fpr, tpr, _thresholds = roc_curve(y_true, y_score)
     fnr = 1 - tpr
-    idx = np.nanargmin(np.absolute((fnr - fpr)))
+    idx = np.nanargmin(np.absolute(fnr - fpr))
     eer = fpr[idx]
     return eer
 
@@ -114,7 +116,7 @@ class InfoCallback(pl.Callback):
         epoch = trainer.current_epoch + 1
         max_epochs = trainer.max_epochs
         print(f"\n\n{'=' * 60}")
-        print("✅ Zakończono walidację (Epoka {}/{})!".format(epoch, max_epochs))
+        print(f"✅ Zakończono walidację (Epoka {epoch}/{max_epochs})!")
         print("💾 Checkpointy zostały zaktualizowane (o ile wynik był lepszy).")
         print("🛑 To jest w pełni BEZPIECZNY MOMENT, aby przerwać trening (Ctrl+C).")
         print(f"{'=' * 60}\n")
@@ -126,7 +128,7 @@ if __name__ == "__main__":
             "BŁĄD: Karta graficzna (GPU) nie została wykryta! Trening modelu Wav2Vec2 wymaga GPU."
         )
         print("Przerwanie działania skryptu.")
-        exit(1)
+        sys.exit(1)
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_ROOT = os.path.join(SCRIPT_DIR, "data/archive/LA/LA")
     EXTRA_FAKE_DIR = os.path.join(SCRIPT_DIR, "data/generated_audio")
