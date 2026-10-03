@@ -39,7 +39,7 @@ jobs:
             audio-detector,
           ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # GHCR image names must be lowercase; the repo owner has an uppercase letter.
       - name: image namespace
