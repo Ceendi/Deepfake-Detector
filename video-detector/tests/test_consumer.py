@@ -18,7 +18,7 @@ _fake_inference = types.ModuleType("src.inference")
 _fake_inference.VideoInference = MagicMock()
 sys.modules.setdefault("src.inference", _fake_inference)
 
-import src.consumer as consumer  # noqa: E402
+from src import consumer
 
 ANALYSIS_ID = "550e8400-e29b-41d4-a716-446655440000"
 

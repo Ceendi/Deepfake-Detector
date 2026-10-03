@@ -172,7 +172,7 @@ def main():
 
     dataset = FFPPClipDataset(rows, args.cache_dir, is_train=False)
     for i in range(len(dataset)):
-        clip, label = dataset[i]
+        clip, _label = dataset[i]
         row = rows.iloc[i]
         prob, cams, attn = cam_engine.run(clip.to(args.device))
         top_idx = np.argsort(attn)[::-1][: args.topk]

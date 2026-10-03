@@ -95,12 +95,21 @@ Body:
 ```
 
 `type`: `VIDEO` | `AUDIO` | `FULL`. Response `201 Created`: `Analysis` (see below).
+`fileId` and `fileKey` must be nonblank and no longer than 255 and 500 characters,
+respectively; invalid values return `400` before capacity admission.
+
+Capacity is the number of committed `PENDING`/`PROCESSING` rows in PostgreSQL.
+Admission is serialized by a transaction advisory lock until the create commits or
+rolls back. A failed create consumes no capacity, and a terminal update frees capacity
+only after commit. Redis availability does not affect this limit. See
+[deployment and regression evidence](../analysis-capacity.md).
 
 Two distinct `429 Too Many Requests` can occur:
 
 - **Orchestrator backpressure** (in-flight analysis limit): body
   `{ "queuePosition": <int>, "retryAfterSeconds": <int> }` plus a `Retry-After`
-  header. `queuePosition` is the in-flight analysis count at the moment of rejection.
+  header. `queuePosition` is the active analysis count plus this rejected request,
+  capped at the maximum signed integer.
 - **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
   carried in `X-RateLimit-*` headers (Spring Cloud Gateway default).
 
@@ -200,8 +209,8 @@ in [`amqp-messages.md`](./amqp-messages.md).
 Permanently deletes a **finished** analysis from the caller's history (hard delete — the row is
 gone from list/get/stats/stream, not soft-flagged). `204 No Content` on success. `409 Conflict`
 (code `CONFLICT`) if the analysis is still in progress (`PENDING`/`PROCESSING`) — cancel it first
-(see `DELETE /api/analysis/{id}`), because deleting an active analysis would leak its in-flight
-backpressure slot and race the detector still writing its result. `404 Not Found` for a missing,
+(see `DELETE /api/analysis/{id}`), because deleting an active analysis would discard its
+state prematurely and race the detector still writing its result. `404 Not Found` for a missing,
 already-deleted, or non-owned analysis (IDOR — never `403`).
 
 Distinct route from cancel on purpose: `DELETE /api/analysis/{id}` soft-stops a *running* analysis

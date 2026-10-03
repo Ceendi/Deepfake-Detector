@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -64,7 +65,7 @@ class AnalysisServiceIdempotencyTest {
 
         verify(repository, never()).findById(any());
         verify(repository, never()).save(any());
-        verify(backpressure, never()).release();
+        verifyNoInteractions(backpressure);
         verify(idempotency, never()).markProcessed(any(), any());
     }
 

@@ -1,68 +1,64 @@
 package com.deepfake.orchestrator.service;
 
+import java.sql.Connection;
+
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataAccessException;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.deepfake.orchestrator.exception.TooManyAnalysesException;
-
-import lombok.extern.slf4j.Slf4j;
+import com.deepfake.orchestrator.repository.AnalysisRepository;
 
 /**
- * In-flight analysis limiter backed by a single Redis counter. acquire() reserves a slot on POST,
- * release() frees it at a terminal state. Counts analyses, not detector tasks (one FULL analysis =
- * two tasks = one slot). Fail-open: if Redis is down we admit the request — backpressure is overload
- * protection, not a security gate (D6 graceful degradation).
+ * Counts active database rows instead of maintaining a second, non-transactional counter.
+ * A PostgreSQL transaction advisory lock serializes admissions until commit or rollback.
+ * Terminal transitions free capacity only when their database update commits.
  */
-@Slf4j
 @Component
 public class BackpressureGuard {
 
-    private static final String KEY = "analyses:inflight";
+    // Dedicated advisory-lock namespace and resource, shared by all admissions to this database.
+    private static final String ADMISSION_LOCK = "SELECT pg_advisory_xact_lock(114545, 1)";
 
-    private final StringRedisTemplate redis;
+    private final JdbcTemplate jdbc;
+    private final AnalysisRepository repository;
     private final int maxInflight;
     private final int retryAfterSeconds;
 
-    public BackpressureGuard(StringRedisTemplate redis,
+    public BackpressureGuard(JdbcTemplate jdbc, AnalysisRepository repository,
             @Value("${backpressure.max-inflight:20}") int maxInflight,
             @Value("${backpressure.retry-after-seconds:5}") int retryAfterSeconds) {
-        this.redis = redis;
+        if (maxInflight < 1 || retryAfterSeconds < 1) {
+            throw new IllegalArgumentException("Backpressure limits must be positive");
+        }
+        this.jdbc = jdbc;
+        this.repository = repository;
         this.maxInflight = maxInflight;
         this.retryAfterSeconds = retryAfterSeconds;
     }
 
-    /** Reserve a slot. INCR-then-check-then-rollback avoids TOCTOU. Throws 429 when over the limit. */
+    /** Must share the writer's transaction and connection; an autocommit lock offers no protection. */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void acquire() {
-        long inflight;
-        try {
-            Long incremented = redis.opsForValue().increment(KEY);
-            inflight = incremented != null ? incremented : 0L;
-        } catch (DataAccessException e) {
-            log.warn("backpressure degraded (Redis down) — failing open: {}", e.getMessage());
-            return;
-        }
-        if (inflight > maxInflight) {
-            try {
-                redis.opsForValue().decrement(KEY); // undo our reservation
-            } catch (DataAccessException e) {
-                // Redis died after our increment: still answer 429 (the intent), accept a tiny +1 drift.
-                log.warn("backpressure rollback skipped (degraded): {}", e.getMessage());
+        jdbc.execute((ConnectionCallback<Void>) connection -> {
+            // The count after waiting for the lock must see the preceding admission's commit.
+            if (connection.getTransactionIsolation() != Connection.TRANSACTION_READ_COMMITTED) {
+                throw new IllegalStateException("Analysis admission requires READ_COMMITTED isolation");
             }
-            throw new TooManyAnalysesException((int) inflight, retryAfterSeconds);
-        }
-    }
-
-    /** Free a slot at a terminal transition. Floor at 0 to bound drift from a crash mid-flight. */
-    public void release() {
-        try {
-            Long inflight = redis.opsForValue().decrement(KEY);
-            if (inflight != null && inflight < 0) {
-                redis.opsForValue().set(KEY, "0");
+            try (var statement = connection.createStatement()) {
+                statement.execute(ADMISSION_LOCK);
             }
-        } catch (DataAccessException e) {
-            log.warn("backpressure release skipped (degraded): {}", e.getMessage());
+            return null;
+        });
+        // Also count creates already made by a caller in the same enclosing transaction.
+        repository.flush();
+        long active = repository.countActive();
+        if (active >= maxInflight) {
+            int queuePosition = (int) Math.min(active + 1, Integer.MAX_VALUE);
+            throw new TooManyAnalysesException(queuePosition, retryAfterSeconds);
         }
     }
 }

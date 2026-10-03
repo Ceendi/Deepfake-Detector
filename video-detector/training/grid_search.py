@@ -19,8 +19,8 @@ import itertools
 import os
 import time
 
-import torch
 import lightning.pytorch as pl
+import torch
 from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
 from lightning.pytorch.loggers import CSVLogger
 

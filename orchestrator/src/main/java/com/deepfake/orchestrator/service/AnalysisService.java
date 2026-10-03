@@ -25,6 +25,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -68,7 +69,9 @@ public class AnalysisService {
     private final AnalysisMetrics metrics;
     private final ResultDetailsExtractor detailsExtractor = new ResultDetailsExtractor();
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
+        validateCreate(req, userId);
         backpressure.acquire(); // 429 here -> nothing persisted or published
 
         Analysis analysis = Analysis.builder()
@@ -113,6 +116,18 @@ public class AnalysisService {
         }
 
         return AnalysisResponse.from(analysis);
+    }
+
+    private static void validateCreate(CreateAnalysisRequest req, String userId) {
+        if (req == null || req.type() == null
+                || invalidIdentifier(req.fileId(), 255) || invalidIdentifier(req.fileKey(), 500)
+                || invalidIdentifier(userId, 255)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid analysis identifiers or type");
+        }
+    }
+
+    private static boolean invalidIdentifier(String value, int maxLength) {
+        return value == null || value.isBlank() || value.length() > maxLength;
     }
 
     @Transactional(readOnly = true)
@@ -200,7 +215,7 @@ public class AnalysisService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "analysis already finished");
         }
 
-        Analysis fresh = onTerminal(id); // evict + release + metric + SSE {status: CANCELLED} after commit
+        Analysis fresh = onTerminal(id); // evict + metric + SSE {status: CANCELLED} after commit
         flagCancelAfterCommit(id);
         return AnalysisResponse.from(fresh);
     }
@@ -208,8 +223,8 @@ public class AnalysisService {
     /**
      * Permanently delete a finished analysis from the caller's history. IDOR -> 404 (like get()).
      * Only a terminal analysis (COMPLETED/FAILED/CANCELLED) can be deleted; an in-progress one -> 409
-     * ("cancel it first"): hard-deleting an active analysis would leak its in-flight backpressure slot
-     * (released only on a terminal transition) and race the detector still writing its result.
+     * ("cancel it first"): hard-deleting an active analysis would race ongoing detector work
+     * and discard its state before a terminal transition.
      *
      * <p>Hard delete, by design: the row simply vanishes from every read path (list, get, stats,
      * stream) with no soft-delete predicate to thread through each query — a stale row could never
@@ -346,7 +361,6 @@ public class AnalysisService {
     // metrics need, so every terminal path (result, fail, DLQ, stuck, cancel) is counted here once.
     private Analysis onTerminal(UUID id) {
         cache.evictById(id);
-        backpressure.release();
         Analysis a = repository.findById(id).orElseThrow();
         metrics.terminal(a.getStatus(), a.getType());
         if (a.getStatus() == AnalysisStatus.COMPLETED) {

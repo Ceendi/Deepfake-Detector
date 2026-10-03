@@ -2,6 +2,7 @@ import argparse
 import importlib
 import sys
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -20,7 +21,7 @@ from tqdm import tqdm
 def compute_eer(y_true, y_score):
     fpr, tpr, thresholds = roc_curve(y_true, y_score)
     fnr = 1 - tpr
-    idx = np.nanargmin(np.absolute((fnr - fpr)))
+    idx = np.nanargmin(np.absolute(fnr - fpr))
     eer_threshold = thresholds[idx]
     eer = fpr[idx]
     return eer, eer_threshold
