@@ -168,7 +168,7 @@ You can create an account (open registration) and upload a video or audio file f
 All published ports are bound to `127.0.0.1` (reachable only from this machine).
 Eureka does not publish port `8761`; its dashboard and registration API are internal
 to the trusted Compose network. The Gateway remains at `http://localhost:8080`.
-The passwords are dev-only. See [discovery isolation and verification](README.md#architecture)
+The passwords are dev-only. See [discovery isolation and verification](docs/local-backend.md#service-discovery-boundary)
 for the registry check and the recreation command required when upgrading an existing stack.
 
 ---
