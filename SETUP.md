@@ -19,7 +19,7 @@ building the Docker images.
 - **Disk:** ~10–12 GB for the Docker images
 - **Internet for the first `--build`** — the `video-detector` image compiles `insightface`
   and downloads the `buffalo_l` face-detector pack; the first build takes several to ~15 minutes.
-- Free host ports: `5432, 5672, 6379, 8080, 8180, 8333, 15672, 8761` and `5173` (frontend).
+- Free host ports: `5432, 5672, 6379, 8080, 8180, 8333, 15672` and `5173` (frontend).
 
 ---
 
@@ -165,7 +165,11 @@ You can create an account (open registration) and upload a video or audio file f
 | RabbitMQ UI | <http://localhost:15672> | `deepfake` / `changeme_dev` |
 | Grafana (`monitoring` profile) | <http://localhost:3000> | `admin` / `admin` |
 
-All ports are bound to `127.0.0.1` (reachable only from this machine). The passwords are dev-only.
+All published ports are bound to `127.0.0.1` (reachable only from this machine).
+Eureka does not publish port `8761`; its dashboard and registration API are internal
+to the trusted Compose network. The Gateway remains at `http://localhost:8080`.
+The passwords are dev-only. See [discovery isolation and verification](docs/local-backend.md#service-discovery-boundary)
+for the registry check and the recreation command required when upgrading an existing stack.
 
 ---
 

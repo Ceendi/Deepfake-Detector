@@ -3,6 +3,10 @@ name: Infrastructure smoke
 on:
   pull_request:
     paths:
+      - gateway/**
+      - eureka-server/**
+      - file-service/**
+      - orchestrator/**
       - docker-compose.yml
       - .env.example
       - infra/tempo/**
@@ -14,6 +18,10 @@ on:
   push:
     branches: [main]
     paths:
+      - gateway/**
+      - eureka-server/**
+      - file-service/**
+      - orchestrator/**
       - docker-compose.yml
       - .env.example
       - infra/tempo/**
@@ -44,3 +52,11 @@ jobs:
       - uses: actions/checkout@v7
       - run: python3 infra/tests/test_keycloak.py
       - run: python3 infra/tests/test_security_report.py
+
+  discovery:
+    name: Discovery isolation and gateway routing
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 infra/tests/test_discovery.py
