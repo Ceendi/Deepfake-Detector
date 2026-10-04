@@ -127,3 +127,37 @@ jobs:
         run: uv run --frozen python -m pytest -q tests
       - name: Exercise offline model checkpoints and gradients
         run: uv run --frozen python -m pytest -q training/tests
+
+  detector-images:
+    name: Detector image security and compatibility (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [audio-detector, video-detector]
+    env:
+      SERVICE: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the complete detector image
+        run: docker build --tag "detector-security:$SERVICE" "$SERVICE"
+      - name: Test CPU imports, consumers, checkpoints and ONNX without network
+        run: scripts/check-detector-image.sh "$SERVICE" "detector-security:$SERVICE"
+      - name: Scan installed OS and Python packages
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: detector-security:${{ matrix.service }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+          format: json
+          output: detector-image.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: detector-image-scan-${{ matrix.service }}
+          path: detector-image.json
+          if-no-files-found: error

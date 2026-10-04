@@ -1,9 +1,11 @@
-FROM python:3.12-slim
+FROM ubuntu:24.04@sha256:a853f94d226358a79c740cfc7bce0c289748f3fe3488d921d038ccd752c61b60 AS runtime-base
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
+    UV_NO_CACHE=1 \
+    UV_PYTHON=/usr/bin/python3 \
+    UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
     MPLCONFIGDIR=/tmp/matplotlib \
@@ -12,10 +14,14 @@ ENV PYTHONUNBUFFERED=1 \
 # ffmpeg: audio extraction; libglib2.0-0: librosa/soundfile runtime dep; curl: healthcheck.
 # No libgl1 (OpenGL) — only OpenCV needs it, and this service has no cv2.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ffmpeg libglib2.0-0 curl \
+      python3 ca-certificates ffmpeg libglib2.0-0 curl \
     && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir uv==0.12.23
-RUN addgroup --system app && adduser --system --ingroup app app
+COPY --from=ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 /uv /uvx /usr/local/bin/
+RUN groupadd --system app && useradd --system --gid app --create-home app
+USER app
+
+FROM runtime-base AS runtime
+USER root
 
 COPY --chown=app:app pyproject.toml uv.lock ./
 # Production image is CPU-only (ONNX CPUExecutionProvider). Pulling CPU wheels

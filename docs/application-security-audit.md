@@ -17,7 +17,9 @@ lockfiles, with unfixed findings included and no vulnerability suppressions.
 
 These counts are package/advisory occurrences; shared dependencies appear in
 multiple services. npm audit also reports zero vulnerabilities of any severity
-for the installed frontend graph. A root-filesystem scan of the four freshly
+for the installed frontend graph. Both complete Linux/AMD64 detector images
+(OS packages and installed Python graph) also report zero HIGH/CRITICAL.
+A root-filesystem scan of the four freshly
 built Spring Boot JARs reports zero HIGH/CRITICAL findings.
 
 ## Changes and compatibility
@@ -44,10 +46,21 @@ checkpoint reload without downloading pretrained weights.
 
 Pin video torchvision to the same CPU index as torch; mixing CPU torch and a
 PyPI/CUDA torchvision wheel caused a missing `torchvision::nms` operator on Linux.
+The old `python:3.12-slim` base reported 45 HIGH OS findings, including an
+available PCRE2 fix. Both detectors now use a checksummed Ubuntu 24.04 base
+with its supported Python 3.12 packages, updated native libraries and a pinned
+uv binary. This retains the interpreter minor version and the CPU wheel graph.
+The complete resulting images were built and scanned rather than relying only
+on a lockfile or bare-base scan.
 Add the video lockfile and make both CPU Dockerfiles install their exact frozen
 uv graph with uv 0.12.23. CI checks the dependency scan and npm audit, then installs
 both complete frozen Python graphs on Linux/Python 3.12 and runs consumer and
-real ML library compatibility tests in separate processes. The explicit legacy
+real ML library compatibility tests in separate processes. A second Docker
+matrix builds each complete production image, verifies non-root CPU imports,
+runs the same consumer/ML tests without network and scans installed OS/Python
+packages. `scripts/check-detector-image.sh` adds pytest only in a disposable test
+layer; production images retain their no-dev installation.
+The explicit legacy
 ONNX export keeps the existing opset 14 / dynamic-axes inference contract; its
 upstream deprecation warnings are visible.
 
@@ -57,11 +70,13 @@ Local Maven verify passed for gateway, eureka-server, file-service and
 orchestrator, including Docker-backed integration tests. Audio has 23 passing
 consumer/extraction tests; video has 34. Both offline ML compatibility tests pass
 on Python 3.12 with the patched ML libraries. CI verifies the frozen graphs on
-Linux; local ML checks used macOS/ARM64.
+Linux; local ML checks used macOS/ARM64; both complete Linux/AMD64 images were also
+tested under local emulation, with production-user CPU imports, 57 consumer
+tests and both offline checkpoint/export tests passing without network.
 
 Not performed: full production-weight inference/training, accuracy or
-performance comparison, full detector Docker builds (including model assets),
-browser end-to-end upload/analysis, or live deployment. Small deterministic
+performance comparison, startup with the private deepfake model assets,
+browser end-to-end upload/analysis, full Java Docker build stages or live deployment. Small deterministic
 fixtures establish API/checkpoint/export compatibility, not real-model accuracy.
 Infrastructure images and their remaining findings are handled separately in
 PR #73. Its image results are not included in this application-only zero count.
