@@ -140,11 +140,24 @@ Orchestrator persists the keys and serves the artifacts itself. Empty list when 
 detector produced no visualizations. This is the only accepted field — URI-style
 variants (`gradcam_url`, `gradcam_urls`) are ignored.
 
-`confidence` and `verdict` are per-source: the Orchestrator persists them in the
-per-source `details` JSON (REST `details.video.confidence` / `details.audio.confidence`)
-alongside the top-level aggregate. Each detector computes confidence with its own
-threshold and formula — the video detector uses `|prob − 0.5| × 2`, while the audio
-detector normalizes against a threshold that may differ from 0.5.
+`prob_fake` is the score consumed by the Orchestrator. Audio uses the versioned
+shared decision scale described in [Audio score contract](./audio-score-contract.md),
+with `metadata.score_contract: "audio-threshold-v1"`. It is **not** a statistically
+calibrated probability. `FAKE` means `prob_fake > 0.5`; equality means `REAL`.
+Audio and video confidence on this scale is `2 * abs(prob_fake - 0.5)`.
+`confidence` and `verdict` are per-source and persisted in REST `details.audio` /
+`details.video`; the top-level result uses the existing `0.6 * video + 0.4 * audio`
+aggregation (or the only source for AUDIO/VIDEO). FULL need not agree with either
+source verdict when the other source is on the opposite side of the boundary.
+
+For audio, `metadata.raw_prob_fake` retains the unrounded pooled model score and
+`metadata.threshold_used` retains the effective model threshold (default fast:
+`0.3049`; accurate: `0.3000`). Each `segment_predictions` entry contains unrounded
+`raw_prob_fake` and a four-decimal `prob_fake` on the same shared scale as the
+result. `insights` are heuristic descriptions of those published shared scores.
+Only versioned segment `prob_fake` values may be compared to `0.5` or rendered
+on the shared risk scale. Unversioned historical segments are raw model scores.
+See the linked contract for rounding, deployment, drain and historical-record rules.
 
 `metadata` — detector-defined free-form object (e.g. audio publishes
 `segment_predictions`, `insights`, `duration_seconds`). The Orchestrator persists it
@@ -156,8 +169,8 @@ Video publishes `duration_seconds`, `fps`, `frames_sampled`, `faces_detected` an
 the attention-pooling weights of the sampled frames (they sum to 1). **`attention` is
 the frame's relative contribution to the clip-level verdict, not a per-frame
 `prob_fake`** — the video model emits a single logit per clip, so clients must not
-render it as a fake-probability timeline (audio's `segment_predictions` *are*
-per-segment probabilities; these are not). On a REAL verdict the highest-attention
+render it as a fake-probability timeline (audio's versioned `segment_predictions` are
+per-window decision scores; video attention values are not). On a REAL verdict the highest-attention
 frames are the ones that most convinced the model of authenticity. Every `metadata`
 field is source-specific and optional — consumers must not require a field published
 by the other detector.

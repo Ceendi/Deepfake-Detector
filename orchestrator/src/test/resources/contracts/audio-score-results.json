@@ -1,0 +1,594 @@
+[
+  {
+    "label": "fast-zero",
+    "raw_score": 0.0,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.0,
+        "verdict": "REAL",
+        "confidence": 1.0,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.0,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.0,
+              "prob_fake": 0.0
+            }
+          ],
+          "insights": [
+            "Model wskazuje na niski poziom cech syntezy AI w nagraniu."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "fast-below",
+    "raw_score": 0.2949,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.4836,
+        "verdict": "REAL",
+        "confidence": 0.0328,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.2949,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.2949,
+              "prob_fake": 0.4836
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "fast-just-below",
+    "raw_score": 0.30489999999999995,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5,
+        "verdict": "REAL",
+        "confidence": 0.0,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.30489999999999995,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.30489999999999995,
+              "prob_fake": 0.5
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "fast-threshold",
+    "raw_score": 0.3049,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5,
+        "verdict": "REAL",
+        "confidence": 0.0,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.3049,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.3049,
+              "prob_fake": 0.5
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "fast-just-above",
+    "raw_score": 0.30490000000000006,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5001,
+        "verdict": "FAKE",
+        "confidence": 0.0002,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.30490000000000006,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.30490000000000006,
+              "prob_fake": 0.5001
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "fast-above",
+    "raw_score": 0.3149,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5072,
+        "verdict": "FAKE",
+        "confidence": 0.0144,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.3149,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.3149,
+              "prob_fake": 0.5072
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "fast-raw-0.4",
+    "raw_score": 0.4,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5684,
+        "verdict": "FAKE",
+        "confidence": 0.1368,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.4,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.4,
+              "prob_fake": 0.5684
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "fast-one",
+    "raw_score": 1.0,
+    "threshold": 0.3049,
+    "mode": "fast",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 1.0,
+        "verdict": "FAKE",
+        "confidence": 1.0,
+        "model_version": "v1.3.0-fast",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 1.0,
+          "threshold_used": 0.3049,
+          "mode_used": "fast",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 1.0,
+              "prob_fake": 1.0
+            }
+          ],
+          "insights": [
+            "Całe nagranie wykazuje wysokie wskaźniki syntezy AI według modelu."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-zero",
+    "raw_score": 0.0,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.0,
+        "verdict": "REAL",
+        "confidence": 1.0,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.0,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.0,
+              "prob_fake": 0.0
+            }
+          ],
+          "insights": [
+            "Model wskazuje na niski poziom cech syntezy AI w nagraniu."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-below",
+    "raw_score": 0.29,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.4833,
+        "verdict": "REAL",
+        "confidence": 0.0334,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.29,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.29,
+              "prob_fake": 0.4833
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-just-below",
+    "raw_score": 0.29999999999999993,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5,
+        "verdict": "REAL",
+        "confidence": 0.0,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.29999999999999993,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.29999999999999993,
+              "prob_fake": 0.5
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-threshold",
+    "raw_score": 0.3,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5,
+        "verdict": "REAL",
+        "confidence": 0.0,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.3,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.3,
+              "prob_fake": 0.5
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-just-above",
+    "raw_score": 0.30000000000000004,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5001,
+        "verdict": "FAKE",
+        "confidence": 0.0002,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.30000000000000004,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.30000000000000004,
+              "prob_fake": 0.5001
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-above",
+    "raw_score": 0.31,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5071,
+        "verdict": "FAKE",
+        "confidence": 0.0142,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.31,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.31,
+              "prob_fake": 0.5071
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-raw-0.4",
+    "raw_score": 0.4,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 0.5714,
+        "verdict": "FAKE",
+        "confidence": 0.1428,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 0.4,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 0.4,
+              "prob_fake": 0.5714
+            }
+          ],
+          "insights": [
+            "Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  },
+  {
+    "label": "accurate-one",
+    "raw_score": 1.0,
+    "threshold": 0.3,
+    "mode": "accurate",
+    "payload": {
+      "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+      "correlation_id": "audio-contract-fixture",
+      "source": "audio",
+      "status": "COMPLETED",
+      "result": {
+        "prob_fake": 1.0,
+        "verdict": "FAKE",
+        "confidence": 1.0,
+        "model_version": "v1.3.0-accurate",
+        "metadata": {
+          "score_contract": "audio-threshold-v1",
+          "raw_prob_fake": 1.0,
+          "threshold_used": 0.3,
+          "mode_used": "accurate",
+          "segment_predictions": [
+            {
+              "start_time": 0.0,
+              "end_time": 1.0,
+              "raw_prob_fake": 1.0,
+              "prob_fake": 1.0
+            }
+          ],
+          "insights": [
+            "Całe nagranie wykazuje wysokie wskaźniki syntezy AI według modelu."
+          ]
+        },
+        "gradcam_keys": []
+      },
+      "error": null
+    }
+  }
+]

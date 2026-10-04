@@ -21,6 +21,8 @@ sys.path.append(PROJECT_ROOT)
 
 from training.train_mel import MelCNNLightningModule
 
+from .score_contract import build_audio_result
+
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
 MEL_CKPT_PATH = os.path.join(
     PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "mel_model-epoch=49-val_eer=0.0816.ckpt"
@@ -129,45 +131,6 @@ class AudioInference:
 
         return out_png_path
 
-    def _generate_insights(self, segment_predictions, overall_prob, threshold):
-        insights = []
-        if not segment_predictions:
-            return ["Brak danych do analizy odcinkowej."]
-
-        if overall_prob > max(0.85, threshold + 0.35):
-            insights.append("Całe nagranie wykazuje spójne, bardzo wysokie parametry syntezy AI - model wskazuje na mocną ingerencję lub całkowite wygenerowanie głosu.")
-        elif overall_prob < min(0.15, threshold - 0.35):
-            insights.append("Sygnał audio jest w pełni naturalny, nie wykryto żadnych śladów modulacji AI.")
-
-        fake_segments = [s for s in segment_predictions if s["prob_fake"] > threshold]
-
-        if fake_segments and overall_prob <= max(0.85, threshold + 0.35):
-            clusters = []
-            current_cluster = [fake_segments[0]]
-            for s in fake_segments[1:]:
-                last_s = current_cluster[-1]
-                if s["start_time"] - last_s["start_time"] <= 0.6:
-                    current_cluster.append(s)
-                else:
-                    clusters.append(current_cluster)
-                    current_cluster = [s]
-            clusters.append(current_cluster)
-            
-            biggest_cluster = max(clusters, key=len)
-            start_time = biggest_cluster[0]["start_time"]
-            end_time = biggest_cluster[-1]["end_time"]
-            
-            if len(biggest_cluster) >= 3:
-                insights.append(f"Najwyższe stężenie cech deepfake występuje w fragmencie nagrania od {start_time:.1f}s do {end_time:.1f}s.")
-            elif len(fake_segments) <= 3 and overall_prob < threshold:
-                peak = max(fake_segments, key=lambda x: x["prob_fake"])
-                insights.append(f"Nagranie brzmi w większości naturalnie, jednak zidentyfikowano krótkie, podejrzane artefakty w okolicy {peak['start_time']:.1f}s - {peak['end_time']:.1f}s.")
-
-        if not insights:
-            insights.append("Analiza wykazuje niejednoznaczne cechy - zalecana dodatkowa weryfikacja.")
-
-        return insights
-
     @INFERENCE_TIME.time()
     def analyze(self, file_path, mode="accurate", progress_callback=None):
         start_analysis = time.time()
@@ -238,7 +201,7 @@ class AudioInference:
             segment_predictions.append({
                 "start_time": start_time,
                 "end_time": end_time,
-                "prob_fake": round(final_prob, 4)
+                "raw_prob_fake": final_prob
             })
             
             if final_prob > highest_fake_prob:
@@ -261,30 +224,11 @@ class AudioInference:
         if progress_callback:
             progress_callback(100, "POSTPROCESSING")
             
-        if segment_predictions:
-            raw_probs = [seg["prob_fake"] for seg in segment_predictions]
-            top_k = max(1, int(len(raw_probs) * 0.3))
-            top_probs = sorted(raw_probs, reverse=True)[:top_k]
-            overall_prob = float(np.mean(top_probs))
-        else:
-            overall_prob = threshold
-            
-        insights = self._generate_insights(segment_predictions, overall_prob, threshold)
-        end_analysis = time.time()
-        
-        return {
-            "prob_fake": round(overall_prob, 4),
-            "verdict": "FAKE" if overall_prob > threshold else "REAL",
-            "confidence": round(abs(overall_prob - threshold) / max(threshold, 1.0 - threshold), 4),
-            "model_version": f"v1.2.0-{mode}",
-            "local_gradcam_path": gradcam_path,
-            "metadata": {
-                "duration_seconds": round(duration_sec, 2),
-                "analysis_time_seconds": round(end_analysis - start_analysis, 2),
-                "segments_processed": num_chunks,
-                "segment_predictions": segment_predictions,
-                "insights": insights,
-                "threshold_used": threshold,
-                "mode_used": mode
-            }
-        }
+        result = build_audio_result(segment_predictions, threshold, mode)
+        result["local_gradcam_path"] = gradcam_path
+        result["metadata"].update({
+            "duration_seconds": round(duration_sec, 2),
+            "analysis_time_seconds": round(time.time() - start_analysis, 2),
+            "segments_processed": num_chunks,
+        })
+        return result

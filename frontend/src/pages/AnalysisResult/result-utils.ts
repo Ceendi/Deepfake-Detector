@@ -1,4 +1,4 @@
-import type { AnalysisType, AudioSegmentPrediction, Verdict } from '@/api/types'
+import type { AnalysisType, AudioSegmentPrediction, SourceDetails, Verdict } from '@/api/types'
 
 const dayFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' })
@@ -43,15 +43,33 @@ export function analysisDuration(createdAt: string, updatedAt: string): string {
   return rem ? `${m} min ${rem} s` : `${m} min`
 }
 
-// Per-źródło: videoProb/audioProb to P(FAKE). Werdykt i „pewność" liczymy względem progu 0.5
-// (pewność zawsze W KIERUNKU werdyktu: dla REAL pokazujemy 1 − prob).
+// Shared decision rule and confidence match the persisted orchestrator result.
 export interface SourceOutcome {
   verdict: Verdict
-  confidence: number // 0..1
+  confidence: number
 }
 export function sourceOutcome(prob: number): SourceOutcome {
-  const verdict: Verdict = prob >= 0.5 ? 'FAKE' : 'REAL'
-  return { verdict, confidence: verdict === 'FAKE' ? prob : 1 - prob }
+  return {
+    verdict: prob > 0.5 ? 'FAKE' : 'REAL',
+    confidence: Number((Math.abs(prob - 0.5) * 2).toFixed(4)),
+  }
+}
+
+export function hasAudioScoreContract(metadata: Record<string, unknown> | undefined): boolean {
+  return metadata?.score_contract === 'audio-threshold-v1'
+}
+
+export function audioOutcome(
+  prob: number,
+  details: SourceDetails | undefined,
+): SourceOutcome | null {
+  if (hasAudioScoreContract(details?.metadata)) return sourceOutcome(prob)
+  // Historical scores used model thresholds. Preserve the recorded source verdict;
+  // never infer one by comparing an unversioned raw score to the shared boundary.
+  if (details?.verdict === 'FAKE' || details?.verdict === 'REAL') {
+    return { verdict: details.verdict, confidence: details.confidence ?? 0 }
+  }
+  return null
 }
 
 // Wyciąga segmenty audio z surowego, wolnoformatowego `metadata`. Defensywnie: bierze tylko wpisy
@@ -59,6 +77,7 @@ export function sourceOutcome(prob: number): SourceOutcome {
 export function parseAudioSegments(
   metadata: Record<string, unknown> | undefined,
 ): AudioSegmentPrediction[] {
+  if (!hasAudioScoreContract(metadata)) return []
   const raw = metadata?.segment_predictions
   if (!Array.isArray(raw)) return []
 

@@ -30,12 +30,19 @@ docker build --platform "$platform" --build-arg "RUNTIME_IMAGE=$image" --tag "$t
 # Verify that the production user can import the real CPU libraries.
 docker run --rm --platform "$platform" --network none --entrypoint python "$image" -c \
   'import os, torch, torchvision, lightning; assert os.getuid() != 0; assert torch.version.cuda is None'
+# The audio wire fixture is shared with Java; its read-only mount mirrors the repository path.
+test_mounts=(
+  --mount "type=bind,source=$repo_root/$service/tests,target=/app/tests,readonly"
+  --mount "type=bind,source=$repo_root/$service/training/tests,target=/app/training/tests,readonly"
+)
+if [[ "$service" == "audio-detector" ]]; then
+  test_mounts+=(--mount "type=bind,source=$repo_root/orchestrator/src/test/resources/contracts,target=/orchestrator/src/test/resources/contracts,readonly")
+fi
 for suite in tests training/tests; do
   # Separate processes prevent the consumer tests' ML stubs from affecting real ML checks.
   docker run --rm --platform "$platform" --network none \
     --env OMP_NUM_THREADS=2 --env MKL_NUM_THREADS=2 \
-    --mount "type=bind,source=$repo_root/$service/tests,target=/app/tests,readonly" \
-    --mount "type=bind,source=$repo_root/$service/training/tests,target=/app/training/tests,readonly" \
+    "${test_mounts[@]}" \
     --entrypoint python "$test_image" -m pytest -q -p no:cacheprovider \
     --basetemp=/tmp/detector-check "$suite"
 done

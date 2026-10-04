@@ -80,8 +80,9 @@ export function AudioTimeline({ metadata }: { metadata: Record<string, unknown> 
       <Card>
         <CardBody>
           <p className={styles.blockText}>
-            Każdy fragment mowy oceniany jest osobno — kolor odpowiada prawdopodobieństwu, że dany
-            fragment został wygenerowany sztucznie. Przerwy oznaczają fragmenty bez mowy.
+            Każdy fragment mowy oceniany jest osobno — kolor odpowiada wynikowi modelu na wspólnej
+            skali ryzyka. Granica decyzji wynosi 50%; wynik nie jest skalibrowanym
+            prawdopodobieństwem. Przerwy oznaczają fragmenty bez mowy.
           </p>
 
           <div className={styles.legend}>

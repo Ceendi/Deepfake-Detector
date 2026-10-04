@@ -40,6 +40,8 @@ export interface StartAnalysisRequest {
 // endpointu artefaktów (TO czytamy), `gradcamKeys` = surowe klucze w buckecie (audyt),
 // `metadata` = wolnoformatowy obiekt detektora (snake_case, np. `frames_analyzed`).
 export interface SourceDetails {
+  verdict?: Verdict
+  confidence?: number // Distance from the decision boundary for the versioned audio contract.
   modelVersion: string
   gradcamKeys: string[]
   gradcamUrls: string[]
@@ -52,10 +54,9 @@ export interface AnalysisDetails {
   audio?: SourceDetails
 }
 
-// Per-segmentowa predykcja audio (`details.audio.metadata.segment_predictions`). Czasy w sekundach,
-// `prob_fake` to realne P(FAKE) okna (kontrakt: amqp-messages.md — w przeciwieństwie do wideo
-// `frame_predictions`, które są wagami attention). Okna nachodzą się (≈1 s okno, 0.5 s skok),
-// mogą mieć luki (cisza/brak mowy) i być downsamplowane do ≤500 wpisów.
+// Audio windows on the versioned shared decision scale, not calibrated probabilities.
+// raw_prob_fake is retained in metadata for audit; only prob_fake drives timeline colors.
+// Windows overlap (1 s window, 0.5 s step), skip silence and may be downsampled to 500 entries.
 export interface AudioSegmentPrediction {
   start_time: number
   end_time: number
