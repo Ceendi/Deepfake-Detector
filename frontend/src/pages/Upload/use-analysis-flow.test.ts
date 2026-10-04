@@ -79,12 +79,23 @@ beforeEach(() => {
 })
 
 describe('useAnalysisFlow', () => {
+  it.each([404, 503])('create rejection (%s) stops before opening a stream', async (status) => {
+    vi.mocked(startAnalysis).mockRejectedValue(
+      new ApiError({ status, message: 'File unavailable' }),
+    )
+    const { result, onComplete } = renderFlow()
+    await startUntilAnalyzing(result)
+    expect(result.current.state.name).toBe('failed')
+    expect(streamAnalysis).not.toHaveBeenCalled()
+    expect(onComplete).not.toHaveBeenCalled()
+  })
+
   it('happy path: upload → start → analyzing → COMPLETED woła onComplete', async () => {
     const { result, onComplete } = renderFlow()
 
     await startUntilAnalyzing(result)
     expect(result.current.state).toEqual({ name: 'analyzing', analysisId: 'an-1' })
-    expect(startAnalysis).toHaveBeenCalledWith({ fileId: 'f1', fileKey: 'k1', type: 'FULL' })
+    expect(startAnalysis).toHaveBeenCalledWith({ fileId: 'f1', type: 'FULL' })
 
     act(() => {
       streamHandlers.onResult({

@@ -60,3 +60,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 infra/tests/test_discovery.py
+
+  analysis-file-ownership:
+    name: Authorized analysis input and canonical task key
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 infra/tests/test_analysis_file_ownership.py

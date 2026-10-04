@@ -45,9 +45,14 @@ not exist, was soft-deleted, OR `userId != jwt.sub` (IDOR guard — never `403`)
   "name": "test.mp4",
   "size": 10485760,
   "duration": 12.5,
-  "mimetype": "video/mp4"
+  "mimetype": "video/mp4",
+  "objectKey": "550e8400-e29b-41d4-a716-446655440000_test.mp4"
 }
 ```
+
+`objectKey` is the canonical storage key from the owned, active metadata row.
+This additive field lets the orchestrator resolve its input through the authorized
+API using the caller's verified Bearer token.
 
 `duration` is the media length in seconds (from `ffprobe`); `null` if unknown.
 `name` is the original upload filename and may be `null`.
@@ -77,7 +82,7 @@ non-owned file (IDOR — never `403`).
 
 ### `POST /api/analysis`
 
-Start an analysis for an uploaded file.
+Start an analysis for an active uploaded file owned by the authenticated user.
 
 ```
 Content-Type: application/json
@@ -89,14 +94,27 @@ Body:
 ```json
 {
   "fileId": "550e8400-e29b-41d4-a716-446655440000",
-  "fileKey": "550e8400-e29b-41d4-a716-446655440000_test.mp4",
   "type": "VIDEO"
 }
 ```
 
 `type`: `VIDEO` | `AUDIO` | `FULL`. Response `201 Created`: `Analysis` (see below).
-`fileId` and `fileKey` must be nonblank and no longer than 255 and 500 characters,
-respectively; invalid values return `400` before capacity admission.
+`fileId` must be a UUID (maximum 255 characters); invalid values return `400`
+before lookup or capacity admission. The optional audio `mode` remains unchanged
+(`fast` or `accurate`, default `accurate`).
+
+Legacy clients may still send `fileKey` (maximum 500 characters), but it is
+**ignored**, including when it disagrees with metadata. The orchestrator forwards
+the verified Bearer token to `GET /api/files/{id}/metadata` and uses only its
+canonical `objectKey` for the saved analysis and every detector task. The response's
+`fileKey` is that canonical value. `X-User-ID` does not establish identity.
+
+Foreign, missing or soft-deleted files return `404`. Dependency timeout, connection
+failure, non-200/non-404 responses, or missing/invalid canonical metadata return
+`503` (`SERVICE_UNAVAILABLE`). These failures occur before the writer transaction
+and capacity admission: no analysis row, task publication or occupied slot.
+The complete HTTP response has a finite deadline (default 2 seconds, no retries).
+See [authorized input, rollout and acceptance tests](../analysis-file-ownership.md).
 
 Capacity is the number of committed `PENDING`/`PROCESSING` rows in PostgreSQL.
 Admission is serialized by a transaction advisory lock until the create commits or

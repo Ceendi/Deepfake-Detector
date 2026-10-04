@@ -18,6 +18,7 @@ export interface UploadResponse {
 
 export interface FileMetadata {
   fileId: string
+  objectKey: string
   name: string | null // oryginalna nazwa uploadu; może być null
   size: number
   duration: number | null // długość mediów w sekundach (ffprobe); null gdy nieznana
@@ -32,7 +33,6 @@ export interface PresignResponse {
 // --- Orchestrator ------------------------------------------------------------
 export interface StartAnalysisRequest {
   fileId: string
-  fileKey: string
   type: AnalysisType
 }
 

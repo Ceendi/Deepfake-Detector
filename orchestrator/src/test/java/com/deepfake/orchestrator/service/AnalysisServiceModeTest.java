@@ -64,7 +64,7 @@ class AnalysisServiceModeTest {
     void audioTaskCarriesRequestedMode() {
         givenSavedAnalysis(AnalysisType.AUDIO);
 
-        service.create(new CreateAnalysisRequest("f", "k", AnalysisType.AUDIO, AnalysisMode.FAST), "alice");
+        service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.AUDIO, AnalysisMode.FAST), "alice");
 
         verify(rabbitTemplate).convertAndSend(
                 eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_AUDIO), payloadCaptor.capture());
@@ -75,7 +75,7 @@ class AnalysisServiceModeTest {
     void missingModeDefaultsToAccurate() {
         givenSavedAnalysis(AnalysisType.AUDIO);
 
-        service.create(new CreateAnalysisRequest("f", "k", AnalysisType.AUDIO, null), "alice");
+        service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.AUDIO, null), "alice");
 
         verify(rabbitTemplate).convertAndSend(
                 eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_AUDIO), payloadCaptor.capture());
@@ -86,7 +86,7 @@ class AnalysisServiceModeTest {
     void fullAnalysisAddsModeOnlyToAudioTask() {
         givenSavedAnalysis(AnalysisType.FULL);
 
-        service.create(new CreateAnalysisRequest("f", "k", AnalysisType.FULL, AnalysisMode.FAST), "alice");
+        service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.FULL, AnalysisMode.FAST), "alice");
 
         verify(rabbitTemplate).convertAndSend(
                 eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_VIDEO), payloadCaptor.capture());

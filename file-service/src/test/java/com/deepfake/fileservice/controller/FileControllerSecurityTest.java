@@ -76,12 +76,13 @@ class FileControllerSecurityTest {
     void metadataReturns200ForOwner() throws Exception {
         UUID id = UUID.randomUUID();
         when(metadataService.metadata(eq(id), eq("user-a")))
-                .thenReturn(new FileMetadataResponse(id.toString(), "clip.mp4", 123L, 4.2, "video/mp4"));
+                .thenReturn(new FileMetadataResponse(id.toString(), "clip.mp4", 123L, 4.2, "video/mp4", "canonical/clip.mp4"));
 
         mvc.perform(get("/api/files/{id}/metadata", id)
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.fileId").value(id.toString()))
+                .andExpect(jsonPath("$.objectKey").value("canonical/clip.mp4"))
                 .andExpect(jsonPath("$.name").value("clip.mp4"))
                 .andExpect(jsonPath("$.mimetype").value("video/mp4"));
     }

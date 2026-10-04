@@ -8,7 +8,8 @@ import jakarta.validation.constraints.Size;
 
 public record CreateAnalysisRequest(
         @NotBlank @Size(max = 255) String fileId,
-        @NotBlank @Size(max = 500) String fileKey,
+        // Legacy compatibility field; ignored when resolving the analysis input.
+        @Size(max = 500) String fileKey,
         @NotNull AnalysisType type,
         AnalysisMode mode) {
 

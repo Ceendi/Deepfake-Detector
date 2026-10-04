@@ -70,7 +70,8 @@ public class AnalysisService {
     private final ResultDetailsExtractor detailsExtractor = new ResultDetailsExtractor();
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public AnalysisResponse create(CreateAnalysisRequest req, String userId) {
+    /** Transactional writer: only the creation facade supplies a resolved canonical file key. */
+    public AnalysisResponse createResolved(CreateAnalysisRequest req, String userId) {
         validateCreate(req, userId);
         backpressure.acquire(); // 429 here -> nothing persisted or published
 

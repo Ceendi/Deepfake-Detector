@@ -38,13 +38,14 @@ class FileMetadataServiceTest {
     @Test
     void returnsMetadataForOwner() {
         FileMetadata m = FileMetadata.builder().fileId(id).userId("alice").originalName("clip.mp4")
-                .mimetype("video/mp4").sizeBytes(123L).durationSeconds(4.2).build();
+                .objectKey("stored/clip.mp4").mimetype("video/mp4").sizeBytes(123L).durationSeconds(4.2).build();
         when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(m));
 
         FileMetadataResponse r = service.metadata(id, "alice");
 
         assertThat(r.fileId()).isEqualTo(id.toString());
         assertThat(r.name()).isEqualTo("clip.mp4");
+        assertThat(r.objectKey()).isEqualTo("stored/clip.mp4");
         assertThat(r.size()).isEqualTo(123L);
         assertThat(r.duration()).isEqualTo(4.2);
         assertThat(r.mimetype()).isEqualTo("video/mp4");

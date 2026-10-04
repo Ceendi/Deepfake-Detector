@@ -36,6 +36,7 @@ import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.service.AnalysisCreationService;
 import com.deepfake.orchestrator.service.ArtifactService;
 
 /**
@@ -53,6 +54,9 @@ class AnalysisControllerSecurityTest {
 
     @MockitoBean
     AnalysisService service;
+
+    @MockitoBean
+    AnalysisCreationService creationService;
 
     @MockitoBean
     ArtifactService artifactService;
@@ -106,17 +110,18 @@ class AnalysisControllerSecurityTest {
     }
 
     @Test
-    void createReturns201AndPassesJwtSubjectAsOwner() throws Exception {
+    void createWithFileIdAlonePassesVerifiedJwtAndIgnoresIdentityHeader() throws Exception {
         UUID id = UUID.randomUUID();
-        when(service.create(any(), eq("user-a"))).thenReturn(sample(id, "user-a"));
+        when(creationService.create(any(), eq("user-a"), eq("token"))).thenReturn(sample(id, "user-a"));
 
         mvc.perform(post("/api/analysis")
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"fileId\":\"file-1\",\"fileKey\":\"key-1\",\"type\":\"VIDEO\"}"))
+                        .header("X-User-ID", "user-b")
+                        .content("{\"fileId\":\"file-1\",\"type\":\"VIDEO\"}"))
                 .andExpect(status().isCreated());
 
-        verify(service).create(any(), eq("user-a"));
+        verify(creationService).create(any(), eq("user-a"), eq("token"));
     }
 
     @Test
