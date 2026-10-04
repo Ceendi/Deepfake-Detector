@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.6</version>
+		<version>4.0.8</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.deepfake</groupId>
@@ -28,7 +28,19 @@
 	</scm>
 	<properties>
 		<java.version>25</java.version>
-		<spring-cloud.version>2025.1.1</spring-cloud.version>
+		<spring-cloud.version>2025.1.3</spring-cloud.version>
+
+		<!-- Security patches shared by the independently built services. -->
+		<jackson-2-bom.version>2.22.3</jackson-2-bom.version>
+		<jackson-bom.version>3.2.3</jackson-bom.version>
+		<netty.version>4.2.18.Final</netty.version>
+		<tomcat.version>11.0.26</tomcat.version>
+		<micrometer.version>1.16.7</micrometer.version>
+		<httpcore5.version>5.4.4</httpcore5.version>
+		<bouncycastle.version>1.86</bouncycastle.version>
+		<freemarker.version>2.3.35</freemarker.version>
+		<postgresql.version>42.7.13</postgresql.version>
+		<rabbit-amqp-client.version>5.37.0</rabbit-amqp-client.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -86,6 +98,21 @@
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcprov-jdk18on</artifactId>
+				<version>${bouncycastle.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcpkix-jdk18on</artifactId>
+				<version>${bouncycastle.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcutil-jdk18on</artifactId>
+				<version>${bouncycastle.version}</version>
+			</dependency>
 			<dependency>
 				<groupId>org.springframework.cloud</groupId>
 				<artifactId>spring-cloud-dependencies</artifactId>

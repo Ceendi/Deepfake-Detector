@@ -62,6 +62,102 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: npm run lint
       - run: npm run test:run        # vitest; passWithNoTests until the suite lands. Playwright e2e is NOT in CI.
       - run: npm run build
+
+  dependencies:
+    name: Application dependency vulnerabilities
+    needs: java
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Populate Maven resolution cache before Trivy
+        run: |
+          for service in gateway eureka-server orchestrator file-service; do
+            (cd "$service" && ./mvnw -B -ntp -DskipTests dependency:resolve)
+          done
+      - name: Scan Maven, npm and both Python lockfiles
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+          format: json
+          output: dependencies.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: application-dependency-scan
+          path: dependencies.json
+          if-no-files-found: error
+
+  ml-compatibility:
+    name: ML dependency compatibility (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [audio-detector, video-detector]
+    defaults:
+      run:
+        working-directory: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: '0.12.23'
+          python-version: '3.12'
+      - name: Install native dependency build and runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y build-essential libgl1 libglib2.0-0 libxcb1 ffmpeg
+      - name: Install the frozen CPU dependency graph
+        run: uv sync --frozen
+      - name: Run consumer and extraction regressions
+        run: uv run --frozen python -m pytest -q tests
+      - name: Exercise offline model checkpoints and gradients
+        run: uv run --frozen python -m pytest -q training/tests
+
+  detector-images:
+    name: Detector image security and compatibility (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [audio-detector, video-detector]
+    env:
+      SERVICE: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the complete detector image
+        run: docker build --tag "detector-security:$SERVICE" "$SERVICE"
+      - name: Test CPU imports, consumers, checkpoints and ONNX without network
+        run: scripts/check-detector-image.sh "$SERVICE" "detector-security:$SERVICE"
+      - name: Scan installed OS and Python packages
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: detector-security:${{ matrix.service }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: '1'
+          format: json
+          output: detector-image.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: detector-image-scan-${{ matrix.service }}
+          path: detector-image.json
+          if-no-files-found: error

@@ -35,7 +35,7 @@ class Wav2Vec2LightningModule(pl.LightningModule):
         self.model = Wav2Vec2ForSequenceClassification.from_pretrained(
             model_name, num_labels=1, problem_type="multi_label_classification"
         )
-        self.model.freeze_feature_extractor()
+        self.model.freeze_feature_encoder()
         self.validation_step_outputs = []
 
     def forward(self, input_values):
