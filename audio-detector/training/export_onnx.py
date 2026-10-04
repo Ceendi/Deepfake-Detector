@@ -1,7 +1,11 @@
 import os
 
 import torch
-from train_w2v2 import Wav2Vec2LightningModule
+
+try:
+    from train_w2v2 import Wav2Vec2LightningModule
+except ImportError:
+    from .train_w2v2 import Wav2Vec2LightningModule
 
 
 def export_w2v2_to_onnx():
@@ -17,13 +21,20 @@ def export_w2v2_to_onnx():
         LAST_CKPT, map_location=torch.device("cpu")
     )
     model.eval()
-    dummy_input = torch.randn(1, 16000)
-    print(f"Eksportowanie modelu do formatu ONNX do pliku: {ONNX_OUTPUT}...")
+    export_model(model, ONNX_OUTPUT)
+    print("Eksport zakończony sukcesem!")
+
+
+def export_model(model, output_path, sample_length=16000):
+    """Export the classifier with variable batch and waveform lengths."""
+    dummy_input = torch.randn(1, sample_length)
     torch.onnx.export(
         model,
         dummy_input,
-        ONNX_OUTPUT,
+        output_path,
         export_params=True,
+        # Preserve the dynamic axes contract used by the ONNX inference service.
+        dynamo=False,
         opset_version=14,
         do_constant_folding=True,
         input_names=["input_values"],
@@ -33,7 +44,6 @@ def export_w2v2_to_onnx():
             "logits": {0: "batch_size"},
         },
     )
-    print("Eksport zakończony sukcesem!")
 
 
 if __name__ == "__main__":
