@@ -99,10 +99,10 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   async function start(file: File) {
     try {
       setState({ name: 'uploading' })
-      const { fileId, fileKey } = await upload.upload(file)
+      const { fileId } = await upload.upload(file)
 
       setState({ name: 'starting' })
-      const analysis = await startAnalysis({ fileId, fileKey, type: pickAnalysisType(file) })
+      const analysis = await startAnalysis({ fileId, type: pickAnalysisType(file) })
 
       setState({ name: 'analyzing', analysisId: analysis.id })
       stream.open(analysis.id, {

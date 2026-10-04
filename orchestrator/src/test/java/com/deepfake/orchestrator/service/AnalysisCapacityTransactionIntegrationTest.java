@@ -125,7 +125,7 @@ class AnalysisCapacityTransactionIntegrationTest {
                 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_capacity_test_commit()
                 """);
         for (int i = 0; i < 20; i++) {
-            assertThatThrownBy(() -> service.create(request("fail-at-commit"), "alice"))
+            assertThatThrownBy(() -> service.createResolved(request("fail-at-commit"), "alice"))
                     .hasStackTraceContaining("capacity test deferred commit failure");
             assertThat(active()).isZero();
         }
@@ -136,13 +136,13 @@ class AnalysisCapacityTransactionIntegrationTest {
     @Test
     void invalidIdentifiersAreRejectedBeforePublication() {
         for (int i = 0; i < 20; i++) {
-            assertThatThrownBy(() -> service.create(request("x".repeat(501)), "alice"))
+            assertThatThrownBy(() -> service.createResolved(request("x".repeat(501)), "alice"))
                     .isInstanceOf(ResponseStatusException.class);
         }
-        assertThatThrownBy(() -> service.create(
+        assertThatThrownBy(() -> service.createResolved(
                 new CreateAnalysisRequest("x".repeat(256), "key", AnalysisType.VIDEO, null), "alice"))
                 .isInstanceOf(ResponseStatusException.class);
-        assertThatThrownBy(() -> service.create(request("key"), "x".repeat(256)))
+        assertThatThrownBy(() -> service.createResolved(request("key"), "x".repeat(256)))
                 .isInstanceOf(ResponseStatusException.class);
         verifyNoInteractions(rabbit);
         assertThat(active()).isZero();
@@ -347,7 +347,7 @@ class AnalysisCapacityTransactionIntegrationTest {
     }
 
     private UUID create() {
-        return service.create(request("key"), "alice").id();
+        return service.createResolved(request("key"), "alice").id();
     }
 
     private static CreateAnalysisRequest request(String key) {

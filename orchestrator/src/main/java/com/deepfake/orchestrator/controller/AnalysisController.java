@@ -9,6 +9,9 @@ import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.AuthenticatedUser;
 import com.deepfake.orchestrator.security.CurrentUser;
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.service.AnalysisCreationService;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import com.deepfake.orchestrator.service.ArtifactService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -35,17 +38,21 @@ import java.util.UUID;
 @PreAuthorize("hasRole('USER')")
 public class AnalysisController {
     private final AnalysisService service;
+    private final AnalysisCreationService creationService;
     private final ReportPdfService reportPdfService;
     private final ArtifactService artifactService;
 
     @Operation(summary = "Start an analysis for an uploaded file")
     @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
+    @ApiResponse(responseCode = "404", description = "File missing, deleted, or not owned")
+    @ApiResponse(responseCode = "503", description = "File metadata dependency unavailable")
     @ApiResponse(responseCode = "429", description = "Backpressure — in-flight analysis limit reached")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AnalysisResponse create(@CurrentUser AuthenticatedUser user,
-                                   @Valid @RequestBody CreateAnalysisRequest req) {
-        return service.create(req, user.id());
+                                   @Valid @RequestBody CreateAnalysisRequest req,
+                                   @AuthenticationPrincipal Jwt jwt) {
+        return creationService.create(req, user.id(), jwt.getTokenValue());
     }
 
     // PagedModel, not the raw Page/PageImpl whose JSON shape is unstable across versions.

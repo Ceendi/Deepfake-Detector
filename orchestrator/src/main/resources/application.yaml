@@ -71,6 +71,9 @@ storage:
   access-key: ${S3_ORCHESTRATOR_KEY:dev-unset}
   secret-key: ${S3_ORCHESTRATOR_SECRET:dev-unset}
   artifacts-bucket: analysis-artifacts
+file-service:
+  base-url: ${FILE_SERVICE_BASE_URL:http://file-service:8081}
+  lookup-timeout: ${FILE_SERVICE_LOOKUP_TIMEOUT:2s}
 backpressure:
   # Max concurrent in-flight analyses before POST /api/analysis returns 429 (counts analyses, not
   # detector tasks). Env-overridable so load tests can trip it (e.g. =2 with dummy ML).
