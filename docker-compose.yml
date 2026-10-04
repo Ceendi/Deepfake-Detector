@@ -430,7 +430,8 @@ services:
   eureka-server:
     build: ./eureka-server
     profiles: ["core"]
-    ports: ["8761:8761"]
+    # Registry API and dashboard are reachable only on the Compose network.
+    # Do not publish this unauthenticated registration endpoint on the host.
     environment:
       <<: *logging-env
     healthcheck:
@@ -447,7 +448,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://eureka-server:8761/eureka/

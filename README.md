@@ -11,7 +11,7 @@ Web application for video/audio deepfake detection. Microservices (Spring Boot +
 - Docker Engine 24+ with Compose v2
 - Node.js 20+ and npm (frontend)
 - ~8 GB RAM for core + auth; ~14–16 GB with the `ml` profile (two 3 GB detectors)
-- Free ports: 5432, 5672, 6379, 8080, 8180, 8333, 15672, 8761 (backend) and 5173 (frontend)
+- Free ports: 5432, 5672, 6379, 8080, 8180, 8333, 15672 (backend) and 5173 (frontend)
 
 ## Quick start (development)
 
@@ -155,6 +155,38 @@ Frontend ──► Gateway ──► File Service ──► SeaweedFS (S3)
 ```
 
 Service discovery is via Eureka; the Gateway routes by `lb://SERVICE-NAME`.
+Eureka has no published host port: its dashboard and registration API are available
+only at `http://eureka-server:8761` inside the trusted Compose network. Services
+continue to use `http://eureka-server:8761/eureka/`; no registry credentials are
+needed for this local development network. Do not attach untrusted containers to
+that network or publish the registry in an override without adding authentication.
+The Gateway host port is bound to `127.0.0.1:8080`.
+
+After updating an existing stack, apply the port changes with:
+
+```bash
+docker compose --profile core up -d --force-recreate eureka-server gateway
+```
+
+This preserves named volumes. A plain container restart does not update port bindings.
+For an internal registry check without opening a host port:
+
+```bash
+docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps
+```
+
+The isolated regression builds the Java services, uses fresh project-scoped storage
+and ephemeral application ports on loopback, checks registration and authenticated
+gateway routing, then repeats after a restart:
+
+```bash
+python3 infra/tests/test_discovery.py
+```
+
+Its external-network container checks the host-facing TCP boundary through the host's
+non-loopback interface, with a disposable TCP echo listener on an ephemeral wildcard
+port as a positive control. This is not a second physical host; also verify port 8761 and
+the gateway port from another LAN host when one is available.
 Realtime updates use SSE (`GET /api/analysis/{id}/stream`), not WebSocket.
 
 The async pipeline is built for resilience (D6): manual ack / ack-after-commit,
