@@ -180,5 +180,13 @@ dedicated network for the PR04 contract test; no Compose mutation is used.
 Independent review in a fresh context confirmed one numerical edge case for a
 valid subnormal threshold override. The implementation now divides before
 multiplying on the lower branch, preventing intermediate underflow at equality;
-new boundary/monotonicity and empty-speech regressions cover it. No other
-actionable review findings remained.
+new boundary/monotonicity and empty-speech regressions cover it. Review also
+caught an empty-array expansion in the image harness on Bash 3.2; the harness
+now always initializes its mount array with the existing test mounts, adding
+the shared read-only fixture only for audio. Both corrections were independently
+verified; no actionable review findings remained.
+
+The offline CPU audio image harness passed 62 service tests plus the existing
+synthetic checkpoint/ONNX compatibility test. It mounts the shared fixture
+read-only, and both audio/video harness argument paths passed on macOS Bash 3.2.
+That synthetic training-model test does not replace production checkpoint inference.
