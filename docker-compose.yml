@@ -17,22 +17,15 @@ x-logging: &default-logging
 x-security: &default-security
   - no-new-privileges:true
 
-# Shared hardening for postgres-based services (`postgres`, `keycloak-db`).
-# Caps are the minimum alpine initdb needs; tmpfs covers writes the
-# read_only rootfs would block (psql temp + entrypoint's unix socket dir).
+# Both PostgreSQL services initialize and run as the image's postgres user.
+# Keep the root filesystem read-only and provide an owned socket directory.
 x-pg-hardening: &pg-hardening
   security_opt: *default-security
   cap_drop: [ALL]
-  cap_add:
-    - CHOWN
-    - DAC_READ_SEARCH
-    - FOWNER
-    - SETGID
-    - SETUID
   read_only: true
   tmpfs:
     - /tmp:rw,noexec,nosuid,size=64m
-    - /run/postgresql:rw,noexec,nosuid,size=32m
+    - /run/postgresql:rw,noexec,nosuid,size=32m,uid=70,gid=70,mode=0775
 
 # OIDC resource-server config shared by every JWT-validating Java service.
 # iss is validated against the public URL the token carries (KC_HOSTNAME), but the

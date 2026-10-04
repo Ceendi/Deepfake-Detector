@@ -86,14 +86,20 @@ for the remaining findings; passing CI does not mean there are zero reported CVE
 It removes the upstream `gosu` binary, which embeds an outdated Go runtime, and
 uses Alpine's `su-exec` in the official entrypoint. Fresh-volume initialization,
 least-privilege database bootstrap and persistence after restart were checked
-with the existing capabilities and read-only filesystem settings.
+as the non-root postgres user with all capabilities dropped and the existing
+read-only filesystem setting. The image owns the initial data directory, and
+the socket tmpfs is owned by UID/GID 70. Existing PostgreSQL 18 volumes already
+use that postgres UID.
 
 The Keycloak config CLI is built from upstream v6.5.1, pinned by commit and archive
 checksum, with patched Spring Boot/Framework, Jackson 2/3, Netty and RESTEasy
 libraries. It runs as UID 65534 on a pinned Temurin 21 Alpine runtime. The actual
 realm import, client credentials token and custom theme are covered by the smoke
 checks. Alloy uses a pinned upstream 1.20.1 base with the patched Ubuntu OpenSSL
-packages; Docker discovery and Loki structured metadata ingestion were checked.
+packages and defaults to UID 65534. The existing development Compose service
+explicitly runs it as root to read the Docker socket; this runtime privilege is
+unchanged and must not be mistaken for a vulnerability-free production posture.
+Docker discovery and Loki structured metadata ingestion were checked.
 Build these services when updating: `docker compose --profile core --profile auth
 --profile monitoring build postgres keycloak-db keycloak-config-cli alloy`.
 

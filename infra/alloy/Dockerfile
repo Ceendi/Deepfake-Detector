@@ -4,4 +4,8 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libssl3t64=3.0.13-0ubuntu3.16 openssl=3.0.13-0ubuntu3.16 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /var/lib/alloy/data \
+    && chown -R 65534:65534 /var/lib/alloy
+
+USER 65534:65534

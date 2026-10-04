@@ -3,8 +3,9 @@
 Verified on 2026-10-04 with Trivy 0.75.0 and its vulnerability database updated
 `2026-10-03T19:02:38Z`. The database refresh returned the same current snapshot.
 The final local scan used the actual Linux/ARM64 runtime images, including all
-three locally rebuilt infrastructure images. The CI matrix separately builds and
-scans Linux/AMD64 infrastructure images and uploads every JSON result.
+three locally rebuilt infrastructure images. The CI matrix separately built and scanned all 13 Linux/AMD64 infrastructure
+images, including the custom images, and returned the same counts. Every JSON
+result is uploaded as an artifact.
 
 No ignore file, `ignore-unfixed` filter or vulnerability suppression is used.
 Counts are package/advisory occurrences, not unique CVE IDs.
@@ -57,6 +58,11 @@ Sources: [query-limit patch ancestry](https://github.com/grafana/tempo/compare/6
 [embedded secret field](https://github.com/grafana/tempo/blob/525d1bab07e0/tempodb/backend/s3/config.go).
 
 ## Verification and scope
+
+The PostgreSQL image runs as its postgres user with all capabilities dropped.
+Alloy defaults to UID 65534 in the rebuilt image; the development Compose service
+still explicitly runs Alloy as root for Docker socket access. That pre-existing
+runtime privilege remains a separate deployment-hardening concern.
 
 The complete isolated 14-service infrastructure stack passed database/bootstrap,
 Redis, RabbitMQ, S3 permissions, identity import/token/theme, datasource health,
