@@ -1,18 +1,16 @@
 name: Security scan (Trivy)
 
-# Warning-only: this workflow scans every image referenced from the dev and
-# prod compose files for HIGH/CRITICAL CVEs and posts a summary to the PR.
-# It deliberately does NOT fail the build — base images carry 0-days for
-# weeks before patches land, and we don't want to block PRs on upstream
-# vendor timelines. Once the application services exist and we control
-# their Dockerfiles directly, switch this workflow's `exit-code` to 1 for
-# the application images.
+# Scan every explicitly named Compose image, including locally built infrastructure.
+# CRITICAL findings block CI. HIGH findings remain visible in JSON, summaries and
+# Code Scanning, including advisories without a vendor fix.
 
 on:
   pull_request:
     paths:
       - "docker-compose.yml"
       - "**/Dockerfile"
+      - "infra/keycloak-config-cli/**"
+      - "infra/security/**"
       - ".github/workflows/security-scan.yml"
   push:
     branches: [main]
@@ -30,10 +28,7 @@ concurrency:
 
 jobs:
   list-images:
-    # Single source of truth: docker-compose.yml. We ask Compose itself which
-    # images would be pulled (`docker compose config --images`) and feed that
-    # list into the scan matrix. This means dev and scan can never drift —
-    # bumping a tag in compose automatically rescopes the scan.
+    # Services are stable scan identities even when image versions change.
     name: Enumerate compose images
     runs-on: ubuntu-latest
     permissions:
@@ -54,17 +49,16 @@ jobs:
           # `docker compose config` interpolates ${VAR} from env. CI runners
           # don't have `.env`, so without copying it from `.env.example` Compose
           # will fail on services that have `env_file: [.env]` hardcoded.
-          cp .env.example .env || touch .env
-          IMAGES=$(docker compose \
-            --env-file .env.example \
-            --profile core --profile auth --profile ml --profile monitoring \
-            config --format json | jq -r '.services | to_entries[] | select(.value.build == null) | .value.image' | sort -u | jq -R . | jq -s -c)
+          cp .env.example .env
+          IMAGES=$(docker compose --env-file .env.example --profile '*' config --format json |
+            jq -c '[.services | to_entries[] | select(.value.image != null) |
+              {service: .key, image: .value.image, build: (.value.build != null)}] | unique_by(.image)')
           if [ "$IMAGES" = "[]" ] || [ -z "$IMAGES" ]; then
             echo "::error::No images extracted from compose. Aborting scan." >&2
             exit 1
           fi
           echo "images=$IMAGES" >> "$GITHUB_OUTPUT"
-          echo "Will scan:"; echo "$IMAGES" | jq -r '.[]'
+          echo "$IMAGES" | jq -r '.[].image'
 
   scan-images:
     name: Scan compose images
@@ -76,7 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(needs.list-images.outputs.images) }}
+        include: ${{ fromJson(needs.list-images.outputs.images) }}
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
@@ -87,24 +81,46 @@ jobs:
 
 
 
+      - name: Build infrastructure image when needed
+        if: matrix.build
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          cp .env.example .env
+          docker compose --env-file .env.example --profile '*' build "$SERVICE"
+
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.75.0
           image-ref: ${{ matrix.image }}
-          format: table
+          format: json
+          output: trivy.json
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: "0" # warning-only; flip to "1" once we own Dockerfiles
+          ignore-unfixed: false
+          exit-code: "0"
           vuln-type: "os,library"
 
+      - name: Publish full scan artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trivy-${{ matrix.service }}
+          path: trivy.json
+          if-no-files-found: error
+
+      - name: Summarize findings and reject critical vulnerabilities
+        run: python3 infra/security/report.py trivy.json
+
       - name: Run Trivy in SARIF mode (for Code Scanning)
+        if: ${{ !cancelled() && hashFiles('trivy.json') != '' }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.75.0
           image-ref: ${{ matrix.image }}
           format: sarif
           output: trivy-${{ strategy.job-index }}.sarif
           severity: HIGH,CRITICAL
-          ignore-unfixed: true
+          ignore-unfixed: false
 
       - name: Upload SARIF to Code Scanning
         # Fork PRs get a read-only GITHUB_TOKEN (security-events: write is denied regardless of the
@@ -114,7 +130,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: trivy-${{ strategy.job-index }}.sarif
-          category: trivy-${{ matrix.image }}
+          category: trivy-compose-${{ matrix.service }}
 
   scan-config:
     name: Scan compose / Dockerfile config
@@ -133,6 +149,7 @@ jobs:
       - name: Trivy config scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.75.0
           scan-type: config
           scan-ref: .
           format: table
@@ -142,6 +159,7 @@ jobs:
       - name: Trivy config scan (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: v0.75.0
           scan-type: config
           scan-ref: .
           format: sarif

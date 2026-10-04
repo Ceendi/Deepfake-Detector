@@ -1,6 +1,6 @@
 # Compose dependency upgrade: runtime validation and rollout
 
-The image updates in PR #73 require a Tempo configuration migration. Tempo 3.0.3
+The image updates in PR #73 require a Tempo configuration migration. Tempo 3.1.0
 rejects the old `ingester` and `compactor` sections and exits before serving traces.
 The rest of this Compose stack keeps the same ports, credentials and API contracts.
 
@@ -44,15 +44,15 @@ for an existing development stack whose data must survive.
 
 PostgreSQL stays on major 18. Both databases retain their existing PGDATA and
 volumes. Keycloak stays on major 26; the pinned config CLI was verified against
-26.7.1 by importing this repository's realm and issuing a load-test client token
+26.8.0 by importing this repository's realm and issuing a load-test client token
 with the expected issuer and USER role. The tracked custom login-theme JAR also
 renders successfully. Its rebuild requires Node/npm, Java and Maven; a rebuild is
 not required by this image update.
 
-Grafana 13.1.3 provisions the existing fixed datasource UIDs and business dashboard.
-The Prometheus, Loki and Tempo datasource health APIs succeed. Alloy 1.18.1 reads
-Docker stdout and sends the trace/correlation metadata to Loki 3.7.6. SeaweedFS
-4.41 and AWS CLI 2.36.23 provision both buckets and support the current S3 identity
+Grafana 13.1.7 provisions the existing fixed datasource UIDs and business dashboard.
+The Prometheus, Loki and Tempo datasource health APIs succeed. Alloy 1.20.1 reads
+Docker stdout and sends the trace/correlation metadata to Loki 3.7.8. SeaweedFS
+4.48 and AWS CLI 2.37.9 provision both buckets and support the current S3 identity
 scopes. Orchestrator's write action is intentional: artifact deletion uses it.
 
 ## Verification
@@ -61,7 +61,7 @@ Run `python3 infra/tests/test_tempo.py` with Docker Compose available. The test
 uses the actual Compose image/config, random localhost ports, a unique network
 and disposable volumes. It checks readiness, effective retention/storage settings,
 OTLP HTTP ingestion, trace lookup after restart, and migration of a flushed Tempo
-2.10.6 trace to 3.0.3. The Infrastructure smoke workflow runs it on relevant PRs
+2.10.6 trace to 3.1.0. The Infrastructure smoke workflow runs it on relevant PRs
 and pushes. Test cleanup deletes only its own resources.
 
 Additional local checks used all image-based services from the resolved Compose
@@ -76,5 +76,32 @@ Not covered: migration of an existing developer's databases or Grafana state,
 72-hour retention expiry, load/performance tests, browser OIDC login/logout,
 full upload-to-analysis flow with real ML weights, and manual GHCR image publishing.
 Backups and a rehearsal on copies of existing volumes remain necessary before
-upgrading an installation with valuable state. The GitHub vulnerability scan is
-advisory; a green scan does not mean that every image has zero reported CVEs.
+upgrading an installation with valuable state. The GitHub image scan blocks reported CRITICAL vulnerabilities and publishes
+all HIGH findings, including unfixed ones. See [the security audit](infrastructure-security-audit.md)
+for the remaining findings; passing CI does not mean there are zero reported CVEs.
+
+## Security rebuilds
+
+`postgres` and `keycloak-db` share a build based on PostgreSQL 18.6/Alpine 3.24.
+It removes the upstream `gosu` binary, which embeds an outdated Go runtime, and
+uses Alpine's `su-exec` in the official entrypoint. Fresh-volume initialization,
+least-privilege database bootstrap and persistence after restart were checked
+with the existing capabilities and read-only filesystem settings.
+
+The Keycloak config CLI is built from upstream v6.5.1, pinned by commit and archive
+checksum, with patched Spring Boot/Framework, Jackson 2/3, Netty and RESTEasy
+libraries. It runs as UID 65534 on a pinned Temurin 21 Alpine runtime. The actual
+realm import, client credentials token and custom theme are covered by the smoke
+checks. Alloy uses a pinned upstream 1.20.1 base with the patched Ubuntu OpenSSL
+packages; Docker discovery and Loki structured metadata ingestion were checked.
+Build these services when updating: `docker compose --profile core --profile auth
+--profile monitoring build postgres keycloak-db keycloak-config-cli alloy`.
+
+Run `python3 infra/tests/test_keycloak.py` for the isolated realm import and
+password-reset regression test. Its SMTP sink never sends mail outside the test
+network. The test verifies that a forced reset flow cannot change the password
+without consuming the emailed action token. As a negative control,
+`KEYCLOAK_TEST_IMAGE=quay.io/keycloak/keycloak:26.7.1 python3
+infra/tests/test_keycloak.py` fails at the upstream reset-flow regression assertion;
+the configured 26.8.0 image passes. These tests leave existing developer volumes
+and realms untouched.
