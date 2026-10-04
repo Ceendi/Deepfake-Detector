@@ -5,7 +5,7 @@ import { Card, CardBody } from '@/components/ui/Card/Card'
 import { Badge } from '@/components/ui/Badge/Badge'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
 
-import { sourceOutcome } from '../result-utils'
+import { audioOutcome, hasAudioScoreContract, sourceOutcome } from '../result-utils'
 
 import styles from '../AnalysisResult.module.css'
 
@@ -23,10 +23,20 @@ const DESC: Record<Source, Record<Verdict, string>> = {
   },
 }
 
-function ModalityCard({ source, prob }: { source: Source; prob: number }) {
+function ModalityCard({
+  source,
+  prob,
+  analysis,
+}: {
+  source: Source
+  prob: number
+  analysis: Analysis
+}) {
   const isVideo = source === 'video'
   const Icon = isVideo ? Video : AudioLines
-  const { verdict } = sourceOutcome(prob)
+  const legacyAudio = !isVideo && !hasAudioScoreContract(analysis.details?.audio?.metadata)
+  const outcome = isVideo ? sourceOutcome(prob) : audioOutcome(prob, analysis.details?.audio)
+  const verdict = outcome?.verdict
   const isFake = verdict === 'FAKE'
 
   return (
@@ -38,18 +48,30 @@ function ModalityCard({ source, prob }: { source: Source; prob: number }) {
             {isVideo ? 'Ścieżka wideo' : 'Ścieżka audio'}
           </span>
           <Badge variant={isFake ? 'danger' : 'success'} size="sm" soft>
-            {verdict}
+            {verdict ?? 'Brak werdyktu źródła'}
           </Badge>
         </div>
 
         <ProgressBar
-          label="Prawdopodobieństwo fake"
+          label={
+            isVideo
+              ? 'Prawdopodobieństwo fake'
+              : legacyAudio
+                ? 'Surowy wynik audio (archiwalny)'
+                : 'Wynik audio na wspólnej skali'
+          }
           value={prob * 100}
           showValue
           tone={isFake ? 'danger' : 'success'}
         />
 
-        <p className={styles.modalityDesc}>{DESC[source][verdict]}</p>
+        {verdict && <p className={styles.modalityDesc}>{DESC[source][verdict]}</p>}
+        {legacyAudio && (
+          <p className={styles.modalityDesc}>
+            Wynik archiwalny: zachowano pierwotne werdykty i wynik zbiorczy. Surowy wynik audio ma
+            próg właściwy dla modelu; oś czasu na wspólnej skali jest niedostępna.
+          </p>
+        )}
       </CardBody>
     </Card>
   )
@@ -58,10 +80,14 @@ function ModalityCard({ source, prob }: { source: Source; prob: number }) {
 export function ModalitySection({ analysis }: { analysis: Analysis }) {
   const cards = []
   if (analysis.videoProb != null) {
-    cards.push(<ModalityCard key="video" source="video" prob={analysis.videoProb} />)
+    cards.push(
+      <ModalityCard key="video" source="video" prob={analysis.videoProb} analysis={analysis} />,
+    )
   }
   if (analysis.audioProb != null) {
-    cards.push(<ModalityCard key="audio" source="audio" prob={analysis.audioProb} />)
+    cards.push(
+      <ModalityCard key="audio" source="audio" prob={analysis.audioProb} analysis={analysis} />,
+    )
   }
   if (cards.length === 0) return null
 

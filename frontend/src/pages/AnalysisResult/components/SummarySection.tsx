@@ -4,7 +4,7 @@ import { clsx } from 'clsx'
 import type { Analysis, Verdict } from '@/api/types'
 import { Card, CardBody } from '@/components/ui/Card/Card'
 
-import { sourceOutcome } from '../result-utils'
+import { audioOutcome, sourceOutcome } from '../result-utils'
 
 import styles from '../AnalysisResult.module.css'
 
@@ -55,7 +55,10 @@ export function SummarySection({ analysis }: { analysis: Analysis }) {
   // rekomendacja zawsze, wg werdyktu ogólnego.
   const findings: Finding[] = []
   if (videoProb != null) findings.push(VIDEO_FINDING[sourceOutcome(videoProb).verdict])
-  if (audioProb != null) findings.push(AUDIO_FINDING[sourceOutcome(audioProb).verdict])
+  if (audioProb != null) {
+    const audio = audioOutcome(audioProb, analysis.details?.audio)
+    if (audio) findings.push(AUDIO_FINDING[audio.verdict])
+  }
   findings.push(RECOMMENDATION[verdict])
 
   // Modele i metadane — realne z details; każdy renderowany tylko dla obecnego źródła.
