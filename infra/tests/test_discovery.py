@@ -7,6 +7,7 @@ No ML checkpoints or developer .env files are used. All resources are disposable
 import base64
 import ipaddress
 import json
+import secrets
 import socket
 import subprocess
 import tempfile
@@ -31,6 +32,39 @@ def resolved_compose():
         'docker', 'compose', '--env-file', str(ROOT / '.env.example'),
         '--profile', '*', 'config', '--format', 'json',
     ))
+
+
+def available_test_ports(count):
+    # Docker's published=0 allocator can race with outbound sockets on Linux.
+    # Reserve distinct unused ports outside the host's ephemeral source-port range.
+    linux_range = Path('/proc/sys/net/ipv4/ip_local_port_range')
+    if linux_range.exists():
+        first, last = map(int, linux_range.read_text().split())
+    else:
+        first, last = map(int, command(
+            'sysctl', '-n', 'net.inet.ip.portrange.first', 'net.inet.ip.portrange.last',
+        ).split())
+    reservations = []
+    ports = []
+    try:
+        for _ in range(1000):
+            port = 10000 + secrets.randbelow(55536)
+            if first <= port <= last:
+                continue
+            reservation = socket.socket()
+            try:
+                reservation.bind(('0.0.0.0', port))
+            except OSError:
+                reservation.close()
+                continue
+            reservations.append(reservation)
+            ports.append(port)
+            if len(ports) == count:
+                return ports
+        raise RuntimeError('Could not reserve unused test ports outside the ephemeral range')
+    finally:
+        for reservation in reservations:
+            reservation.close()
 
 
 class DiscoveryConfigurationTest(unittest.TestCase):
@@ -89,13 +123,19 @@ class DiscoveryIntegrationTest(unittest.TestCase):
             'orchestrator', 'keycloak', 'keycloak-db',
         )
         services = {name: config['services'][name] for name in names}
+        gateway_port, identity_port, control_port = available_test_ports(3)
         issuer = 'http://keycloak:8080/realms/discovery-test'
         for name, service in services.items():
             service.pop('profiles', None)
             service['restart'] = 'no'
-            for port in service.get('ports', []):
-                port['published'] = '0'
+            if name in ('gateway', 'keycloak'):
+                service['ports'][0]['published'] = str(
+                    gateway_port if name == 'gateway' else identity_port,
+                )
                 # Keep the original host_ip, so the runtime test exercises its binding.
+            else:
+                # Infrastructure clients use Compose DNS; no host ports are needed.
+                service.pop('ports', None)
             if name in ('gateway', 'file-service', 'orchestrator'):
                 service['environment'].update({
                     'JWT_ISSUER_URI': issuer,
@@ -135,7 +175,7 @@ class DiscoveryIntegrationTest(unittest.TestCase):
         self.assertFalse(ipaddress.ip_address(self.host_address).is_loopback)
         services['probe-control'] = {
             'image': self.probe_image, 'command': ['nc', '-lk', '-p', '8089', '-e', 'cat'],
-            'ports': [{'target': 8089, 'published': '0', 'host_ip': '0.0.0.0'}],
+            'ports': [{'target': 8089, 'published': str(control_port), 'host_ip': '0.0.0.0'}],
             'networks': ['outside'],
         }
         config = {
@@ -192,7 +232,7 @@ class DiscoveryIntegrationTest(unittest.TestCase):
                                  'Expected a closed socket, not an HTTP response')
         gateway_port = self.gateway.rsplit(':', 1)[1]
         # Confirm transport to the real host interface using a disposable, empty
-        # TCP echo server on a wildcard ephemeral port before asserting closed ports.
+        # TCP echo server on a wildcard test port before asserting closed ports.
         control_port = self.compose('port', 'probe-control', '8089').rsplit(':', 1)[1]
         def probe_port(port):
             return subprocess.run([

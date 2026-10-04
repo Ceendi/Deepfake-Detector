@@ -176,15 +176,15 @@ docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps
 ```
 
 The isolated regression builds the Java services, uses fresh project-scoped storage
-and ephemeral application ports on loopback, checks registration and authenticated
-gateway routing, then repeats after a restart:
+and unused application ports on loopback outside the host ephemeral source-port range.
+It checks registration and authenticated gateway routing, then repeats after a restart:
 
 ```bash
 python3 infra/tests/test_discovery.py
 ```
 
 Its external-network container checks the host-facing TCP boundary through the host's
-non-loopback interface, with a disposable TCP echo listener on an ephemeral wildcard
+non-loopback interface, with a disposable TCP echo listener on an unused wildcard
 port as a positive control. This is not a second physical host; also verify port 8761 and
 the gateway port from another LAN host when one is available.
 Realtime updates use SSE (`GET /api/analysis/{id}/stream`), not WebSocket.
