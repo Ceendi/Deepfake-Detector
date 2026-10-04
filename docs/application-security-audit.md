@@ -42,6 +42,8 @@ ONNX export and ONNX Runtime parity at two waveform lengths and batch sizes.
 The video test checks temporal gradients, attention normalization and Lightning
 checkpoint reload without downloading pretrained weights.
 
+Pin video torchvision to the same CPU index as torch; mixing CPU torch and a
+PyPI/CUDA torchvision wheel caused a missing `torchvision::nms` operator on Linux.
 Add the video lockfile and make both CPU Dockerfiles install their exact frozen
 uv graph with uv 0.12.23. CI checks the dependency scan and npm audit, then installs
 both complete frozen Python graphs on Linux/Python 3.12 and runs consumer and

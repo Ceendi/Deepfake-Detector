@@ -69,9 +69,20 @@ jobs:
 
   dependencies:
     name: Application dependency vulnerabilities
+    needs: java
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Populate Maven resolution cache before Trivy
+        run: |
+          for service in gateway eureka-server orchestrator file-service; do
+            (cd "$service" && ./mvnw -B -ntp -DskipTests dependency:resolve)
+          done
       - name: Scan Maven, npm and both Python lockfiles
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
