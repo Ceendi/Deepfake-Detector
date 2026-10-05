@@ -43,7 +43,7 @@ jobs:
         service: [video-detector, audio-detector]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
       # Pin the verified lint version so future rule changes do not break unrelated PRs.
       - name: ruff
         working-directory: ${{ matrix.service }}
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install only the lightweight test dependencies
@@ -131,7 +131,7 @@ jobs:
         working-directory: ${{ matrix.service }}
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           version: '0.12.23'
           python-version: '3.12'
