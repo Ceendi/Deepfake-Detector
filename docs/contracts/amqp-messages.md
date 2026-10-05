@@ -133,6 +133,11 @@ Success:
 }
 ```
 
+Artifact filenames include a per-attempt UUID (for example
+`gradcam_<attemptUuid>.png` or `gradcam_frame_01_<attemptUuid>.png`). Recomputed
+deliveries must not overwrite images referenced by an already accepted result.
+The object-key shape and result fields are unchanged.
+
 `gradcam_keys` — list of **bare object keys** in the `analysis-artifacts` bucket,
 following the `{analysisId}/{source}/{name}.png` convention from
 [`object-storage.md`](./object-storage.md). No URI scheme, no bucket prefix — the
@@ -221,6 +226,16 @@ Contract:
 - **Manual ack:** literal `MANUAL` on the detectors and the DLQ consumer. The main
   result/progress listeners use `AUTO` = container ack **after** the `@Transactional`
   handler commits (not RabbitMQ auto-ack), which is what lets retry + recoverer compose.
+- **Detector redelivery:** each non-cancelled delivery is computed, including concurrent
+  copies. Detectors do not use Redis processing claims or completion markers. Old
+  `processing:{analysis_id}:{source}` keys are ignored without deletion or TTL waits.
+  A persistent terminal result is published with `mandatory=True` and synchronous
+  publisher confirms before task ACK. Publish/ACK failures close the connection and
+  reconnect after five seconds, allowing RabbitMQ to redeliver unacked work. AMQP
+  failures do not generate an inference FAILED result. A confirmed result followed
+  by process loss before ACK may be published again; source acceptance in PostgreSQL
+  makes this safe. Cancelled work is ACKed without a result after a cancellation flag
+  check. See [worker recovery, rollout and validation](../backend-pr06-worker-redelivery.md).
 - **Result acceptance:** PostgreSQL accepts the first terminal result of an expected source.
   `VIDEO` expects `video`, `AUDIO` expects `audio`, and `FULL` expects both. Source names
   are case-sensitive; invalid/missing sources and statuses other than `COMPLETED` or

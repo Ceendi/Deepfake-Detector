@@ -61,7 +61,7 @@ def inference(monkeypatch):
 @pytest.fixture
 def rds(monkeypatch):
     fake = MagicMock()
-    fake.set.return_value = True  # SETNX acquired
+    fake.set.return_value = True
     fake.exists.return_value = 0  # no cancel flag
     monkeypatch.setattr(consumer, "redis_client", fake)
     return fake
@@ -76,11 +76,14 @@ class TestProcessGradcamContract:
         result = consumer.process(_task_msg())
 
         # {analysisId}/{source}/{name}.png — no URI scheme, no bucket prefix
-        assert result["gradcam_keys"] == [f"{ANALYSIS_ID}/audio/gradcam.png"]
+        import re
+        assert len(result["gradcam_keys"]) == 1
+        assert re.fullmatch(rf"{ANALYSIS_ID}/audio/gradcam_[0-9a-f]{{32}}.png", result["gradcam_keys"][0])
         assert "gradcam_url" not in result
         bucket = s3.upload_file.call_args[0][1]
         key = s3.upload_file.call_args[0][2]
-        assert (bucket, key) == ("analysis-artifacts", f"{ANALYSIS_ID}/audio/gradcam.png")
+        assert bucket == "analysis-artifacts"
+        assert key == result["gradcam_keys"][0]
         assert not png.exists()  # local temp cleaned up
         assert "local_gradcam_path" not in result
 
@@ -215,7 +218,7 @@ class TestCancellation:
         bodies = [json.loads(c[1]["body"]) for c in ch.basic_publish.call_args_list]
         assert all("status" not in b for b in bodies)  # progress only — no COMPLETED/FAILED
         ch.basic_ack.assert_called_once()
-        rds.delete.assert_called_once_with(f"processing:{ANALYSIS_ID}:audio")
+        rds.delete.assert_not_called()
 
     def test_redis_down_on_cancel_check_fails_open(self, monkeypatch, rds):
         rds.exists.side_effect = redis_lib.RedisError("connection refused")
@@ -233,15 +236,18 @@ class TestInputTempCleanup:
     @pytest.mark.parametrize("abort", [consumer.AnalysisCancelled, RuntimeError])
     def test_downloaded_input_is_removed_when_analyze_aborts(self, s3, inference, abort):
         import pathlib
-        import tempfile
-        input_path = pathlib.Path(tempfile.gettempdir()) / f"{ANALYSIS_ID}_input"
-        s3.download_file.side_effect = lambda bucket, key, dst: pathlib.Path(dst).write_bytes(b"x")
+        paths = []
+        def download(bucket, key, dst):
+            paths.append(pathlib.Path(dst))
+            paths[-1].write_bytes(b"x")
+        s3.download_file.side_effect = download
         inference.analyze.side_effect = abort()
 
         with pytest.raises(abort):
             consumer.process(_task_msg())
 
-        assert not input_path.exists()
+        assert paths and not paths[0].exists()
+        assert not paths[0].parent.exists()
 
 
 class TestHandleMessageIdempotency:
@@ -257,23 +263,17 @@ class TestHandleMessageIdempotency:
         consumer._handle_message(ch, method, MagicMock(), json.dumps(_task_msg()).encode())
         return ch, fake_process
 
-    def test_dedup_key_is_per_source(self, monkeypatch, rds):
-        self._deliver(monkeypatch, rds)
-
-        assert rds.set.call_args[0][0] == f"processing:{ANALYSIS_ID}:audio"
-        assert rds.set.call_args[1] == {"nx": True, "ex": 3600}
-
-    def test_duplicate_is_acked_without_processing(self, monkeypatch, rds):
-        rds.set.return_value = None  # SETNX lost — someone is already processing
-
+    def test_stale_processing_marker_never_skips_work(self, monkeypatch, rds):
+        rds.set.return_value = None
         ch, fake_process = self._deliver(monkeypatch, rds)
-
-        fake_process.assert_not_called()
-        ch.basic_publish.assert_not_called()
+        fake_process.assert_called_once()
+        rds.set.assert_not_called()
+        rds.delete.assert_not_called()
+        assert json.loads(ch.basic_publish.call_args[1]["body"])["status"] == "COMPLETED"
         ch.basic_ack.assert_called_once()
 
     def test_redis_down_fails_open_and_still_processes(self, monkeypatch, rds):
-        rds.set.side_effect = redis_lib.RedisError("connection refused")
+        rds.exists.side_effect = redis_lib.RedisError("connection refused")
 
         ch, fake_process = self._deliver(monkeypatch, rds)
 
@@ -282,18 +282,59 @@ class TestHandleMessageIdempotency:
         assert published["status"] == "COMPLETED"
         ch.basic_ack.assert_called_once()
 
-    def test_failure_publishes_failed_and_releases_dedup_key(self, monkeypatch, rds):
+    def test_failure_publishes_failed_without_touching_processing_markers(self, monkeypatch, rds):
         ch, _ = self._deliver(monkeypatch, rds, error=RuntimeError("boom"))
 
-        rds.delete.assert_called_once_with(f"processing:{ANALYSIS_ID}:audio")
+        rds.delete.assert_not_called()
         published = json.loads(ch.basic_publish.call_args[1]["body"])
         assert published["status"] == "FAILED"
         assert published["error"]["code"] == "PROCESSING_ERROR"
         ch.basic_ack.assert_called_once()
 
-    def test_success_keeps_dedup_key(self, monkeypatch, rds):
+    def test_success_does_not_create_processing_marker(self, monkeypatch, rds):
         ch, _ = self._deliver(monkeypatch, rds)
 
         rds.delete.assert_not_called()
         published = json.loads(ch.basic_publish.call_args[1]["body"])
         assert published["status"] == "COMPLETED"
+
+
+class TestPublicationFailure:
+    @pytest.mark.parametrize("failed_publication", [1, 2])
+    def test_transport_failure_never_acks_or_publishes_failed(self, monkeypatch, rds,
+                                                            failed_publication):
+        import pika
+        ch = MagicMock()
+        count = 0
+
+        def publish(**kwargs):
+            nonlocal count
+            count += 1
+            if count == failed_publication:
+                raise pika.exceptions.NackError([])
+
+        def process(msg, progress_callback):
+            progress_callback(0, "LOADING")
+            return {"prob_fake": 0.9, "verdict": "FAKE", "gradcam_keys": []}
+
+        ch.basic_publish.side_effect = publish
+        monkeypatch.setattr(consumer, "process", process)
+        props = MagicMock(headers={})
+        with pytest.raises(pika.exceptions.NackError):
+            consumer._handle_message(ch, MagicMock(delivery_tag=7), props,
+                                     json.dumps(_task_msg()).encode())
+        ch.basic_ack.assert_not_called()
+        assert all(json.loads(call.kwargs["body"]).get("status") != "FAILED"
+                   for call in ch.basic_publish.call_args_list)
+
+    def test_ack_failure_after_confirm_does_not_publish_failed(self, monkeypatch, rds):
+        import pika
+        ch = MagicMock()
+        ch.basic_ack.side_effect = pika.exceptions.StreamLostError("lost before ack")
+        monkeypatch.setattr(consumer, "process", MagicMock(return_value={
+            "prob_fake": 0.9, "verdict": "FAKE", "gradcam_keys": []}))
+        with pytest.raises(pika.exceptions.StreamLostError):
+            consumer._handle_message(ch, MagicMock(delivery_tag=7), MagicMock(headers={}),
+                                     json.dumps(_task_msg()).encode())
+        assert ch.basic_publish.call_count == 1
+        assert json.loads(ch.basic_publish.call_args.kwargs["body"])["status"] == "COMPLETED"
