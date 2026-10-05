@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * Best-effort result dedup over Redis (D6). A cheap early-exit for at-least-once redeliveries, not
- * the correctness authority — that is the DB isTerminal() guard. Keyed per-source because a FULL
+ * the correctness authority — that is the conditional per-source DB update. Keyed per-source because a FULL
  * analysis produces two results (video + audio) under one analysis_id. Fail-open: if Redis is down
  * the check misses and the mark is dropped, so processing falls back to the DB guard.
  */
@@ -44,7 +44,7 @@ public class IdempotencyGuard {
     }
 
     // Set only after the DB transaction commits (caller registers this on afterCommit), so the key
-    // exists iff the result was persisted — a retried-after-rollback result is never skipped as a dup.
+    // is only a hint for an accepted result; expiry or loss cannot permit a second DB write.
     public void markProcessed(UUID analysisId, String source) {
         try {
             redis.opsForValue().set(key(analysisId, source), "1", ttl);

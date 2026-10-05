@@ -97,7 +97,7 @@ class AnalysisServiceBackpressureTest {
     @Test
     void failedResultNeedsNoExternalCounterUpdate() {
         givenAnalysis(AnalysisType.VIDEO, null, null);
-        when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
+        when(repository.failSourceIfUnaccepted(eq(id), eq("video"), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
 
         service.handleResult(Map.of(
                 "analysis_id", id.toString(), "source", "video", "status", "FAILED",

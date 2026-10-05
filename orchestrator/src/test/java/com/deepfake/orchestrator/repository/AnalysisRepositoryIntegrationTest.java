@@ -85,7 +85,8 @@ class AnalysisRepositoryIntegrationTest {
     // that's the write path handleResult actually uses.
     @Test
     void writeAudioProbPersistsDetailsJsonb() {
-        UUID id = persist("alice", Instant.now());
+        UUID id = em.persistFlushFind(Analysis.builder().userId("alice").fileId("f")
+                .fileKey("k").type(AnalysisType.AUDIO).build()).getId();
         Map<String, Object> details = Map.of(
                 "modelVersion", "v1.2.0-fast",
                 "gradcamKeys", List.of(id + "/audio/gradcam.png"),

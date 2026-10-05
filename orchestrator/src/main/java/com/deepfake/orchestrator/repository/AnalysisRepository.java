@@ -29,16 +29,24 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     // Atomic aggregation + terminal transitions. clearAutomatically so the caller
     // can re-read fresh; each returns rows touched (0 => already terminal/unknown).
 
-    // Disjoint per-source writes (prob + details together): concurrent video+audio both survive
-    // under the Postgres row-lock.
+    // First accepted success owns both probability and details. PostgreSQL rechecks the
+    // predicate after waiting for a concurrent row update; the lock lasts until commit.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Analysis a SET a.videoProb = :prob, a.videoDetails = :details, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
+    @Query("""
+            UPDATE Analysis a SET a.videoProb = :prob, a.videoDetails = :details, a.updatedAt = :now
+            WHERE a.id = :id AND a.status IN :active AND a.type IN (VIDEO, FULL)
+                AND a.videoProb IS NULL
+            """)
     int writeVideoProb(@Param("id") UUID id, @Param("prob") BigDecimal prob,
             @Param("details") Map<String, Object> details,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Analysis a SET a.audioProb = :prob, a.audioDetails = :details, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
+    @Query("""
+            UPDATE Analysis a SET a.audioProb = :prob, a.audioDetails = :details, a.updatedAt = :now
+            WHERE a.id = :id AND a.status IN :active AND a.type IN (AUDIO, FULL)
+                AND a.audioProb IS NULL
+            """)
     int writeAudioProb(@Param("id") UUID id, @Param("prob") BigDecimal prob,
             @Param("details") Map<String, Object> details,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
@@ -49,6 +57,19 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     int complete(@Param("id") UUID id, @Param("to") AnalysisStatus to, @Param("verdict") String verdict,
             @Param("confidence") BigDecimal confidence, @Param("active") Collection<AnalysisStatus> active,
             @Param("now") Instant now);
+
+    // A source failure is terminal for the whole analysis. It can win only before that
+    // expected source has an accepted success; no separate failure marker is needed.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Analysis a SET a.status = :to, a.errorMessage = :msg, a.updatedAt = :now
+            WHERE a.id = :id AND a.status IN :active AND (
+                (:source = 'video' AND a.type IN (VIDEO, FULL) AND a.videoProb IS NULL) OR
+                (:source = 'audio' AND a.type IN (AUDIO, FULL) AND a.audioProb IS NULL))
+            """)
+    int failSourceIfUnaccepted(@Param("id") UUID id, @Param("source") String source,
+            @Param("to") AnalysisStatus to, @Param("msg") String msg,
+            @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Analysis a SET a.status = :to, a.errorMessage = :msg, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
