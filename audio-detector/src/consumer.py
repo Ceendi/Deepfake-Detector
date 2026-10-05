@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import time
+import uuid
 
 import boto3
 import pika
@@ -101,9 +102,11 @@ def _process(msg: dict, input_path: str, progress_callback=None) -> dict:
             os.remove(input_path)
     # Contract (amqp-messages.md): gradcam_keys = bare object keys following
     # {analysisId}/{source}/{name}.png from object-storage.md. No URI scheme, no bucket prefix.
+    # Retries may disagree with the accepted result; keep its referenced objects immutable.
+    attempt_id = uuid.uuid4().hex
     gradcam_keys = []
     if "local_gradcam_path" in result and os.path.exists(result["local_gradcam_path"]):
-        gradcam_key = f"{msg['analysis_id']}/{SOURCE}/gradcam.png"
+        gradcam_key = f"{msg['analysis_id']}/{SOURCE}/gradcam_{attempt_id}.png"
         try:
             s3_client.upload_file(
                 result["local_gradcam_path"],

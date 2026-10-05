@@ -133,6 +133,11 @@ Success:
 }
 ```
 
+Artifact filenames include a per-attempt UUID (for example
+`gradcam_<attemptUuid>.png` or `gradcam_frame_01_<attemptUuid>.png`). Recomputed
+deliveries must not overwrite images referenced by an already accepted result.
+The object-key shape and result fields are unchanged.
+
 `gradcam_keys` — list of **bare object keys** in the `analysis-artifacts` bucket,
 following the `{analysisId}/{source}/{name}.png` convention from
 [`object-storage.md`](./object-storage.md). No URI scheme, no bucket prefix — the

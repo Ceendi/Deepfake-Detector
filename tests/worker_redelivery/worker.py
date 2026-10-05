@@ -36,12 +36,19 @@ class ControlledInference:
         if os.getenv("MODEL_FAIL") == "true":
             raise RuntimeError("controlled model failure")
         score = float(os.getenv("MODEL_SCORE", "0.8" if source == "video" else "0.4"))
-        return {
+        heatmap = Path(input_path).with_name("controlled-gradcam.png")
+        heatmap.write_bytes(f"{state.name}:{score}".encode())
+        result = {
             "prob_fake": score, "verdict": "FAKE" if score > 0.5 else "REAL",
             "confidence": 2 * abs(score - 0.5), "model_version": "controlled-test-model",
             "metadata": {"attempt": state.name, "raw_prob_fake": 0.24,
                          "threshold_used": 0.3, "score_contract": "audio-threshold-v1"},
         }
+        if source == "video":
+            result["local_gradcam_paths"] = [(str(heatmap), 1)]
+        else:
+            result["local_gradcam_path"] = str(heatmap)
+        return result
 
 
 inference = types.ModuleType("src.inference")
@@ -54,6 +61,13 @@ from src import consumer
 class ControlledInput:
     def download_file(self, bucket, key, destination):
         Path(destination).write_bytes(b"controlled test input")
+
+    def upload_file(self, local_path, bucket, key, **kwargs):
+        # A shared filesystem object-store fixture makes accidental overwrites observable.
+        root = Path(os.getenv("ARTIFACT_STORE", str(state / "artifacts")))
+        destination = root / bucket / key
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(Path(local_path).read_bytes())
 
 
 consumer.s3_client = ControlledInput()

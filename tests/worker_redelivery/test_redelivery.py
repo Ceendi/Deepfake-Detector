@@ -35,9 +35,11 @@ def rds():
 @pytest.fixture
 def workers(tmp_path):
     processes = []
+    artifact_store = tmp_path / "artifacts"
 
     def start(source, **env):
-        worker = Worker(source, tmp_path / f"worker-{len(processes)}", **env)
+        worker = Worker(source, tmp_path / f"worker-{len(processes)}",
+                        ARTIFACT_STORE=str(artifact_store), **env)
         processes.append(worker)
         return worker
 
@@ -70,7 +72,11 @@ def test_kill_after_confirm_before_ack_redelivers(source, broker, rds, workers):
     publish(broker, source, analysis_id)
     first.wait("confirmed")
     assert not (first.directory / "before_ack").exists()
-    assert result(broker)["status"] == "COMPLETED"
+    accepted = result(broker)
+    assert accepted["status"] == "COMPLETED"
+    accepted_key = accepted["result"]["gradcam_keys"][0]
+    artifact = first.directory.parent / "artifacts" / "analysis-artifacts" / accepted_key
+    accepted_bytes = artifact.read_bytes()
     first.kill()
     replacement = workers(source, MODEL_SCORE="0.1")
     assert replacement.wait("claimed")["redelivered"] is True
@@ -78,6 +84,10 @@ def test_kill_after_confirm_before_ack_redelivers(source, broker, rds, workers):
     duplicate = result(broker)
     assert duplicate["result"]["prob_fake"] == 0.1
     assert duplicate["source"] == source
+    duplicate_key = duplicate["result"]["gradcam_keys"][0]
+    assert duplicate_key != accepted_key
+    assert artifact.read_bytes() == accepted_bytes
+    assert (artifact.parents[3] / "analysis-artifacts" / duplicate_key).read_bytes() != accepted_bytes
 
 
 def test_two_workers_recompute_concurrent_duplicate_with_private_files(source, broker, rds, workers):

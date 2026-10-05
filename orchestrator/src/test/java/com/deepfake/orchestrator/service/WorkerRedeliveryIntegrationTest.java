@@ -140,8 +140,10 @@ class WorkerRedeliveryIntegrationTest {
         Map<String, Object> partial = stored(id);
         assertCapacityOccupied();
         kill(first); // A real SIGKILL releases the broker's unacked delivery.
+        awaitResults(1); // Includes afterCommit hints, not just early SQL visibility.
         idempotency.clear(id); // Prove the PostgreSQL guard independently of the Redis hint.
 
+        assertThat(idempotency.alreadyProcessed(id, source)).isFalse();
         Process replacement = start(source, "replacement", "inference", "0.1", false);
         barrier("replacement", "inference");
         assertThat(Files.readString(directory.resolve("replacement/claimed")))
@@ -156,6 +158,7 @@ class WorkerRedeliveryIntegrationTest {
         barrier("replacement", "acked");
         barrier("concurrent", "acked");
         awaitResults(3);
+        assertThat(idempotency.alreadyProcessed(id, source)).isFalse();
         assertThat(stored(id).get(source + "_prob")).isEqualTo(partial.get(source + "_prob"));
         assertThat(stored(id).get(source + "_details")).isEqualTo(partial.get(source + "_details"));
         assertThat(stored(id).get("error_message")).isNull();

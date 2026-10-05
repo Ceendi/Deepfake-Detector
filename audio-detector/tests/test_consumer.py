@@ -76,11 +76,14 @@ class TestProcessGradcamContract:
         result = consumer.process(_task_msg())
 
         # {analysisId}/{source}/{name}.png — no URI scheme, no bucket prefix
-        assert result["gradcam_keys"] == [f"{ANALYSIS_ID}/audio/gradcam.png"]
+        import re
+        assert len(result["gradcam_keys"]) == 1
+        assert re.fullmatch(rf"{ANALYSIS_ID}/audio/gradcam_[0-9a-f]{{32}}.png", result["gradcam_keys"][0])
         assert "gradcam_url" not in result
         bucket = s3.upload_file.call_args[0][1]
         key = s3.upload_file.call_args[0][2]
-        assert (bucket, key) == ("analysis-artifacts", f"{ANALYSIS_ID}/audio/gradcam.png")
+        assert bucket == "analysis-artifacts"
+        assert key == result["gradcam_keys"][0]
         assert not png.exists()  # local temp cleaned up
         assert "local_gradcam_path" not in result
 

@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import time
+import uuid
 
 import boto3
 import pika
@@ -115,9 +116,11 @@ def _process(msg: dict, input_path: str, progress_callback=None) -> dict:
     # Kontrakt: gole klucze obiektow {analysisId}/{source}/{name}.png (bez schematu URI,
     # bez bucketa) — autoryzowany URL buduje Orchestrator. Upload fail-soft: heatmapy
     # sa pomocnicze, wynik analizy publikujemy nawet bez nich.
+    # Retries may disagree with the accepted result; keep its referenced objects immutable.
+    attempt_id = uuid.uuid4().hex
     gradcam_keys = []
     for local_path, frame_idx in result.pop("local_gradcam_paths", []):
-        key = f"{analysis_id}/{SOURCE}/gradcam_frame_{frame_idx:02d}.png"
+        key = f"{analysis_id}/{SOURCE}/gradcam_frame_{frame_idx:02d}_{attempt_id}.png"
         try:
             s3_client.upload_file(local_path, ARTIFACTS_BUCKET, key,
                                   ExtraArgs={"ContentType": "image/png"})

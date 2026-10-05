@@ -35,7 +35,11 @@ metadata, threshold semantics, models and checkpoints are unchanged.
 
 Each attempt uses a private temporary directory for downloads, audio scratch
 files and video heatmaps. Parallel copies sharing a host cannot remove or write
-one another's local files. Normal completion, failure and cooperative cancel
+one another's local files. Uploaded Grad-CAM filenames also include an attempt UUID
+inside the existing `{analysisId}/{source}/{name}.png` contract, so a duplicate
+cannot overwrite object bytes referenced by the first accepted result. Unaccepted
+attempts can leave unreferenced artifacts under the existing bucket retention;
+this PR does not introduce an artifact garbage collector. Normal completion, failure and cooperative cancel
 clean this directory; SIGKILL can leave scratch files until container disposal.
 
 ## Redis and cancellation
@@ -102,7 +106,7 @@ main Compose deployment. Testcontainers creates separate PostgreSQL, RabbitMQ
 and Redis instances for Java tests.
 
 `tests/worker_redelivery/worker.py` runs each production `run_consumer`,
-`_handle_message`, pipeline and real pika channel. Only inference and S3 input
+`_handle_message`, pipeline and real pika channel. Only inference and S3 input/artifact storage
 are replaced by controlled lightweight fixtures. Observability hooks delegate
 to the real publish and ACK operations. A `confirmed` barrier is reached only
 after the real blocking publish returns; an `acked` barrier follows a synchronous
@@ -111,7 +115,8 @@ consumer exceptions. Tests assert RabbitMQ's actual `redelivered` flag.
 
 Python process regressions cover both sources: kill before publication with
 one-hour legacy markers, kill after confirm before ACK, concurrent copies with
-private scratch paths, Redis outage during inference, cancel before and during
+private scratch paths, retention of first-published artifact bytes after recomputation,
+Redis outage during inference, cancel before and during
 work, and mandatory returns on result/progress publications. The outages use a
 paused real Redis server, so they also exercise read timeouts rather than only
 connection refusal.
@@ -137,6 +142,11 @@ loading, full model inference and S3 integration are outside these new tests.
 Local execution on 2026-10-05: audio lightweight suite 64 passed, video 36 passed,
 ruff 0.16.10 clean, isolated process suite 16 passed, and orchestrator `./mvnw verify`
 on JDK 25 passed all 260 tests with none skipped (including both FULL restart cases).
+Independent review identified and corrected shared Grad-CAM object overwrites and
+an afterCommit synchronization race in the PostgreSQL regression. Artifact names
+now use attempt UUIDs; the FULL test waits for the original transactional handler
+to return before clearing its dedup hint, and proves the hint remains absent while
+duplicates are rejected by PostgreSQL.
 The stale-processing-marker unit regression fails on each detector at the unchanged
 base and passes with this change. Earlier test-infrastructure attempts exposed a
 RabbitMQ startup-readiness window and redis-py's default retry delays; the final
