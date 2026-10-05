@@ -60,16 +60,12 @@ class AnalysisServiceFailFromDlqTest {
     }
 
     @Test
-    void failStuckUsesStuckMessage() {
-        when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
+    void failStuckRechecksTheDeadlineAfterLocking() {
+        when(repository.lockForRecovery(id)).thenReturn(Optional.of(id));
+        when(repository.failIfExpired(eq(id), any(), any(), any())).thenReturn(1);
         when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
-
         service.failStuck(id, 600);
-
-        ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
-        verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
-        assertThat(msg.getValue()).contains("stuck > 600s");
-        verifyNoInteractions(backpressure);
+        verify(repository).failIfExpired(eq(id), any(), any(), any());
         verify(metrics).stuckRecovery();
         verify(metrics, never()).dlqFailure();
     }

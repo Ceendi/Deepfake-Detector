@@ -63,9 +63,10 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration({FlywayAutoConfiguration.class, RabbitAutoConfiguration.class})
 @Import({AnalysisService.class, BackpressureGuard.class, IdempotencyGuard.class,
-        RabbitConfig.class, AnalysisResultListener.class, WorkerRedeliveryIntegrationTest.RedisConfig.class})
+        RabbitConfig.class, TaskOutboxPublisher.class, AnalysisResultListener.class, WorkerRedeliveryIntegrationTest.RedisConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
+@org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class WorkerRedeliveryIntegrationTest {
     @Container
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
@@ -88,7 +89,10 @@ class WorkerRedeliveryIntegrationTest {
         registry.add("spring.rabbitmq.password", () -> "test");
     }
 
+    @MockitoBean(name = "org.springframework.context.annotation.internalScheduledAnnotationProcessor")
+    org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProcessor scheduling;
     @Autowired AnalysisService service;
+    @Autowired TaskOutboxPublisher publisher;
     @Autowired AnalysisRepository repository;
     @Autowired RabbitTemplate rabbit;
     @Autowired JdbcTemplate jdbc;
@@ -191,7 +195,9 @@ class WorkerRedeliveryIntegrationTest {
     }
 
     private UUID create(AnalysisType type) {
-        return service.createResolved(new CreateAnalysisRequest("file", "key", type, null), "alice").id();
+        UUID id = service.createResolved(new CreateAnalysisRequest("file", "key", type, null), "alice").id();
+        publisher.dispatchDue();
+        return id;
     }
 
     private void assertCapacityOccupied() {

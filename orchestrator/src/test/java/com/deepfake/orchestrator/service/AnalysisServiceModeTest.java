@@ -2,7 +2,6 @@ package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -20,7 +19,6 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
-import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.request.AnalysisMode;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.entity.Analysis;
@@ -52,11 +50,12 @@ class AnalysisServiceModeTest {
     IdempotencyGuard idempotency;
     @Mock
     AnalysisMetrics metrics;
+    @Mock com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
     @InjectMocks
     AnalysisService service;
 
     @Captor
-    ArgumentCaptor<Map<String, Object>> payloadCaptor;
+    ArgumentCaptor<com.deepfake.orchestrator.entity.AnalysisTaskOutbox> payloadCaptor;
 
     private final UUID id = UUID.randomUUID();
 
@@ -66,9 +65,8 @@ class AnalysisServiceModeTest {
 
         service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.AUDIO, AnalysisMode.FAST), "alice");
 
-        verify(rabbitTemplate).convertAndSend(
-                eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_AUDIO), payloadCaptor.capture());
-        assertThat(payloadCaptor.getValue()).containsEntry("mode", "fast");
+        verify(outbox).save(payloadCaptor.capture());
+        assertThat(payloadCaptor.getValue().getPayload()).containsEntry("mode", "fast");
     }
 
     @Test
@@ -77,9 +75,8 @@ class AnalysisServiceModeTest {
 
         service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.AUDIO, null), "alice");
 
-        verify(rabbitTemplate).convertAndSend(
-                eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_AUDIO), payloadCaptor.capture());
-        assertThat(payloadCaptor.getValue()).containsEntry("mode", "accurate");
+        verify(outbox).save(payloadCaptor.capture());
+        assertThat(payloadCaptor.getValue().getPayload()).containsEntry("mode", "accurate");
     }
 
     @Test
@@ -88,13 +85,9 @@ class AnalysisServiceModeTest {
 
         service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.FULL, AnalysisMode.FAST), "alice");
 
-        verify(rabbitTemplate).convertAndSend(
-                eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_VIDEO), payloadCaptor.capture());
-        assertThat(payloadCaptor.getValue()).doesNotContainKey("mode");
-
-        verify(rabbitTemplate).convertAndSend(
-                eq(RabbitConfig.EXCHANGE), eq(RabbitConfig.Q_AUDIO), payloadCaptor.capture());
-        assertThat(payloadCaptor.getValue()).containsEntry("mode", "fast");
+        verify(outbox, org.mockito.Mockito.times(2)).save(payloadCaptor.capture());
+        assertThat(payloadCaptor.getAllValues().get(0).getPayload()).doesNotContainKey("mode");
+        assertThat(payloadCaptor.getAllValues().get(1).getPayload()).containsEntry("mode", "fast");
     }
 
     private void givenSavedAnalysis(AnalysisType type) {

@@ -39,6 +39,7 @@ spring:
     port: 5672
     username: ${RABBITMQ_USER}
     password: ${RABBITMQ_PASSWORD}
+    connection-timeout: 3s
     publisher-confirm-type: correlated
     publisher-returns: true
     listener:
@@ -80,6 +81,13 @@ backpressure:
   max-inflight: ${BACKPRESSURE_MAX_INFLIGHT:20}
   retry-after-seconds: ${BACKPRESSURE_RETRY_AFTER_SECONDS:5}
 reliability:
+  outbox:
+    enabled: ${RELIABILITY_OUTBOX_ENABLED:true}
+    poll-interval-ms: ${RELIABILITY_OUTBOX_POLL_INTERVAL_MS:1000}
+    confirm-timeout-ms: ${RELIABILITY_OUTBOX_CONFIRM_TIMEOUT_MS:5000}
+    retry-seconds: ${RELIABILITY_OUTBOX_RETRY_SECONDS:5}
+    dispatch-timeout-seconds: ${RELIABILITY_OUTBOX_DISPATCH_TIMEOUT_SECONDS:120}
+    batch-size: ${RELIABILITY_OUTBOX_BATCH_SIZE:20}
   idempotency:
     # TTL of the per-result dedup key (dedup:{id}:{source}); long enough to cover broker redeliveries.
     ttl-seconds: ${RELIABILITY_IDEMPOTENCY_TTL_SECONDS:900}

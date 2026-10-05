@@ -56,7 +56,7 @@ class AnalysisServiceCacheIdorTest {
         template.afterPropertiesSet();
 
         repository = mock(AnalysisRepository.class);
-        service = new AnalysisService(repository, mock(RabbitTemplate.class), template,
+        service = new AnalysisService(repository, mock(com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository.class), template,
                 new AnalysisCache(template, true), mock(AnalysisStreamRegistry.class),
                 mock(BackpressureGuard.class), mock(IdempotencyGuard.class), mock(AnalysisMetrics.class));
     }
