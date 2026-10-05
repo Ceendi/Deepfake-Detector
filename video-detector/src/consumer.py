@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 import time
 
 import boto3
@@ -11,6 +12,8 @@ from opentelemetry import trace
 from opentelemetry.trace import SpanKind, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from prometheus_client import Counter, Histogram
+from redis.backoff import NoBackoff
+from redis.retry import Retry
 
 from .tracing import init_tracing
 
@@ -22,7 +25,6 @@ SOURCE      = os.getenv("SOURCE_LABEL", "video")   # "video" or "audio"
 EXCHANGE    = "analysis.exchange"
 DLX         = "analysis.dlx"
 ARTIFACTS_BUCKET = "analysis-artifacts"
-DEDUP_TTL_SECONDS = int(os.getenv("DEDUP_TTL_SECONDS", "3600"))
 
 log = structlog.get_logger(__name__)
 init_tracing(f"{SOURCE}-detector")
@@ -52,6 +54,9 @@ redis_client = redis.Redis(
     host=os.environ.get("REDIS_HOST", "localhost"),
     port=int(os.environ.get("REDIS_PORT", "6379")),
     password=os.environ.get("REDIS_PASSWORD"),
+    socket_connect_timeout=1,
+    socket_timeout=1,
+    retry=Retry(NoBackoff(), 0),
     db=0,
     decode_responses=True,
 )
@@ -82,8 +87,14 @@ def _is_cancelled(analysis_id: str) -> bool:
 
 
 def process(msg: dict, progress_callback=None) -> dict:
-    """Pelny pipeline jednego zadania: start-ping -> S3 download -> inferencja ->
-    upload heatmap -> wynik zgodny z docs/contracts/amqp-messages.md."""
+    # Duplicate deliveries can run concurrently, including in processes sharing /tmp.
+    # Keep downloads, model scratch files and heatmaps private to this attempt.
+    with tempfile.TemporaryDirectory(prefix=f"{SOURCE}-attempt-") as workdir:
+        return _process(msg, os.path.join(workdir, "input"), progress_callback)
+
+
+def _process(msg: dict, input_path: str, progress_callback=None) -> dict:
+    """Download, infer and upload artifacts in this delivery's private directory."""
     if not video_inference:
         raise RuntimeError("VideoInference module not initialized properly.")
     analysis_id = msg["analysis_id"]
@@ -92,11 +103,11 @@ def process(msg: dict, progress_callback=None) -> dict:
     # Kazdy tick progressu jest tez punktem anulowania (progress_callback rzuca AnalysisCancelled).
     if progress_callback:
         progress_callback(0, "LOADING")
-    input_path = f"/tmp/{analysis_id}_input"
     log.info("downloading_file", bucket=msg["file_bucket"], key=msg["file_key"])
     s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
     try:
-        result = video_inference.analyze(input_path, progress_callback=progress_callback)
+        result = video_inference.analyze(input_path, progress_callback=progress_callback,
+                                         workdir=os.path.dirname(input_path))
     finally:
         if os.path.exists(input_path):
             os.remove(input_path)
@@ -141,28 +152,6 @@ def _publish(ch, routing_key: str, payload: dict) -> None:
     )
 
 
-def _try_acquire_dedup(analysis_id: str) -> bool:
-    """SETNX processing:{analysis_id}:{source} — per-source (FULL = 2 niezalezne wyniki,
-    wspolny klucz wygasilby drugi detektor). Fail-open: Redis to akcelerator, autorytetem
-    poprawnosci jest guard terminalny w DB Orchestratora."""
-    try:
-        return redis_client.set(
-            f"processing:{analysis_id}:{SOURCE}", "1", nx=True, ex=DEDUP_TTL_SECONDS,
-        ) is not None
-    except redis.RedisError as e:
-        log.warning("redis_dedup_unavailable_failing_open", error=str(e))
-        return True
-
-
-def _release_dedup(analysis_id: str) -> None:
-    """Po FAILED/CANCELLED zwalniamy klucz, zeby ewentualna ponowna proba mogla przetworzyc
-    zadanie (guard DB i tak odrzuci spozniony wynik). Po sukcesie klucz zostaje do TTL."""
-    try:
-        redis_client.delete(f"processing:{analysis_id}:{SOURCE}")
-    except redis.RedisError as e:
-        log.warning("redis_dedup_release_failed", error=str(e))
-
-
 def _handle_message(ch, method, properties, body):
     try:
         msg = json.loads(body)
@@ -185,25 +174,16 @@ def _handle_message(ch, method, properties, body):
             source=SOURCE,
             **_trace_log_fields(span),
         )
-        # Cancelled while waiting in the queue (common behind a long job with prefetch=1):
-        # ack and drop before doing any work (and before claiming the dedup slot).
-        if _is_cancelled(analysis_id):
-            log.info("task_cancelled_before_start")
-            span.set_attribute("analysis.cancelled", True)
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-            DETECTOR_RESULTS.labels(SOURCE, "cancelled").inc()
-            structlog.contextvars.clear_contextvars()
-            return
         try:
-            log.info("processing_started")
-            if not _try_acquire_dedup(analysis_id):
-                log.warning("duplicate_message_dropped", reason="already_processing")
+            # Redis only saves cancelled work; processing markers are not completion evidence.
+            if _is_cancelled(analysis_id):
+                log.info("task_cancelled_before_start")
+                span.set_attribute("analysis.cancelled", True)
+                DETECTOR_RESULTS.labels(SOURCE, "cancelled").inc()
                 ch.basic_ack(delivery_tag=method.delivery_tag)
                 return
 
             def progress_callback(pct: int, stage: str = "INFERENCE", details: dict | None = None):
-                # Every progress tick doubles as a cancellation point, so a cancel lands within
-                # one frame batch instead of after the whole file.
                 if _is_cancelled(analysis_id):
                     raise AnalysisCancelled()
                 payload = {
@@ -217,57 +197,64 @@ def _handle_message(ch, method, properties, body):
                     payload["details"] = details
                 _publish(ch, "analysis.progress", payload)
 
-            # Start-ping (0/LOADING) lives inside process(), so swapping the model keeps it.
-            with INFERENCE_LATENCY.labels(SOURCE).time():
-                result = process(msg, progress_callback=progress_callback)
-            DETECTOR_RESULTS.labels(SOURCE, result["verdict"].lower()).inc()
-            _publish(ch, "analysis.results", {
-                "analysis_id": analysis_id,
-                "correlation_id": correlation_id,
-                "source": SOURCE,
-                "status": "COMPLETED",
-                "result": result,
-                "error": None,
-            })
+            log.info("processing_started", redelivered=method.redelivered)
+            try:
+                with INFERENCE_LATENCY.labels(SOURCE).time():
+                    result = process(msg, progress_callback=progress_callback)
+                if _is_cancelled(analysis_id):
+                    raise AnalysisCancelled()
+                payload = {
+                    "analysis_id": analysis_id,
+                    "correlation_id": correlation_id,
+                    "source": SOURCE,
+                    "status": "COMPLETED",
+                    "result": result,
+                    "error": None,
+                }
+            except AnalysisCancelled:
+                # The orchestrator has already committed CANCELLED; no result is needed.
+                DETECTOR_RESULTS.labels(SOURCE, "cancelled").inc()
+                log.info("processing_cancelled")
+                span.set_attribute("analysis.cancelled", True)
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+            except pika.exceptions.AMQPError:
+                # A failed progress publication is a transport failure, not an ML verdict.
+                # Close the connection in run_consumer and let RabbitMQ redeliver.
+                raise
+            except Exception as e:
+                DETECTOR_RESULTS.labels(SOURCE, "failed").inc()
+                log.exception("processing_failed")
+                span.record_exception(e)
+                span.set_status(StatusCode.ERROR, str(e))
+                payload = {
+                    "analysis_id": analysis_id,
+                    "correlation_id": correlation_id,
+                    "source": SOURCE,
+                    "status": "FAILED",
+                    "result": None,
+                    "error": {"code": getattr(e, "code", "PROCESSING_ERROR"), "message": str(e)},
+                }
+
+            # BlockingChannel waits for the broker confirm; mandatory returns/nacks raise.
+            # Publication and ACK failures escape instead of publishing a spurious FAILED.
+            _publish(ch, "analysis.results", payload)
             ch.basic_ack(delivery_tag=method.delivery_tag)
-            log.info("processing_completed", verdict=result["verdict"], prob_fake=result["prob_fake"])
-        except AnalysisCancelled:
-            # Not a failure: no result is published — the analysis is already terminal CANCELLED
-            # upstream and the Orchestrator would ignore anything we send. Ack to drop the task.
-            DETECTOR_RESULTS.labels(SOURCE, "cancelled").inc()
-            log.info("processing_cancelled")
-            span.set_attribute("analysis.cancelled", True)
-            _release_dedup(analysis_id)
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-        except Exception as e:
-            log.exception("processing_failed")
-            # The except swallows the exception, so the span must be marked failed by hand.
-            span.record_exception(e)
-            span.set_status(StatusCode.ERROR, str(e))
-            DETECTOR_RESULTS.labels(SOURCE, "failed").inc()
-            _release_dedup(analysis_id)
-            _publish(ch, "analysis.results", {
-                "analysis_id": analysis_id,
-                "correlation_id": correlation_id,
-                "source": SOURCE,
-                "status": "FAILED",
-                "result": None,
-                # InferenceError niesie kod kontraktowy (NO_FACE_DETECTED itd.);
-                # kazdy inny wyjatek spada do generycznego PROCESSING_ERROR
-                "error": {"code": getattr(e, "code", "PROCESSING_ERROR"), "message": str(e)},
-            })
-            # ack — failure info already published; we do not want infinite redelivery
-            ch.basic_ack(delivery_tag=method.delivery_tag)
+            if payload["status"] == "COMPLETED":
+                DETECTOR_RESULTS.labels(SOURCE, result["verdict"].lower()).inc()
+                log.info("processing_completed", verdict=result["verdict"],
+                         prob_fake=result["prob_fake"])
         finally:
             structlog.contextvars.clear_contextvars()
 
 
 def run_consumer(health_state: dict) -> None:
     while True:
+        conn = None
         try:
             creds = pika.PlainCredentials(RABBIT_USER, RABBIT_PASS)
             params = pika.ConnectionParameters(
-                host=RABBIT_HOST, credentials=creds,
+                host=RABBIT_HOST, port=int(os.getenv("RABBITMQ_PORT", "5672")), credentials=creds,
                 heartbeat=30, blocked_connection_timeout=300,
             )
             conn = pika.BlockingConnection(params)
@@ -306,4 +293,10 @@ def run_consumer(health_state: dict) -> None:
         except Exception as e:
             health_state["ok"] = False
             log.exception("consumer_crashed_reconnecting", error=str(e), backoff_seconds=5)
+            # Release unacked deliveries even when a mandatory return leaves the channel open.
+            if conn is not None and conn.is_open:
+                try:
+                    conn.close()
+                except pika.exceptions.AMQPError:
+                    log.warning("consumer_connection_close_failed")
             time.sleep(5)

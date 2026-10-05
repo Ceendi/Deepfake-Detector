@@ -30,6 +30,13 @@ jobs:
       # Each service is its own Maven project (own mvnw, no root reactor) -> cd + ./mvnw. The
       # *ApplicationTests smoke tests are Testcontainers-backed (need the runner's Docker, like the
       # other ITs). rerunFailingTestsCount tolerates the odd Testcontainers connection flake.
+      - uses: actions/setup-python@v7
+        if: matrix.service == 'orchestrator'
+        with:
+          python-version: '3.12'
+      - name: Install lightweight worker process fixtures
+        if: matrix.service == 'orchestrator'
+        run: python -m pip install -r audio-detector/tests/requirements-light.txt
       - name: verify
         working-directory: ${{ matrix.service }}
         run: ./mvnw -B verify -Dsurefire.rerunFailingTestsCount=2
@@ -49,8 +56,12 @@ jobs:
         working-directory: ${{ matrix.service }}
         run: uvx ruff==0.16.10 check .
 
-  audio-contract:
-    name: Lightweight audio contract
+  detector-contract:
+    name: Lightweight detector contract (${{ matrix.service }})
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [audio-detector, video-detector]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -60,10 +71,26 @@ jobs:
       - name: Install only the lightweight test dependencies
         run: python -m pip install -r audio-detector/tests/requirements-light.txt
       - name: Verify inference wiring, publication and shared Java fixtures without checkpoints
-        working-directory: audio-detector
+        working-directory: ${{ matrix.service }}
         env:
           AWS_EC2_METADATA_DISABLED: 'true'
         run: python -m pytest -q tests
+
+  worker-redelivery:
+    name: Worker process redelivery (RabbitMQ and Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install lightweight process test dependencies
+        run: python -m pip install -r audio-detector/tests/requirements-light.txt
+      - name: Lint process fixtures
+        run: pip install ruff==0.16.10 && ruff check tests/worker_redelivery
+      - name: Kill, redeliver, confirm, cancel and degrade Redis for both detectors
+        run: tests/worker_redelivery/run.sh
 
   frontend:
     runs-on: ubuntu-latest
