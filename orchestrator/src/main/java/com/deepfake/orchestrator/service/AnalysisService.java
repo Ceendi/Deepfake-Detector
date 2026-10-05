@@ -275,8 +275,17 @@ public class AnalysisService {
 
     public void handleResult(Map<String, Object> payload) {
         UUID id = UUID.fromString((String) payload.get("analysis_id"));
-        String source = (String) payload.get("source"); // "video" | "audio"
-        String status = (String) payload.get("status"); // "COMPLETED" | "FAILED"
+        Object sourceValue = payload.get("source");
+        if (!(sourceValue instanceof String source)
+                || !("video".equals(source) || "audio".equals(source))) {
+            log.warn("Ignoring result with invalid source for {}: {}", id, sourceValue);
+            return;
+        }
+        Object status = payload.get("status");
+        if (!("COMPLETED".equals(status) || "FAILED".equals(status))) {
+            log.warn("Ignoring non-terminal result for {} ({}): {}", id, source, status);
+            return;
+        }
 
         // Tie the AMQP consumer span to the analysis (HTTP -> publish -> detector -> result chain).
         Span.current().setAttribute("analysis.id", id.toString());
@@ -285,12 +294,12 @@ public class AnalysisService {
             log.info("Duplicate result for {}/{}, skipping (idempotency)", id, source);
             return;
         }
-        markProcessedAfterCommit(id, source); // recorded only if this tx commits — retry-safe
 
         if ("FAILED".equals(status)) {
-            // TODO(sem2): partial-failure fallback — a FAILED source in FULL fails the whole analysis,
-            // dropping the healthy source's prob. Needs a per-source failed flag (migration) + aggregation change.
-            if (repository.failIfActive(id, AnalysisStatus.FAILED, extractError(payload), ACTIVE, Instant.now()) == 1) {
+            // Preserve fail-whole-analysis semantics for an unaccepted expected source.
+            if (repository.failSourceIfUnaccepted(id, source, AnalysisStatus.FAILED,
+                    extractError(payload), ACTIVE, Instant.now()) == 1) {
+                markProcessedAfterCommit(id, source);
                 onTerminal(id);
             } else {
                 log.warn("Late/duplicate FAILED for {} ({}), ignoring", id, source);
@@ -307,9 +316,11 @@ public class AnalysisService {
                 ? repository.writeVideoProb(id, prob, details, ACTIVE, Instant.now())
                 : repository.writeAudioProb(id, prob, details, ACTIVE, Instant.now());
         if (rows == 0) {
-            log.warn("Result for terminal/unknown analysis {} ({}), ignoring", id, source);
+            log.warn("Result for accepted/unexpected source or terminal/unknown analysis {} ({}), ignoring", id, source);
             return;
         }
+
+        markProcessedAfterCommit(id, source);
 
         // Fresh read (the @Modifying above cleared the PC): sees BOTH probs when the other source committed.
         Analysis a = repository.findById(id).orElseThrow();

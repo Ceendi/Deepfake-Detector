@@ -221,9 +221,20 @@ Contract:
 - **Manual ack:** literal `MANUAL` on the detectors and the DLQ consumer. The main
   result/progress listeners use `AUTO` = container ack **after** the `@Transactional`
   handler commits (not RabbitMQ auto-ack), which is what lets retry + recoverer compose.
-- **Idempotency:** `dedup:{analysis_id}:{source}` in Redis, per-source (a FULL analysis
-  yields two results under one id), set on commit so the key exists iff the result was
-  persisted (fail-open). The DB terminal-state guard is the correctness authority.
+- **Result acceptance:** PostgreSQL accepts the first terminal result of an expected source.
+  `VIDEO` expects `video`, `AUDIO` expects `audio`, and `FULL` expects both. Source names
+  are case-sensitive; invalid/missing sources and statuses other than `COMPLETED` or
+  `FAILED` are ignored. Conditional updates check the analysis type, active status and
+  a NULL source probability in the same transaction. A success owns probability and
+  details together; later success or failure deliveries from that source cannot replace
+  them. An accepted `FAILED` still fails the whole analysis. FULL keeps weights 0.6 video
+  / 0.4 audio and the [PR04 audio contract](audio-score-contract.md).
+- **Idempotency:** `dedup:{analysis_id}:{source}` in Redis is an optional early-exit hint,
+  set only after an accepted result commits. PostgreSQL remains the correctness authority
+  when the marker expires, is lost, or Redis is unavailable. Rollback leaves the source
+  retryable and does not set a marker. Terminal transitions and capacity changes commit
+  together; duplicates of terminal analyses do not release capacity again.
+  See [result acceptance and validation](../backend-pr05-result-idempotence.md).
 - **Stuck-job recovery:** a scheduled scan fails analyses left `PENDING` / `PROCESSING`
   past a threshold (default 600s) → `FAILED` + slot released (gauge reconcile) + SSE.
 - **Redis degradation:** every Redis touch fails open (cache → DB, gauge → admit, dedup →
