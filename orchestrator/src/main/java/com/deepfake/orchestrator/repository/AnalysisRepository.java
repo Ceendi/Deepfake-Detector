@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
@@ -112,6 +113,26 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
             FROM Analysis a WHERE a.userId = :userId
             """)
     UserStats userStats(@Param("userId") String userId, @Param("since") Instant since);
+
+    @Query(value = "SELECT id FROM analysis WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<UUID> lockForRecovery(@Param("id") UUID id);
+
+    String EXPIRED = """
+        status IN ('PENDING', 'PROCESSING') AND (
+            (EXISTS (SELECT 1 FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.sent_at IS NULL)
+                AND created_at < :dispatchCutoff)
+            OR (NOT EXISTS (SELECT 1 FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.sent_at IS NULL)
+                AND updated_at < :cutoff))
+        """;
+
+    @Query(value = "SELECT id FROM analysis WHERE " + EXPIRED, nativeQuery = true)
+    List<UUID> findExpiredIds(@Param("cutoff") Instant cutoff, @Param("dispatchCutoff") Instant dispatchCutoff);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = "UPDATE analysis SET status = 'FAILED', error_message = 'dispatch or progress deadline exceeded, auto-failed by recovery', updated_at = :now WHERE id = :id AND " + EXPIRED,
+            nativeQuery = true)
+    int failIfExpired(@Param("id") UUID id, @Param("cutoff") Instant cutoff,
+            @Param("dispatchCutoff") Instant dispatchCutoff, @Param("now") Instant now);
 
     // Native + literal statuses so the planner can use the partial index idx_analysis_active
     // (WHERE status IN ('PENDING','PROCESSING')); a bound IN list wouldn't match the index predicate.

@@ -251,6 +251,25 @@ Contract:
   together; duplicates of terminal analyses do not release capacity again.
   See [result acceptance and validation](../backend-pr05-result-idempotence.md).
 - **Stuck-job recovery:** a scheduled scan fails analyses left `PENDING` / `PROCESSING`
-  past a threshold (default 600s) → `FAILED` + slot released (gauge reconcile) + SSE.
+  past a threshold (default 600s) → `FAILED` + PostgreSQL capacity freed + SSE.
+  PR07 adds a separate 120-second deadline for any unsent outbox source; the final
+  recovery transaction rechecks state and time after locking the analysis.
 - **Redis degradation:** every Redis touch fails open (cache → DB, gauge → admit, dedup →
   DB guard, progress snapshot → skipped). Redis is an accelerator, not the source of truth.
+
+
+## Transactional task dispatch (PR07)
+
+New tasks originate in the PostgreSQL transactional outbox, after analysis commit.
+Each expected source has one durable `task_id` (also the AMQP message ID); retries
+preserve its payload, correlation ID, timestamp and audio mode. Workers continue
+using `analysis_id` and `source` for result identity. Persistent mandatory publication
+must receive an ACK confirm with no return before the outbox sent marker commits.
+A nack, return or timeout schedules bounded retry; confirm followed by a process or
+database failure can cause a duplicate. PR05/PR06 make those duplicates safe.
+
+Cancel/recovery/results serialize with publication on the analysis row. Terminal
+analyses and expired dispatch deadlines are never replayed. FULL sources have
+independent sent markers and a finite creation-based dispatch deadline, even if
+one source is already progressing. See [PR07 deployment and recovery policy](../backend-pr07-transactional-dispatch.md)
+for retry settings, legacy PENDING rows, retained backlog and publisher rollback.

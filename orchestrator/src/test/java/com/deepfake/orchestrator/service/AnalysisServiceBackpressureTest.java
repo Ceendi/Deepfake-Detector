@@ -54,6 +54,7 @@ class AnalysisServiceBackpressureTest {
     IdempotencyGuard idempotency;
     @Mock
     AnalysisMetrics metrics;
+    @Mock com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
     @InjectMocks
     AnalysisService service;
 

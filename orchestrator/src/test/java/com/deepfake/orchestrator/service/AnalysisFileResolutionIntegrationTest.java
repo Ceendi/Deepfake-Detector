@@ -98,6 +98,7 @@ class AnalysisFileResolutionIntegrationTest {
 
     @Autowired AnalysisCreationService facade;
     @Autowired AnalysisRepository repository;
+    @Autowired com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
     @Autowired PlatformTransactionManager transactions;
     @MockitoSpyBean FileMetadataClient files;
     @MockitoSpyBean BackpressureGuard guard;
@@ -131,11 +132,11 @@ class AnalysisFileResolutionIntegrationTest {
         var created = facade.create(request("bob/private.wav"), "alice", "verified-token");
         assertThat(created.fileKey()).isEqualTo("canonical/alice.wav");
         assertThat(repository.findById(created.id()).orElseThrow().getFileKey()).isEqualTo("canonical/alice.wav");
-        var payload = org.mockito.ArgumentCaptor.forClass(Object.class);
-        verify(rabbit, times(2)).convertAndSend(eq("analysis.exchange"), anyString(), payload.capture());
-        for (Object task : payload.getAllValues()) {
-            assertThat(((Map<?, ?>) task).get("file_key")).isEqualTo("canonical/alice.wav");
-        }
+        assertThat(outbox.findAll()).hasSize(2).allSatisfy(task -> {
+            assertThat(task.getPayload()).containsEntry("file_key", "canonical/alice.wav");
+            assertThat(task.getPayload().toString()).doesNotContain("verified-token");
+        });
+        verifyNoInteractions(rabbit);
         assertThat(authorization).isEqualTo("Bearer verified-token");
         assertThat(identityHeader).isNull();
     }

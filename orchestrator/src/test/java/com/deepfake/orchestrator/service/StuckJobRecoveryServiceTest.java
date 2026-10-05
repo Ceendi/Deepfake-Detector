@@ -31,14 +31,14 @@ class StuckJobRecoveryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new StuckJobRecoveryService(repository, analysisService, 600);
+        service = new StuckJobRecoveryService(repository, analysisService, 600, 120);
     }
 
     @Test
     void failsEveryStuckJob() {
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
-        when(repository.findStuckIds(any(Instant.class))).thenReturn(List.of(a, b));
+        when(repository.findExpiredIds(any(Instant.class), any(Instant.class))).thenReturn(List.of(a, b));
 
         service.reclaimStuck();
 
@@ -48,7 +48,7 @@ class StuckJobRecoveryServiceTest {
 
     @Test
     void noStuckJobsDoesNothing() {
-        when(repository.findStuckIds(any(Instant.class))).thenReturn(List.of());
+        when(repository.findExpiredIds(any(Instant.class), any(Instant.class))).thenReturn(List.of());
 
         service.reclaimStuck();
 
@@ -59,7 +59,7 @@ class StuckJobRecoveryServiceTest {
     void oneFailureDoesNotAbortTheRest() {
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
-        when(repository.findStuckIds(any(Instant.class))).thenReturn(List.of(a, b));
+        when(repository.findExpiredIds(any(Instant.class), any(Instant.class))).thenReturn(List.of(a, b));
         doThrow(new RuntimeException("db down")).when(analysisService).failStuck(eq(a), anyLong());
 
         service.reclaimStuck();

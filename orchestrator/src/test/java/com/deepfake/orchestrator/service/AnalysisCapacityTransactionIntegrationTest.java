@@ -2,9 +2,6 @@ package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -15,7 +12,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -96,16 +92,12 @@ class AnalysisCapacityTransactionIntegrationTest {
     }
 
     @Test
-    void twentyPublicationFailuresDoNotBlockTheNextCreate() {
-        doThrow(new AmqpException("publication failed")).when(rabbit)
-                .convertAndSend(anyString(), anyString(), any(Object.class));
-        for (int i = 0; i < 20; i++) {
-            assertThatThrownBy(this::create).isInstanceOf(AmqpException.class);
-            assertThat(active()).isZero();
-        }
-        reset(rabbit);
-        assertThat(create()).isNotNull();
+    void brokerUnavailableDoesNotPreventAtomicAdmission() {
+        UUID id = create();
         assertThat(active()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox WHERE analysis_id = ?", Long.class, id))
+                .isEqualTo(1);
+        verifyNoInteractions(rabbit);
     }
 
     @Test
@@ -128,6 +120,8 @@ class AnalysisCapacityTransactionIntegrationTest {
             assertThatThrownBy(() -> service.createResolved(request("fail-at-commit"), "alice"))
                     .hasStackTraceContaining("capacity test deferred commit failure");
             assertThat(active()).isZero();
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isZero();
+            verifyNoInteractions(rabbit);
         }
         assertThat(create()).isNotNull();
         assertThat(active()).isEqualTo(1);

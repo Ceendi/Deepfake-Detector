@@ -1,7 +1,9 @@
 package com.deepfake.orchestrator.service;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
-import com.deepfake.orchestrator.config.RabbitConfig;
+import com.deepfake.orchestrator.entity.AnalysisTaskOutbox;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
+import org.springframework.beans.factory.annotation.Value;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
@@ -18,7 +20,6 @@ import io.opentelemetry.api.trace.Span;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -60,7 +61,9 @@ public class AnalysisService {
             EnumSet.of(AnalysisStatus.PENDING, AnalysisStatus.PROCESSING);
 
     private final AnalysisRepository repository;
-    private final RabbitTemplate rabbitTemplate;
+    private final AnalysisTaskOutboxRepository outbox;
+    @Value("${reliability.outbox.dispatch-timeout-seconds:120}")
+    private long dispatchTimeoutSeconds = 120;
     private final StringRedisTemplate redis;
     private final AnalysisCache cache;
     private final AnalysisStreamRegistry streams;
@@ -104,7 +107,7 @@ public class AnalysisService {
         );
 
         if (req.type() == AnalysisType.VIDEO || req.type() == AnalysisType.FULL) {
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_VIDEO, payload);
+            enqueue(analysis.getId(), "video", payload);
         }
         if (req.type() == AnalysisType.AUDIO || req.type() == AnalysisType.FULL) {
             // mode is audio-only: it selects the audio model (fast = spectrogram, accurate = Wav2Vec2).
@@ -113,10 +116,18 @@ public class AnalysisService {
             Span.current().setAttribute("analysis.mode", req.mode().wire());
             Map<String, Object> audioPayload = new HashMap<>(payload);
             audioPayload.put("mode", req.mode().wire());
-            rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_AUDIO, audioPayload);
+            enqueue(analysis.getId(), "audio", audioPayload);
         }
 
         return AnalysisResponse.from(analysis);
+    }
+
+    private void enqueue(UUID analysisId, String source, Map<String, Object> payload) {
+        UUID taskId = UUID.randomUUID();
+        Map<String, Object> durablePayload = new HashMap<>(payload);
+        durablePayload.put("task_id", taskId.toString());
+        outbox.save(AnalysisTaskOutbox.builder().id(taskId).analysisId(analysisId)
+                .source(source).payload(durablePayload).build());
     }
 
     private static void validateCreate(CreateAnalysisRequest req, String userId) {
@@ -350,7 +361,15 @@ public class AnalysisService {
 
     // Stuck-job recovery asks us to fail an analysis that hasn't progressed past its threshold.
     public void failStuck(UUID id, long thresholdSeconds) {
-        if (transitionToFailed(id, "stuck > " + thresholdSeconds + "s, auto-failed by recovery")) {
+        // Lock first, then use a new statement snapshot: a publisher/progress/cancel may have
+        // changed the candidate since the scan. Never finish based only on that earlier scan.
+        if (repository.lockForRecovery(id).isEmpty()) {
+            return;
+        }
+        Instant now = Instant.now();
+        if (repository.failIfExpired(id, now.minusSeconds(thresholdSeconds),
+                now.minusSeconds(dispatchTimeoutSeconds), now) == 1) {
+            onTerminal(id);
             metrics.stuckRecovery();
         }
     }

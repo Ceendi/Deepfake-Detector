@@ -25,17 +25,21 @@ public class StuckJobRecoveryService {
     private final AnalysisRepository repository;
     private final AnalysisService analysisService;
     private final long thresholdSeconds;
+    private final long dispatchTimeoutSeconds;
 
     public StuckJobRecoveryService(AnalysisRepository repository, AnalysisService analysisService,
-            @Value("${reliability.stuck-job.threshold-seconds:600}") long thresholdSeconds) {
+            @Value("${reliability.stuck-job.threshold-seconds:600}") long thresholdSeconds,
+            @Value("${reliability.outbox.dispatch-timeout-seconds:120}") long dispatchTimeoutSeconds) {
         this.repository = repository;
         this.analysisService = analysisService;
         this.thresholdSeconds = thresholdSeconds;
+        this.dispatchTimeoutSeconds = dispatchTimeoutSeconds;
     }
 
     @Scheduled(fixedDelayString = "${reliability.stuck-job.scan-interval-ms:300000}")
     public void reclaimStuck() {
-        List<UUID> stuck = repository.findStuckIds(Instant.now().minusSeconds(thresholdSeconds));
+        List<UUID> stuck = repository.findExpiredIds(Instant.now().minusSeconds(thresholdSeconds),
+                Instant.now().minusSeconds(dispatchTimeoutSeconds));
         if (stuck.isEmpty()) {
             return;
         }
