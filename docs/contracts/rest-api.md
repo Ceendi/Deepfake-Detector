@@ -305,7 +305,8 @@ Authorization: Bearer <token>
 
 `200 OK` (`text/event-stream`) for the owner. `404 Not Found` at open time if the
 analysis does not exist OR `userId != jwt.sub` (IDOR guard — never `403`). This open
-check is the entire channel authorization; events are then pushed by `analysisId`.
+check is repeated after registration; both reads are scoped to the owner, and events are then
+pushed by `analysisId`.
 
 Events:
 
@@ -325,9 +326,42 @@ data: {"analysisId":"uuid","status":"COMPLETED","verdict":"FAKE","confidence":0.
 - Comment lines (`: ...`) are sent ~every 15 s as a heartbeat to keep idle connections
   alive through proxies; clients ignore them.
 
-**Client:** use a fetch-based SSE client (e.g. `@microsoft/fetch-event-source`) so the
-`Authorization` header can be set — the native `EventSource` cannot send headers, and a
-token in the query string would leak into logs.
+**Subscription consistency:** `openStream` suspends any caller transaction. It reads an
+owner-scoped scalar snapshot in a separate `REQUIRES_NEW`, `READ_COMMITTED` transaction,
+registers the emitter, then repeats that committed read. The scalar projection bypasses
+JPA's managed entity identity map; neither a caller's stale snapshot nor its uncommitted
+terminal change can become a replay. Completion before registration is recovered by the
+second read; completion afterwards reaches the registered emitter through the existing
+after-commit publication. Replay targets only the new emitter. Broadcast terminal delivery
+atomically detaches the current subscribers before sending and closing them, so it cannot
+close a later subscriber without a result. Concurrent push and replay can race; a completed
+emitter rejects the redundant send. Failed reads and disconnected emitters are removed.
+
+**Client recovery:** both upload and result screens use `watchAnalysis`, a fetch-based SSE
+client with a Bearer header. On EOF or a transient stream error without `result`, it immediately
+performs a GET catch-up. A result event also stops SSE and loads the complete terminal resource
+(the event omits details and errorMessage). If GET is still active or transiently fails, polling
+uses delays of 0, 500, 1000, 2000, 4000, 8000, 16000, 30000 and 30000 ms: exactly nine reads,
+with no automatic SSE reconnect. Each complete GET operation (including token refresh before fetch) has a 10-second timeout. Browser HTTP caching is
+disabled for analysis GETs; active responses from the backend's 60-second Redis cache remain
+retryable. The 91.5-second backoff window extends beyond that TTL. The result screen uses the
+recovered full resource directly, avoiding an additional potentially stale GET.
+
+The caller's AbortSignal stops the stream, pending reads and backoff and suppresses late
+callbacks. HTTP 4xx other than 429 stop immediately (including missing/foreign analyses).
+Exhaustion presents a recoverable connection error on both screens instead of leaving the
+interface indefinitely running; it does not cancel the backend analysis. A manual page refresh
+starts a new subscription. Native `EventSource` cannot send Authorization headers, and a token
+in a query string would leak into logs.
+
+**Regression coverage:** `AnalysisStreamCompletionIntegrationTest` runs automatically in the
+orchestrator Maven suite against disposable PostgreSQL, with real transaction proxies and
+commit/rollback boundaries. It forces completion before, between and after subscription reads,
+retains a stale managed entity inside a repeatable-read caller, checks two simultaneous and one
+late subscriber, and rejects a foreign owner. Registry tests cover emitter-specific replay,
+registration during a broadcast and failed-delivery cleanup. Vitest covers the SSE transport,
+both screen hooks, EOF/errors, stale active reads, backoff, nine-attempt exhaustion and abort.
+These suites run in the existing CI Java and frontend jobs.
 
 ## HTTP status codes
 

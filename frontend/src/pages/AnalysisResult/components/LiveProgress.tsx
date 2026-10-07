@@ -6,6 +6,7 @@ import { clsx } from 'clsx'
 import { cancelAnalysis } from '@/api/analysis'
 import type { Analysis } from '@/api/types'
 import { Button } from '@/components/ui/Button/Button'
+import { Alert } from '@/components/ui/Alert/Alert'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
 
 import { useAnalysisStream } from '../use-analysis-stream'
@@ -28,9 +29,10 @@ export function LiveProgress({
   onSettled,
 }: {
   analysis: Analysis
-  onSettled: () => void
+  onSettled: (analysis?: Analysis) => void
 }) {
-  const bySource = useAnalysisStream(analysis.id, () => onSettled())
+  const [connectionError, setConnectionError] = useState(false)
+  const bySource = useAnalysisStream(analysis.id, onSettled, () => setConnectionError(true))
   const [cancelling, setCancelling] = useState(false)
 
   const sources = sourcesForType(analysis.type)
@@ -49,6 +51,14 @@ export function LiveProgress({
       /* idempotentne / już terminalna */
     }
     onSettled() // refetch → strona pokaże ekran „anulowana"
+  }
+
+  if (connectionError) {
+    return (
+      <Alert variant="warning" title="Utracono połączenie z analizą">
+        Nie udało się odzyskać wyniku. Odśwież stronę, aby spróbować ponownie.
+      </Alert>
+    )
   }
 
   return (

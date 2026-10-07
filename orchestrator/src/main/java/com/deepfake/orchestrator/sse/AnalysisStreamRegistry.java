@@ -29,12 +29,20 @@ public class AnalysisStreamRegistry {
     private final Map<UUID, Collection<SseEmitter>> byId = new ConcurrentHashMap<>();
 
     public SseEmitter register(UUID id) {
-        SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
-        byId.computeIfAbsent(id, k -> new CopyOnWriteArrayList<>()).add(emitter);
+        SseEmitter emitter = createEmitter();
+        byId.compute(id, (key, emitters) -> {
+            if (emitters == null) emitters = new CopyOnWriteArrayList<>();
+            emitters.add(emitter);
+            return emitters;
+        });
         emitter.onCompletion(() -> remove(id, emitter));
-        emitter.onTimeout(() -> { emitter.complete(); remove(id, emitter); }); // client reconnects
+        emitter.onTimeout(() -> { emitter.complete(); remove(id, emitter); }); // The client catches up when the stream closes.
         emitter.onError(e -> remove(id, emitter));
         return emitter;
+    }
+
+    protected SseEmitter createEmitter() {
+        return new SseEmitter(TIMEOUT_MS);
     }
 
     public void sendProgress(UUID id, AnalysisProgressEvent event) {
@@ -42,7 +50,26 @@ public class AnalysisStreamRegistry {
     }
 
     public void sendResult(UUID id, AnalysisResultEvent event) {
-        send(id, "result", event);
+        // Detach exactly the current subscribers before sending/closing. A later subscriber
+        // stays registered and receives its own committed replay in openStream.
+        Collection<SseEmitter> emitters = byId.remove(id);
+        if (emitters != null) emitters.forEach(e -> finish(id, e, event));
+    }
+
+    /** Replay only to the subscribing emitter, without affecting other subscribers. */
+    public void sendResult(UUID id, SseEmitter emitter, AnalysisResultEvent event) {
+        remove(id, emitter);
+        finish(id, emitter, event);
+    }
+
+    public void discard(UUID id, SseEmitter emitter) {
+        remove(id, emitter);
+        emitter.complete();
+    }
+
+    private void finish(UUID id, SseEmitter emitter, AnalysisResultEvent event) {
+        deliver(id, emitter, SseEmitter.event().name("result").data(event));
+        emitter.complete();
     }
 
     /** Send the terminal event(s) already buffered, then close every emitter for this analysis. */
@@ -79,12 +106,9 @@ public class AnalysisStreamRegistry {
     }
 
     private void remove(UUID id, SseEmitter emitter) {
-        Collection<SseEmitter> emitters = byId.get(id);
-        if (emitters != null) {
+        byId.computeIfPresent(id, (key, emitters) -> {
             emitters.remove(emitter);
-            if (emitters.isEmpty()) {
-                byId.remove(id);
-            }
-        }
+            return emitters.isEmpty() ? null : emitters;
+        });
     }
 }

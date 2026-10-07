@@ -26,11 +26,12 @@ export interface RequestOptions {
   // AbortSignal — anulowanie (cancel uploadu / sprzątanie fetcha w useEffect).
   signal?: AbortSignal
   headers?: Record<string, string>
+  cache?: RequestCache
 }
 
 // `path` podajemy WZGLĘDEM env.apiBaseUrl (= '/api'), czyli np. '/analysis', '/files/upload'.
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', body, signal, headers = {} } = options
+  const { method = 'GET', body, signal, headers = {}, cache } = options
 
   const correlationId = newCorrelationId()
   const requestHeaders: Record<string, string> = {
@@ -54,6 +55,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     headers: requestHeaders,
     body: payload,
     signal,
+    cache,
   })
 
   if (!response.ok) {

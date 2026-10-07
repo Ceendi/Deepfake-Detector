@@ -68,7 +68,6 @@ class AnalysisServicePushAfterCommitTest {
         fireAfterCommit();
 
         verify(streams).sendResult(eq(id), any(AnalysisResultEvent.class));
-        verify(streams).complete(id);
     }
 
     @Test

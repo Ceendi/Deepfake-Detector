@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { uploadFileWithProgress } from '@/api/files'
-import { startAnalysis, getAnalysis, cancelAnalysis } from '@/api/analysis'
-import { streamAnalysis } from '@/api/stream'
-import type { AnalysisProgressEvent, AnalysisResultEvent, AnalysisStatus } from '@/api/types'
+import { startAnalysis, cancelAnalysis } from '@/api/analysis'
+import { watchAnalysis } from '@/api/watch-analysis'
+import type { Analysis, AnalysisProgressEvent, AnalysisStatus } from '@/api/types'
 
 import { isAbortError, messageForError, pickAnalysisType } from './upload-utils'
 
@@ -44,18 +44,17 @@ function useFileUpload() {
 function useAnalysisStream() {
   const [bySource, setBySource] = useState<ProgressBySource>({})
   const ctrl = useRef<AbortController | null>(null)
-  const gotResult = useRef(false)
 
   function open(
     id: string,
-    handlers: { onResult: (e: AnalysisResultEvent) => void; onError: (err: unknown) => void },
+    handlers: { onResult: (e: Analysis) => void; onError: (err: unknown) => void },
   ) {
+    ctrl.current?.abort()
     setBySource({})
-    gotResult.current = false
     const controller = new AbortController()
     ctrl.current = controller
 
-    void streamAnalysis(
+    void watchAnalysis(
       id,
       {
         onProgress: (e) =>
@@ -64,14 +63,13 @@ function useAnalysisStream() {
             [e.source]: { progress: e.progress, stage: e.stage, status: e.status },
           })),
         onResult: (e) => {
-          gotResult.current = true
           handlers.onResult(e)
-          controller.abort() // result = koniec → zamknij stream (serwer i tak zamyka), bez reconnectu
+          controller.abort() // Terminal data has been recovered.
         },
       },
       controller.signal,
     ).catch((err) => {
-      if (gotResult.current || isAbortError(err)) return // normalne zakończenie / anulowanie
+      if (controller.signal.aborted || isAbortError(err)) return // normalne zakończenie / anulowanie
       handlers.onError(err)
     })
   }
@@ -115,20 +113,13 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
     }
   }
 
-  async function handleResult(id: string, result: AnalysisResultEvent) {
+  function handleResult(id: string, result: Analysis) {
     if (result.status === 'COMPLETED') {
       onComplete(id)
     } else if (result.status === 'CANCELLED') {
       setState({ name: 'idle' })
     } else {
-      // FAILED — event nie niesie errorMessage; dociągamy z pełnego zasobu (best-effort).
-      let message = 'Analiza nie powiodła się.'
-      try {
-        const full = await getAnalysis(id)
-        message = full.errorMessage ?? message
-      } catch {
-        /* zostaw komunikat generyczny */
-      }
+      const message = result.errorMessage ?? 'Analiza nie powiodła się.'
       setState({ name: 'failed', message })
     }
   }

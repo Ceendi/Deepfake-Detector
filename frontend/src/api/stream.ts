@@ -1,7 +1,5 @@
-// Klient SSE dla GET /api/analysis/{id}/stream. Kontrakt: docs/contracts/rest-api.md (§Realtime).
-// Ręczny parser na fetch + ReadableStream — native EventSource nie wysyła nagłówka Authorization,
-// a token w query stringu wyciekłby do logów. Reconnect (D6) na razie pomijamy (TODO): analiza trwa
-// krótko, a backend i tak woła heartbeat; przy zerwaniu user odświeży. Łatwo dołożyć retry-loop później.
+// Authenticated SSE transport. Recovery is shared by both screens in watch-analysis.ts.
+import { abortable } from './abort'
 import { env } from '@/config/env'
 import { getToken } from '@/auth/keycloak'
 import { newCorrelationId } from '@/utils/correlationId'
@@ -13,14 +11,15 @@ export interface StreamHandlers {
   onResult: (e: AnalysisResultEvent) => void
 }
 
-// Otwiera stream i rozsyła zdarzenia aż do `result` (serwer zamyka połączenie) lub `signal.abort()`.
-// Rzuca ApiError przy złym statusie otwarcia (404 = nie ma / cudzy — IDOR) oraz AbortError przy anulowaniu.
+// Read framed events until EOF or cancellation; callers own the recovery policy.
 export async function streamAnalysis(
   id: string,
   handlers: StreamHandlers,
   signal: AbortSignal,
 ): Promise<void> {
-  const token = await getToken()
+  signal.throwIfAborted()
+  const token = await abortable(getToken, signal)
+  signal.throwIfAborted()
   const correlationId = newCorrelationId()
 
   const res = await fetch(`${env.apiBaseUrl}/analysis/${id}/stream`, {
@@ -40,25 +39,34 @@ export async function streamAnalysis(
   if (!res.body) throw new Error('Brak strumienia SSE w odpowiedzi.')
 
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  const abortReader = () => {
+    void reader.cancel().catch(() => {})
+  }
+  signal.addEventListener('abort', abortReader, { once: true })
   let buffer = ''
 
   try {
     for (;;) {
+      signal.throwIfAborted()
       const { value, done } = await reader.read()
+      signal.throwIfAborted()
       if (done) break
-      buffer += value.replace(/\r/g, '') // normalizuj CRLF → LF, by ramki dzielić po \n\n
+      buffer += value.replace(/\r/g, '') // Normalize CRLF frame separators.
       let sep: number
       while ((sep = buffer.indexOf('\n\n')) !== -1) {
+        signal.throwIfAborted()
         dispatchFrame(buffer.slice(0, sep), handlers)
         buffer = buffer.slice(sep + 2)
       }
     }
   } finally {
+    signal.removeEventListener('abort', abortReader)
+    await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
 }
 
-// Parsuje pojedynczą ramkę SSE (linie event:/data:); komentarze (": heartbeat") i puste linie pomija.
+// Parse event/data fields; ignore comments and empty frames.
 function dispatchFrame(frame: string, handlers: StreamHandlers): void {
   let event = 'message'
   const dataLines: string[] = []
@@ -79,6 +87,6 @@ function dispatchFrame(frame: string, handlers: StreamHandlers): void {
     if (event === 'progress') handlers.onProgress(JSON.parse(data) as AnalysisProgressEvent)
     else if (event === 'result') handlers.onResult(JSON.parse(data) as AnalysisResultEvent)
   } catch {
-    // niepoprawny JSON w ramce — ignoruj (nie wywracaj całego streamu)
+    // Ignore malformed JSON frames.
   }
 }

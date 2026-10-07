@@ -130,7 +130,7 @@ class AnalysisResultAcceptanceIntegrationTest {
         service.handleResult(completed(id, "audio", "0.4", "audio"));
         assertFull(id, "0.8", "0.4", "FAKE", "0.28");
         assertThat(stored(id).get("video_details")).isEqualTo(partial.get("video_details"));
-        verify(streams, times(1)).complete(id);
+        verify(streams, times(1)).sendResult(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.any());
         create(); // Exactly one place became available.
         assertCapacityOccupied();
     }
@@ -183,7 +183,7 @@ class AnalysisResultAcceptanceIntegrationTest {
             assertThat(accepted.get(source + "_prob")).isNull();
             assertThat(accepted.get(source + "_details")).isNull();
             assertThat(accepted.get("error_message")).isEqualTo("[TEST] failed delivery");
-            verify(streams, times(1)).complete(id);
+            verify(streams, times(1)).sendResult(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.any());
         } else {
             String probability = rollback ? "0.1" : "0.8";
             assertThat((BigDecimal) accepted.get(source + "_prob")).isEqualByComparingTo(probability);
@@ -198,7 +198,7 @@ class AnalysisResultAcceptanceIntegrationTest {
             assertThat(stored(id).get("status")).isEqualTo("COMPLETED");
             assertThat((BigDecimal) stored(id).get("confidence"))
                     .isEqualByComparingTo(total.subtract(new BigDecimal("0.5")).abs().multiply(new BigDecimal("2")));
-            verify(streams, times(1)).complete(id);
+            verify(streams, times(1)).sendResult(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.any());
         }
         assertThat(idempotency.alreadyProcessed(id, source)).isTrue();
         create();
@@ -272,7 +272,7 @@ class AnalysisResultAcceptanceIntegrationTest {
             assertThat(stored(id).get("status")).isEqualTo("FAILED");
             assertThat(stored(id).get(source + "_prob")).isNull();
             assertThat(stored(id).get("error_message")).isEqualTo("[TEST] failed delivery");
-            verify(streams, times(1)).complete(id);
+            verify(streams, times(1)).sendResult(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.any());
             create();
             assertCapacityOccupied();
         }
@@ -360,7 +360,7 @@ class AnalysisResultAcceptanceIntegrationTest {
         service.handleResult(completed(id, "video", "0.8", "retry"));
         service.handleResult(completed(id, "audio", "0.4", "audio"));
         assertFull(id, "0.8", "0.4", "FAKE", "0.28");
-        verify(streams, times(1)).complete(id);
+        verify(streams, times(1)).sendResult(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.any());
     }
 
     @ParameterizedTest

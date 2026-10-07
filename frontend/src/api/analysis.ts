@@ -13,7 +13,7 @@ export function startAnalysis(request: StartAnalysisRequest): Promise<Analysis> 
 
 // GET /api/analysis/{id} → pełny Analysis. 404 gdy brak / cudzy (IDOR).
 export function getAnalysis(id: string, signal?: AbortSignal): Promise<Analysis> {
-  return apiFetch<Analysis>(`/analysis/${id}`, { signal })
+  return apiFetch<Analysis>(`/analysis/${id}`, { signal, cache: 'no-store' })
 }
 
 // GET /api/analysis?page&size → strona lekkich AnalysisSummary (createdAt DESC).

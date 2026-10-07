@@ -185,7 +185,11 @@ export default function AnalysisResult() {
         <LiveProgress
           key={analysis.id}
           analysis={analysis}
-          onSettled={() => setReloadKey((k) => k + 1)}
+          onSettled={(terminal) => {
+            // Recovery already loaded the full terminal resource. Avoid another stale GET.
+            if (terminal) setAnalysis(terminal)
+            else setReloadKey((k) => k + 1)
+          }}
         />
       ) : (
         <AnalysisStatusState analysis={analysis} />
