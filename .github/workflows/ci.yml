@@ -105,10 +105,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npm audit --audit-level=high
       - run: npm run lint
-      - run: npm run test:run        # vitest; passWithNoTests until the suite lands. Playwright e2e is NOT in CI.
+      - run: npm run test:run        # Includes the SSE transport and both screen recovery regressions.
       - run: npm run build
+      # Keep audit blocking, but execute regressions even when an unrelated advisory is published.
+      - run: npm audit --audit-level=high
 
   dependencies:
     name: Application dependency vulnerabilities
