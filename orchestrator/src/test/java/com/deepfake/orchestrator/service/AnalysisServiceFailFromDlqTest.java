@@ -54,7 +54,7 @@ class AnalysisServiceFailFromDlqTest {
         verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
         assertThat(msg.getValue()).isEqualTo("dead-letter: boom");
         verifyNoInteractions(backpressure);
-        verify(streams).complete(id);
+        verify(streams).sendResult(eq(id), any());
         verify(metrics).dlqFailure();
         verify(metrics, never()).stuckRecovery();
     }

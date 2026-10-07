@@ -27,6 +27,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -161,24 +162,23 @@ public class AnalysisService {
         return a;
     }
 
-    /**
-     * Open an SSE stream for one analysis. The IDOR guard at open time is the whole channel
-     * authorization: only the owner can register an emitter, so the push side (commit 4) can target
-     * by analysisId without re-resolving the owner. An already-finished analysis gets its terminal
-     * result immediately and the stream closes, so the client never hangs.
-     */
-    @Transactional(readOnly = true)
+    /** Register between two independent committed reads; completion is either pushed or replayed. */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public SseEmitter openStream(UUID id, String currentUserId) {
-        Analysis a = repository.findById(id)
-                .filter(found -> found.getUserId().equals(currentUserId))
+        repository.streamSnapshot(id, currentUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-
         SseEmitter emitter = streams.register(id);
-        if (a.getStatus().isTerminal()) {
-            streams.sendResult(id, AnalysisResultEvent.of(a));
-            streams.complete(id);
+        try {
+            var fresh = repository.streamSnapshot(id, currentUserId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+            if (fresh.status().isTerminal()) {
+                streams.sendResult(id, emitter, fresh.result());
+            }
+            return emitter;
+        } catch (RuntimeException ex) {
+            streams.discard(id, emitter);
+            throw ex;
         }
-        return emitter;
     }
 
     @Transactional(readOnly = true)
@@ -498,12 +498,10 @@ public class AnalysisService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override public void afterCommit() {
                     streams.sendResult(id, ev);
-                    streams.complete(id);
                 }
             });
         } else {
             streams.sendResult(id, ev);
-            streams.complete(id);
         }
     }
 

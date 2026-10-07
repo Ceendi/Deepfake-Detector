@@ -27,6 +27,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
+import com.deepfake.orchestrator.dto.sse.AnalysisStreamSnapshot;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -59,7 +60,7 @@ class AnalysisServiceStreamTest {
     void ownerOpensStreamForActiveAnalysis() {
         Analysis a = Analysis.builder().id(id).userId("alice")
                 .status(AnalysisStatus.PROCESSING).type(AnalysisType.VIDEO).build();
-        when(repository.findById(id)).thenReturn(Optional.of(a));
+        when(repository.streamSnapshot(id, "alice")).thenReturn(Optional.of(new AnalysisStreamSnapshot(id, a.getStatus(), a.getVerdict(), a.getConfidence())));
         SseEmitter emitter = mock(SseEmitter.class);
         when(streams.register(id)).thenReturn(emitter);
 
@@ -73,9 +74,6 @@ class AnalysisServiceStreamTest {
 
     @Test
     void foreignUserGets404AndNoStream() {
-        Analysis a = Analysis.builder().id(id).userId("alice").status(AnalysisStatus.PROCESSING).build();
-        when(repository.findById(id)).thenReturn(Optional.of(a));
-
         assertThatThrownBy(() -> service.openStream(id, "bob"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
@@ -84,7 +82,7 @@ class AnalysisServiceStreamTest {
 
     @Test
     void missingAnalysisGets404() {
-        when(repository.findById(id)).thenReturn(Optional.empty());
+        when(repository.streamSnapshot(id, "alice")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.openStream(id, "alice"))
                 .isInstanceOf(ResponseStatusException.class)
@@ -96,12 +94,11 @@ class AnalysisServiceStreamTest {
     void alreadyTerminalAnalysisPushesResultAndCloses() {
         Analysis a = Analysis.builder().id(id).userId("alice").status(AnalysisStatus.COMPLETED)
                 .verdict("FAKE").confidence(new BigDecimal("0.8")).type(AnalysisType.VIDEO).build();
-        when(repository.findById(id)).thenReturn(Optional.of(a));
+        when(repository.streamSnapshot(id, "alice")).thenReturn(Optional.of(new AnalysisStreamSnapshot(id, a.getStatus(), a.getVerdict(), a.getConfidence())));
         when(streams.register(id)).thenReturn(mock(SseEmitter.class));
 
         service.openStream(id, "alice");
 
-        verify(streams).sendResult(eq(id), any(AnalysisResultEvent.class));
-        verify(streams).complete(id);
+        verify(streams).sendResult(eq(id), any(SseEmitter.class), any(AnalysisResultEvent.class));
     }
 }

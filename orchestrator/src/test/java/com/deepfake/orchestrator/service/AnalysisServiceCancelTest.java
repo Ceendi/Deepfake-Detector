@@ -83,7 +83,6 @@ class AnalysisServiceCancelTest {
         // Cooperative cancellation: detectors poll this flag and abort queued/in-flight work.
         verify(valueOps).set(eq("cancel:" + id), eq("1"), any(Duration.class));
         verify(streams).sendResult(eq(id), any());
-        verify(streams).complete(id);
         verifyNoInteractions(rabbitTemplate); // cancel is not an AMQP event
     }
 
@@ -103,7 +102,7 @@ class AnalysisServiceCancelTest {
         // late result bounces off the terminal-state guard.
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
         verifyNoInteractions(backpressure);
-        verify(streams).complete(id);
+        verify(streams).sendResult(eq(id), any());
     }
 
     @Test

@@ -1,9 +1,13 @@
 package com.deepfake.orchestrator.repository;
 
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
+import com.deepfake.orchestrator.dto.sse.AnalysisStreamSnapshot;
 import com.deepfake.orchestrator.dto.response.UserStats;
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,6 +24,21 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
+
+    // A scalar projection bypasses the persistence-context identity map. REQUIRES_NEW also
+    // excludes the caller's uncommitted changes and any repeatable-read snapshot.
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            isolation = Isolation.READ_COMMITTED,
+            readOnly = true)
+    @Query("""
+            SELECT new com.deepfake.orchestrator.dto.sse.AnalysisStreamSnapshot(
+                a.id, a.status, a.verdict, a.confidence)
+            FROM Analysis a WHERE a.id = :id AND a.userId = :userId
+            """)
+    Optional<AnalysisStreamSnapshot> streamSnapshot(
+            @Param("id") UUID id, @Param("userId") String userId);
+
 
     // Literal statuses allow PostgreSQL to use the existing partial active-analysis index.
     @Query(value = "SELECT COUNT(*) FROM analysis WHERE status IN ('PENDING', 'PROCESSING')", nativeQuery = true)

@@ -54,4 +54,71 @@ class AnalysisStreamRegistryTest {
                 new AnalysisProgressEvent(id.toString(), "video", 50, "INFERENCE", "PROCESSING")))
                 .doesNotThrowAnyException();
     }
+    @Test
+    void replayClosesOnlyItsTargetAndLeavesOtherSubscriberRegistered() throws Exception {
+        var first = registry.register(id);
+        var late = registry.register(id);
+        registry.sendResult(id, late, result());
+        assertThatThrownBy(() -> late.send(SseEmitter.event().data("late")))
+                .isInstanceOf(IllegalStateException.class);
+        assertThatCode(() -> first.send(SseEmitter.event().data("still active"))).doesNotThrowAnyException();
+        registry.sendResult(id, result());
+        assertThatThrownBy(() -> first.send(SseEmitter.event().data("closed")))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void subscriberJoiningDuringTerminalSendIsNotClosedWithoutReplay() {
+        var newcomer = new java.util.concurrent.atomic.AtomicReference<SseEmitter>();
+        var controlled = new AnalysisStreamRegistry() {
+            boolean first = true;
+            @Override protected SseEmitter createEmitter() {
+                if (!first) return new SseEmitter();
+                first = false;
+                return new SseEmitter() {
+                    @Override public void send(SseEventBuilder event) {
+                        newcomer.set(register(id));
+                    }
+                };
+            }
+        };
+        controlled.register(id);
+        controlled.sendResult(id, result());
+        assertThatCode(() -> newcomer.get().send(SseEmitter.event().data("still active")))
+                .doesNotThrowAnyException();
+        controlled.sendResult(id, newcomer.get(), result());
+        assertThatThrownBy(() -> newcomer.get().send(SseEmitter.event().data("closed")))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void failedDeliveryRemovesEmitterWithoutDroppingHealthySubscriber() {
+        var attempts = new java.util.concurrent.atomic.AtomicInteger();
+        var controlled = new AnalysisStreamRegistry() {
+            boolean first = true;
+            @Override protected SseEmitter createEmitter() {
+                if (!first) return new SseEmitter();
+                first = false;
+                return new SseEmitter() {
+                    @Override public void send(SseEventBuilder event) throws java.io.IOException {
+                        attempts.incrementAndGet();
+                        throw new java.io.IOException("Client disconnected");
+                    }
+                };
+            }
+        };
+        controlled.register(id);
+        var healthy = controlled.register(id);
+        controlled.heartbeat();
+        controlled.heartbeat();
+        assertThat(attempts).hasValue(1);
+        controlled.sendResult(id, result());
+        assertThatThrownBy(() -> healthy.send(SseEmitter.event().data("closed")))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    private AnalysisResultEvent result() {
+        return new AnalysisResultEvent(id.toString(), "COMPLETED", "FAKE", new BigDecimal("0.8"));
+    }
+
 }

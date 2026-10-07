@@ -97,7 +97,6 @@ class AnalysisServiceSsePushTest {
 
         InOrder ordered = inOrder(streams);
         ordered.verify(streams).sendResult(eq(id), any(AnalysisResultEvent.class));
-        ordered.verify(streams).complete(id);
     }
 
     @Test
@@ -111,7 +110,6 @@ class AnalysisServiceSsePushTest {
 
         InOrder ordered = inOrder(streams);
         ordered.verify(streams).sendResult(eq(id), any(AnalysisResultEvent.class));
-        ordered.verify(streams).complete(id);
     }
 
     @Test

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 
 import { ApiError } from '@/api/errors'
@@ -63,7 +63,7 @@ async function startUntilAnalyzing(result: ReturnType<typeof renderFlow>['result
 }
 
 beforeEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
   vi.mocked(uploadFileWithProgress).mockResolvedValue({
     fileId: 'f1',
     fileKey: 'k1',
@@ -71,12 +71,22 @@ beforeEach(() => {
     mimetype: 'video/mp4',
   })
   vi.mocked(startAnalysis).mockResolvedValue(analysis({ id: 'an-1' }))
+  vi.mocked(getAnalysis).mockResolvedValue(analysis({ status: 'COMPLETED' }))
   // Domyślnie stream zostaje otwarty (pending) — wynik wstrzykujemy ręcznie przez streamHandlers.
   vi.mocked(streamAnalysis).mockImplementation((_id, handlers) => {
-    streamHandlers = handlers
-    return new Promise<void>(() => {})
+    return new Promise<void>((resolve) => {
+      streamHandlers = {
+        onProgress: handlers.onProgress,
+        onResult: (event) => {
+          handlers.onResult(event)
+          resolve()
+        },
+      }
+    })
   })
 })
+
+afterEach(() => vi.useRealTimers())
 
 describe('useAnalysisFlow', () => {
   it.each([404, 503])('create rejection (%s) stops before opening a stream', async (status) => {
@@ -105,7 +115,7 @@ describe('useAnalysisFlow', () => {
         confidence: 0.9,
       })
     })
-    expect(onComplete).toHaveBeenCalledWith('an-1')
+    await waitFor(() => expect(onComplete).toHaveBeenCalledWith('an-1'))
   })
 
   it('agreguje postęp per źródło (video + audio)', async () => {
@@ -154,14 +164,80 @@ describe('useAnalysisFlow', () => {
 
   it('błąd strumienia (nie-abort) → failed', async () => {
     vi.mocked(streamAnalysis).mockImplementationOnce(() =>
-      Promise.reject(new ApiError({ status: 500, message: 'stream padł' })),
+      Promise.reject(new ApiError({ status: 404, message: 'stream padł' })),
     )
     const { result } = renderFlow()
 
     await startUntilAnalyzing(result)
 
     await waitFor(() => expect(result.current.state.name).toBe('failed'))
-    expect((result.current.state as { message: string }).message).toBe('stream padł')
+    expect((result.current.state as { message: string }).message).toBe('Nie znaleziono analizy.')
+  })
+
+  it.each(['eof', 'error'])(
+    'recovers a terminal result after %s without an SSE result',
+    async (ending) => {
+      vi.mocked(streamAnalysis).mockImplementationOnce(() =>
+        ending === 'eof' ? Promise.resolve() : Promise.reject(new TypeError('Connection lost')),
+      )
+      const { result, onComplete } = renderFlow()
+      await startUntilAnalyzing(result)
+      await waitFor(() => expect(onComplete).toHaveBeenCalledWith('an-1'))
+      expect(getAnalysis).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('upload waits through stale cache and eventually completes', async () => {
+    vi.useFakeTimers()
+    vi.mocked(streamAnalysis).mockResolvedValue()
+    vi.mocked(getAnalysis)
+      .mockResolvedValueOnce(analysis())
+      .mockResolvedValueOnce(analysis())
+      .mockResolvedValue(analysis({ status: 'COMPLETED' }))
+    const { result, onComplete } = renderFlow()
+    await startUntilAnalyzing(result)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1499)
+    })
+    expect(onComplete).not.toHaveBeenCalled()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+    expect(onComplete).toHaveBeenCalledExactlyOnceWith('an-1')
+  })
+
+  it('upload leaves analyzing after recovery exhausts its budget', async () => {
+    vi.useFakeTimers()
+    vi.mocked(streamAnalysis).mockResolvedValue()
+    vi.mocked(getAnalysis).mockResolvedValue(analysis())
+    const { result, onComplete } = renderFlow()
+    await startUntilAnalyzing(result)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(91500)
+    })
+    expect(result.current.state.name).toBe('failed')
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(getAnalysis).toHaveBeenCalledTimes(9)
+  })
+
+  it('upload cancellation aborts recovery without late completion', async () => {
+    vi.useFakeTimers()
+    vi.mocked(streamAnalysis).mockResolvedValue()
+    vi.mocked(getAnalysis).mockResolvedValue(analysis())
+    const { result, onComplete } = renderFlow()
+    await startUntilAnalyzing(result)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await result.current.cancel()
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300000)
+    })
+    expect(result.current.state.name).toBe('idle')
+    expect(onComplete).not.toHaveBeenCalled()
+    expect(getAnalysis).toHaveBeenCalledTimes(1)
   })
 
   it('wynik FAILED dociąga errorMessage z pełnego zasobu', async () => {
@@ -183,7 +259,7 @@ describe('useAnalysisFlow', () => {
     await waitFor(() =>
       expect(result.current.state).toEqual({ name: 'failed', message: 'Detektor padł' }),
     )
-    expect(getAnalysis).toHaveBeenCalledWith('an-1')
+    expect(getAnalysis).toHaveBeenCalledWith('an-1', expect.any(AbortSignal))
   })
 
   it('cancel w trakcie analizy woła cancelAnalysis i wraca do idle', async () => {
