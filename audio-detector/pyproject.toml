@@ -32,6 +32,7 @@ dependencies = [
     "redis",
     "matplotlib",
     # Minimum patched releases for runtime and training transitive dependencies.
+    "fsspec>=2026.6.0",
     "anyio>=4.14.2",
     "aiohttp>=3.14.3",
     "pillow>=12.3.0",
