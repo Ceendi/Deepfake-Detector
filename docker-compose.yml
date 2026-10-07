@@ -245,7 +245,7 @@ services:
     # Runs before the main seaweedfs service starts (via depends_on).
     # Runs as root: the seaweedfs image entrypoint also runs as root, so a
     # 0644 file written here is readable downstream regardless of ownership.
-    image: alpine:3.24.2
+    image: python:3.14.8-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -272,6 +272,7 @@ services:
     entrypoint: ["/bin/sh", "/init.sh"]
     volumes:
       - ./infra/seaweedfs/init.sh:/init.sh:ro
+      - ./infra/seaweedfs/render_config.py:/render_config.py:ro
       - ./infra/seaweedfs/s3.json.tmpl:/s3.json.tmpl:ro
       - seaweedconfig:/out
     networks: [deepfake]

@@ -9,6 +9,7 @@ on:
       - orchestrator/**
       - docker-compose.yml
       - .env.example
+      - infra/seaweedfs/**
       - infra/tempo/**
       - infra/tests/**
       - infra/keycloak/**
@@ -24,6 +25,7 @@ on:
       - orchestrator/**
       - docker-compose.yml
       - .env.example
+      - infra/seaweedfs/**
       - infra/tempo/**
       - infra/tests/**
       - infra/keycloak/**
@@ -68,3 +70,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 infra/tests/test_analysis_file_ownership.py
+
+  s3-configuration:
+    name: S3 credential rendering and signed requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 infra/tests/test_s3_configuration.py
