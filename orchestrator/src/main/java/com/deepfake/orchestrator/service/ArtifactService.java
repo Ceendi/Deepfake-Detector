@@ -1,18 +1,14 @@
 package com.deepfake.orchestrator.service;
 
 import java.util.Collection;
-import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-
-import com.deepfake.orchestrator.entity.Analysis;
-import com.deepfake.orchestrator.repository.AnalysisRepository;
 
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.exception.SdkException;
@@ -31,29 +27,27 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 @Service
 public class ArtifactService {
 
-    private final AnalysisRepository repository;
+    private final ArtifactAuthorizationService authorization;
+    private final BoundedArtifactResponseTransformer bodyTransformer;
     private final S3Client s3;
     private final String bucket;
 
-    public ArtifactService(AnalysisRepository repository, S3Client s3,
-            @Value("${storage.artifacts-bucket}") String bucket) {
-        this.repository = repository;
+    public ArtifactService(ArtifactAuthorizationService authorization, S3Client s3,
+            @Value("${storage.artifacts-bucket}") String bucket,
+            @Value("${storage.artifact-max-bytes:8388608}") int maxBytes) {
+        this.authorization = authorization;
+        this.bodyTransformer = new BoundedArtifactResponseTransformer(maxBytes);
         this.s3 = s3;
         this.bucket = bucket;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public byte[] download(UUID analysisId, String source, String name, String currentUserId) {
-        Analysis a = repository.findById(analysisId)
-                .filter(found -> found.getUserId().equals(currentUserId))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-
-        String key = storedKey(a, source, name)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        // A separate Spring service proxy commits/releases authorization before remote I/O.
+        String key = authorization.resolveOwnedKey(analysisId, source, name, currentUserId);
 
         try {
-            return s3.getObjectAsBytes(GetObjectRequest.builder().bucket(bucket).key(key).build())
-                    .asByteArray();
+            return s3.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build(), bodyTransformer);
         } catch (NoSuchKeyException e) {
             // Recorded but missing in storage (e.g. retention sweep) — same 404 as never-existed.
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -80,20 +74,5 @@ public class ArtifactService {
                 log.warn("artifact delete failed for {} (left as orphan for cleanup): {}", key, e.getMessage());
             }
         }
-    }
-
-    private Optional<String> storedKey(Analysis a, String source, String name) {
-        Map<String, Object> details = switch (source) {
-            case "video" -> a.getVideoDetails();
-            case "audio" -> a.getAudioDetails();
-            default -> null;
-        };
-        if (details == null || !(details.get("gradcamKeys") instanceof Collection<?> keys)) {
-            return Optional.empty();
-        }
-        // Resolve the requested name against the filename part of each stored key.
-        return keys.stream().map(Object::toString)
-                .filter(k -> name.equals(k.substring(k.lastIndexOf('/') + 1)))
-                .findFirst();
     }
 }

@@ -68,12 +68,16 @@ eureka:
 storage:
   endpoint: ${S3_ENDPOINT:http://seaweedfs:8333}
   region: us-east-1
-  # Read-only identity scoped to analysis-artifacts (infra/seaweedfs/s3.json) — the orchestrator
+  # Identity scoped to analysis-artifacts (infra/seaweedfs/s3.json) — the orchestrator
   # serves Grad-CAM PNGs but must not be able to read user uploads. Dev defaults let the context
   # start without S3 (client construction is offline; calls fail-soft to 404/503 in the endpoint).
   access-key: ${S3_ORCHESTRATOR_KEY:dev-unset}
   secret-key: ${S3_ORCHESTRATOR_SECRET:dev-unset}
   artifacts-bucket: analysis-artifacts
+  artifact-max-bytes: ${ARTIFACT_MAX_BYTES:8388608}
+  artifact-call-timeout: ${ARTIFACT_STORAGE_CALL_TIMEOUT:5s}
+  artifact-attempt-timeout: ${ARTIFACT_STORAGE_ATTEMPT_TIMEOUT:2s}
+  artifact-connect-timeout: ${ARTIFACT_STORAGE_CONNECT_TIMEOUT:500ms}
 file-service:
   base-url: ${FILE_SERVICE_BASE_URL:http://file-service:8081}
   lookup-timeout: ${FILE_SERVICE_LOOKUP_TIMEOUT:2s}
