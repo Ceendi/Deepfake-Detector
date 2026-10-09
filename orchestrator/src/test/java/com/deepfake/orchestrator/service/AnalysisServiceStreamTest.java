@@ -10,12 +10,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
+import java.time.Duration;
 import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -51,6 +55,10 @@ class AnalysisServiceStreamTest {
     AnalysisCache cache;
     @Mock
     AnalysisStreamRegistry streams;
+    @Spy
+    OptionalRedisOperations optionalRedis =
+            new OptionalRedisOperations(Duration.ofSeconds(2));
+
     @InjectMocks
     AnalysisService service;
 

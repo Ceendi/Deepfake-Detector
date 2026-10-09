@@ -4,11 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -41,6 +45,10 @@ class AnalysisServiceIdorTest {
     AnalysisCache cache;
     @Mock
     AnalysisMetrics metrics;
+    @Spy
+    OptionalRedisOperations optionalRedis =
+            new OptionalRedisOperations(Duration.ofSeconds(2));
+
     @InjectMocks
     AnalysisService service;
 

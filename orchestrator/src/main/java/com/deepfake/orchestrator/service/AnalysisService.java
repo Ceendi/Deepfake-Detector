@@ -1,5 +1,6 @@
 package com.deepfake.orchestrator.service;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.entity.AnalysisTaskOutbox;
 import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
@@ -20,11 +21,11 @@ import io.opentelemetry.api.trace.Span;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
-import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.context.annotation.Import;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Propagation;
@@ -52,6 +53,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Transactional
+@Import(OptionalRedisOperations.class)
 public class AnalysisService {
 
     private static final BigDecimal W_VIDEO   = new BigDecimal("0.6");
@@ -66,6 +68,7 @@ public class AnalysisService {
     @Value("${reliability.outbox.dispatch-timeout-seconds:120}")
     private long dispatchTimeoutSeconds = 120;
     private final StringRedisTemplate redis;
+    private final OptionalRedisOperations optionalRedis;
     private final AnalysisCache cache;
     private final AnalysisStreamRegistry streams;
     private final BackpressureGuard backpressure;
@@ -424,13 +427,10 @@ public class AnalysisService {
     }
 
     // Redis snapshot for catch-up (GET / reconnect). Fail-open so a Redis outage degrades the
-    // snapshot only — the live SSE push (the primary path) must still run, hence the inner catch.
+    // snapshot only — the live SSE push (the primary path) still runs.
     private void snapshotProgress(UUID id, Integer progress) {
-        try {
-            redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1));
-        } catch (DataAccessException e) {
-            log.warn("progress snapshot skipped (Redis down): {}", e.getMessage());
-        }
+        optionalRedis.run("progress snapshot", () ->
+                redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1)));
     }
 
     // Push the terminal result after commit, so a rollback can't leak a state the DB discards. Build
@@ -451,13 +451,8 @@ public class AnalysisService {
     // TTL covers queue wait + processing of the longest accepted file; an expired flag has the
     // same benign degradation.
     private void flagCancelAfterCommit(UUID id) {
-        Runnable setFlag = () -> {
-            try {
-                redis.opsForValue().set("cancel:" + id, "1", Duration.ofHours(2));
-            } catch (DataAccessException e) {
-                log.warn("cancel flag skipped (Redis down) for {}: {}", id, e.getMessage());
-            }
-        };
+        Runnable setFlag = () -> optionalRedis.run("cancel hint", () ->
+                redis.opsForValue().set("cancel:" + id, "1", Duration.ofHours(2)));
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override public void afterCommit() { setFlag.run(); }
@@ -475,13 +470,9 @@ public class AnalysisService {
     // must never fail a committed delete.
     private void cleanupRedisAfterCommit(UUID id) {
         Runnable cleanup = () -> {
-            cache.evictById(id);     // own try/catch (fail-open)
-            idempotency.clear(id);   // own try/catch (fail-open)
-            try {
-                redis.delete(List.of("progress:" + id, "cancel:" + id));
-            } catch (DataAccessException e) {
-                log.warn("post-delete Redis cleanup skipped (Redis down) for {}: {}", id, e.getMessage());
-            }
+            cache.evictById(id);     // optional Redis, fail-open
+            idempotency.clear(id);   // optional Redis, fail-open
+            optionalRedis.run("analysis cleanup", () -> redis.delete(List.of("progress:" + id, "cancel:" + id)));
         };
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

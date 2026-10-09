@@ -10,6 +10,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
@@ -17,6 +19,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,6 +48,10 @@ class AnalysisServiceProcessingTransitionTest {
     @Mock AnalysisStreamRegistry streams;
     @Mock BackpressureGuard backpressure;
     @Mock IdempotencyGuard idempotency;
+    @Spy
+    OptionalRedisOperations optionalRedis =
+            new OptionalRedisOperations(Duration.ofSeconds(2));
+
     @InjectMocks AnalysisService service;
 
     private final UUID id = UUID.randomUUID();

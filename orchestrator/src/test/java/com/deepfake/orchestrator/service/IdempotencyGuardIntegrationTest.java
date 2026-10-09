@@ -2,6 +2,9 @@ package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
+import java.time.Duration;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -30,7 +33,7 @@ class IdempotencyGuardIntegrationTest {
         cf.afterPropertiesSet();
         StringRedisTemplate template = new StringRedisTemplate(cf);
         template.afterPropertiesSet();
-        guard = new IdempotencyGuard(template, 900);
+        guard = new IdempotencyGuard(template, new OptionalRedisOperations(Duration.ofSeconds(2)), 900);
     }
 
     @Test
