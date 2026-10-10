@@ -1,17 +1,31 @@
 package com.deepfake.orchestrator.config;
 
-import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import java.time.Duration;
+
+import com.deepfake.orchestrator.listener.PoisonDeadLetterException;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.*;
+import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.rabbit.listener.RabbitListenerEndpointRegistry;
 import org.springframework.amqp.rabbit.retry.MessageRecoverer;
-import org.springframework.amqp.rabbit.retry.RepublishMessageRecoverer;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.retry.RetryPolicy;
 
 @Configuration
 public class RabbitConfig {
+    public static final String RESULTS_LISTENER = "analysis-results";
+    public static final String PROGRESS_LISTENER = "analysis-progress";
+    public static final String DLQ_LISTENER = "analysis-dead-letters";
+    public static final String Q_QUARANTINE = "analysis.backend.quarantine";
     public static final String EXCHANGE     = "analysis.exchange";
     public static final String DLX          = "analysis.dlx";
     public static final String Q_VIDEO      = "analysis.video";
@@ -51,6 +65,10 @@ public class RabbitConfig {
     // that also declare it don't hit PRECONDITION_FAILED.
     @Bean Queue resultsDlq()    { return QueueBuilder.durable(Q_RESULTS_DLQ).build(); }
 
+    // Backend-owned terminal parking queue; detector declarations remain unchanged.
+    @Bean Queue backendQuarantine() { return QueueBuilder.durable(Q_QUARANTINE).build(); }
+    @Bean Binding bQuarantine() { return BindingBuilder.bind(backendQuarantine()).to(analysisDlx()).with(Q_QUARANTINE); }
+
     @Bean Binding bVideo()    { return BindingBuilder.bind(videoQueue()).to(analysisExchange()).with("analysis.video"); }
     @Bean Binding bAudio()    { return BindingBuilder.bind(audioQueue()).to(analysisExchange()).with("analysis.audio"); }
     @Bean Binding bResults()  { return BindingBuilder.bind(resultsQueue()).to(analysisExchange()).with("analysis.results"); }
@@ -62,11 +80,63 @@ public class RabbitConfig {
     @Bean
     MessageConverter jsonConverter() { return new JacksonJsonMessageConverter(); }
 
-    // Exhausted retries -> republish to analysis.results.dlq (with x-exception-* headers), then the
-    // original is acked. Spring Boot auto-associates a MessageRecoverer bean with the listener factory.
     @Bean
-    MessageRecoverer republishRecoverer(RabbitTemplate rabbitTemplate) {
-        return new RepublishMessageRecoverer(rabbitTemplate, DLX, Q_RESULTS_DLQ);
+    AmqpRecoveryControl amqpRecovery(ObjectProvider<RabbitListenerEndpointRegistry> registry,
+            @Value("${reliability.amqp.recovery-delay:5s}") Duration delay,
+            @Value("${reliability.amqp.max-recovery-delay:60s}") Duration maxDelay) {
+        return new AmqpRecoveryControl(registry, delay, maxDelay);
+    }
+
+    // The result factory retains Boot's configured finite retry policy and metric customizers.
+    @Bean
+    MessageRecoverer republishRecoverer(RabbitTemplate template, AmqpRecoveryControl recovery,
+            @Value("${reliability.amqp.confirm-timeout:2s}") Duration timeout) {
+        return new ConfirmedMessageRecoverer(template, Q_RESULTS_DLQ, timeout.toMillis(), recovery, RESULTS_LISTENER);
+    }
+
+    @Bean
+    SimpleRabbitListenerContainerFactory resultListenerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer, ConnectionFactory connectionFactory) {
+        return listenerFactory(configurer, connectionFactory);
+    }
+
+    @Bean
+    SimpleRabbitListenerContainerFactory progressListenerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer, ConnectionFactory connectionFactory) {
+        SimpleRabbitListenerContainerFactory factory = listenerFactory(configurer, connectionFactory);
+        factory.setAdviceChain(RetryInterceptorBuilder.stateless()
+                .retryPolicy(RetryPolicy.builder().maxRetries(2).delay(Duration.ofMillis(100))
+                        .multiplier(2).maxDelay(Duration.ofMillis(500)).build())
+                .recoverer((message, cause) -> LoggerFactory.getLogger(RabbitConfig.class)
+                        .warn("Advisory progress dropped after bounded retries: {}", cause.toString()))
+                .build());
+        return factory;
+    }
+
+    @Bean
+    SimpleRabbitListenerContainerFactory deadLetterListenerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer, ConnectionFactory connectionFactory,
+            RabbitTemplate template, AmqpRecoveryControl recovery,
+            @Value("${reliability.amqp.confirm-timeout:2s}") Duration timeout) {
+        SimpleRabbitListenerContainerFactory factory = listenerFactory(configurer, connectionFactory);
+        factory.setAdviceChain(RetryInterceptorBuilder.stateless()
+                .retryPolicy(RetryPolicy.builder().maxRetries(2).delay(Duration.ofMillis(250))
+                        .multiplier(2).maxDelay(Duration.ofSeconds(1))
+                        .excludes(PoisonDeadLetterException.class).build())
+                .recoverer(new ConfirmedMessageRecoverer(template, Q_QUARANTINE,
+                        timeout.toMillis(), recovery, DLQ_LISTENER)).build());
+        return factory;
+    }
+
+    private SimpleRabbitListenerContainerFactory listenerFactory(
+            SimpleRabbitListenerContainerFactoryConfigurer configurer, ConnectionFactory connectionFactory) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        configurer.configure(factory, connectionFactory);
+        factory.setAcknowledgeMode(AcknowledgeMode.AUTO);
+        factory.setDefaultRequeueRejected(false);
+        factory.setForceStop(true);
+        factory.setContainerCustomizer(container -> container.setShutdownTimeout(1000L));
+        return factory;
     }
 
     @Bean

@@ -19,7 +19,7 @@ import com.deepfake.orchestrator.service.AnalysisService;
 class AnalysisResultListenerTest {
 
     private final AnalysisService analysisService = mock(AnalysisService.class);
-    private final AnalysisResultListener listener = new AnalysisResultListener(analysisService);
+    private final AnalysisResultListener listener = new AnalysisResultListener(analysisService, mock(com.deepfake.orchestrator.config.AmqpRecoveryControl.class));
 
     @Test
     void bindsCorrelationIdToMdcWhileHandlingResult() {

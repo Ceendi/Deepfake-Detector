@@ -263,7 +263,7 @@ class TransactionalDispatchIntegrationTest {
         assertThat(rabbit.receive("analysis.audio")).isNull();
         assertThat(attempts(cancelled, "video")).isZero();
         UUID failed = create(AnalysisType.VIDEO);
-        service.failFromDlq(failed, "test failure before dispatch");
+        service.failFromDlq(failed, "video", "test failure before dispatch");
         publisher.dispatchDue();
         assertThat(rabbit.receive("analysis.video")).isNull();
         assertThat(stored(cancelled).get("status")).isEqualTo("CANCELLED");

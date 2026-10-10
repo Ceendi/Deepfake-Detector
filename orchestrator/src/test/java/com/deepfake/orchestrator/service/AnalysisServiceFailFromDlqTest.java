@@ -55,13 +55,13 @@ class AnalysisServiceFailFromDlqTest {
 
     @Test
     void activeAnalysisFailsAndPublishesTerminalState() {
-        when(repository.failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
+        when(repository.failSourceIfUnaccepted(eq(id), eq("video"), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
         when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
 
-        service.failFromDlq(id, "boom");
+        service.failFromDlq(id, "video", "boom");
 
         ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
-        verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
+        verify(repository).failSourceIfUnaccepted(eq(id), eq("video"), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
         assertThat(msg.getValue()).isEqualTo("dead-letter: boom");
         verifyNoInteractions(backpressure);
         verify(streams).sendResult(eq(id), any());
@@ -84,9 +84,9 @@ class AnalysisServiceFailFromDlqTest {
     // is a no-op without re-reading or releasing.
     @Test
     void nonActiveAnalysisIsNoOp() {
-        service.failFromDlq(id, "boom");
+        service.failFromDlq(id, "video", "boom");
 
-        verify(repository).failIfActive(eq(id), eq(AnalysisStatus.FAILED), any(), any(), any());
+        verify(repository).failSourceIfUnaccepted(eq(id), eq("video"), eq(AnalysisStatus.FAILED), any(), any(), any());
         verify(repository, never()).findById(any());
         verifyNoInteractions(backpressure);
         verify(streams, never()).sendResult(any(), any());

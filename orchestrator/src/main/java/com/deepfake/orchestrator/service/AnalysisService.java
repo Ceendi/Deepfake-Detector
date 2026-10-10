@@ -353,9 +353,15 @@ public class AnalysisService {
         }
     }
 
-    // Dead-lettered message: the DLQ consumer asks us to fail the analysis.
-    public void failFromDlq(UUID id, String reason) {
-        if (transitionToFailed(id, "dead-letter: " + reason)) {
+    // Task and result DLQs identify one source. An already accepted FULL source must not fail
+    // the analysis while its other source is still running; the database CAS is authoritative.
+    public void failFromDlq(UUID id, String source, String reason) {
+        if (!("video".equals(source) || "audio".equals(source))) {
+            throw new IllegalArgumentException("Unknown dead-letter source");
+        }
+        if (repository.failSourceIfUnaccepted(id, source, AnalysisStatus.FAILED,
+                "dead-letter: " + reason, ACTIVE, Instant.now()) == 1) {
+            onTerminal(id);
             metrics.dlqFailure();
         }
     }
@@ -375,19 +381,6 @@ public class AnalysisService {
         }
     }
 
-    // Shared terminal-failure transition. The CAS is the guard: a late result and recovery firing
-    // together still release the slot exactly once (only one gets 1 row). Returns whether this call
-    // won, so callers count their cause-specific D6 metric only for the winning transition — keeping
-    // analyses_dlq_total / analyses_stuck_recovered_total aligned with analyses_total{status=failed}.
-    private boolean transitionToFailed(UUID id, String errorMessage) {
-        if (repository.failIfActive(id, AnalysisStatus.FAILED, errorMessage, ACTIVE, Instant.now()) == 1) {
-            onTerminal(id);
-            return true;
-        }
-        log.info("fail requested for non-active analysis {}, ignoring", id);
-        return false;
-    }
-
     // Side effects shared by every terminal transition (status already CAS-written). Re-reads because
     // the @Modifying CAS cleared the PC; that fresh row also carries the status/type/createdAt the
     // metrics need, so every terminal path (result, fail, DLQ, stuck, cancel) is counted here once.
@@ -403,24 +396,29 @@ public class AnalysisService {
     }
 
     public void handleProgress(Map<String, Object> payload) {
-        try {
-            UUID id = UUID.fromString((String) payload.get("analysis_id"));
-            Integer progress = (Integer) payload.get("progress");
-
-            // Atomic flip-or-heartbeat; 0 rows means the analysis is already terminal/unknown, so a
-            // late progress ping is dropped (no stale PROCESSING push, no resurrecting a cancelled one).
-            if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now()) == 0) {
-                return;
-            }
-            cache.evictById(id); // status may have flipped PENDING->PROCESSING; keep GET fresh
-            snapshotProgress(id, progress);
-            streams.sendProgress(id, new AnalysisProgressEvent(
-                    id.toString(), (String) payload.get("source"), progress,
-                    (String) payload.get("stage"), "PROCESSING"));
-        } catch (Exception e) {
-            // A progress ping is advisory: losing one must never fail the analysis (the shared
-            // retry/recoverer would otherwise dead-letter it as if it were a failed result).
-            log.warn("progress ping dropped for {}: {}", payload.get("analysis_id"), e.toString());
+        UUID id = UUID.fromString((String) payload.get("analysis_id"));
+        Integer progress = (Integer) payload.get("progress");
+        if (progress == null || progress < 0 || progress > 100) {
+            throw new IllegalArgumentException("Progress must be between 0 and 100");
+        }
+        if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now()) == 0) return;
+        AnalysisProgressEvent event = new AnalysisProgressEvent(id.toString(),
+                (String) payload.get("source"), progress, (String) payload.get("stage"), "PROCESSING");
+        Runnable publish = () -> {
+            // Advisory effects cannot change acknowledgement after the database already committed.
+            try { cache.evictById(id); }
+            catch (RuntimeException failure) { log.warn("Progress cache eviction failed for {}", id, failure); }
+            try { snapshotProgress(id, progress); }
+            catch (RuntimeException failure) { log.warn("Progress snapshot failed for {}", id, failure); }
+            try { streams.sendProgress(id, event); }
+            catch (RuntimeException failure) { log.warn("Progress delivery failed for {}", id, failure); }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { publish.run(); }
+            });
+        } else {
+            publish.run();
         }
     }
 

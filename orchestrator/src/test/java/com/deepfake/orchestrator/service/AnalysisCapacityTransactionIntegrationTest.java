@@ -147,13 +147,13 @@ class AnalysisCapacityTransactionIntegrationTest {
     void terminalRollbackKeepsCapacityOccupiedAndCommitFreesExactlyOnePlace() {
         UUID id = seed(20);
         transaction.executeWithoutResult(status -> {
-            service.failFromDlq(id, "test rollback");
+            service.failFromDlq(id, "video", "test rollback");
             status.setRollbackOnly();
         });
         assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.PENDING);
         assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
-        service.failFromDlq(id, "test commit");
-        service.failFromDlq(id, "duplicate");
+        service.failFromDlq(id, "video", "test commit");
+        service.failFromDlq(id, "video", "duplicate");
         assertThat(active()).isEqualTo(19);
         create();
         assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
@@ -166,7 +166,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         assertThatThrownBy(() -> transaction.executeWithoutResult(status ->
                 new BackpressureGuard(jdbc, repository, 20, 5).acquire()))
                 .isInstanceOf(TooManyAnalysesException.class);
-        service.failFromDlq(id, "free one");
+        service.failFromDlq(id, "video", "free one");
         create();
         assertThat(active()).isEqualTo(20);
         assertThat(redis.opsForValue().get("analyses:inflight")).isEqualTo("9999");
@@ -206,7 +206,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         try (var pool = Executors.newFixedThreadPool(8)) {
             var terminal = pool.submit(() -> {
                 await(start);
-                service.failFromDlq(id, "concurrent terminal commit");
+                service.failFromDlq(id, "video", "concurrent terminal commit");
             });
             var reconstruction = pool.submit(() -> {
                 await(start);
@@ -280,7 +280,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         CountDownLatch finish = new CountDownLatch(1);
         try (var pool = Executors.newSingleThreadExecutor()) {
             var terminal = pool.submit(() -> transaction.executeWithoutResult(status -> {
-                service.failFromDlq(id, "not committed yet");
+                service.failFromDlq(id, "video", "not committed yet");
                 updated.countDown();
                 await(finish);
             }));
@@ -319,8 +319,8 @@ class AnalysisCapacityTransactionIntegrationTest {
         // Pause only the disposable Redis container. Capacity must not touch Redis at all.
         redisContainer.getDockerClient().pauseContainerCmd(redisContainer.getContainerId()).exec();
         try {
-            service.failFromDlq(id, "Redis down");
-            service.failFromDlq(id, "duplicate with Redis down");
+            service.failFromDlq(id, "video", "Redis down");
+            service.failFromDlq(id, "video", "duplicate with Redis down");
             create();
             assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
             assertThat(active()).isEqualTo(20);

@@ -32,8 +32,8 @@ import com.deepfake.orchestrator.service.AnalysisService;
 
 /**
  * End-to-end on a live broker: a failing result is retried, republished to analysis.results.dlq, and
- * the manual-ack DLQ consumer drains it and marks the analysis FAILED. Proves retry -> recoverer ->
- * DLQ -> manual ack all wire up on the Boot 4.0 factory. Needs Docker.
+ * the AUTO DLQ consumer drains it and marks the analysis FAILED. Proves retry -> recoverer ->
+ * DLQ -> ack after commit all wire up on the Boot 4.0 factory. Needs Docker.
  */
 @Testcontainers
 @SpringBootTest(
@@ -79,9 +79,9 @@ class DeadLetterListenerIntegrationTest {
 
         UUID id = UUID.randomUUID();
         rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_RESULTS,
-                Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED"));
+                Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED", "result", Map.of("prob_fake", 0.8)));
 
-        verify(analysisService, timeout(15_000)).failFromDlq(eq(id), any());
+        verify(analysisService, timeout(15_000)).failFromDlq(eq(id), eq("video"), any());
         assertThat(rabbitTemplate.receive(RabbitConfig.Q_RESULTS_DLQ, 500))
                 .as("DLQ consumer should have acked and drained the message").isNull();
     }

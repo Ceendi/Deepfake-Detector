@@ -42,6 +42,7 @@ spring:
     username: ${RABBITMQ_USER}
     password: ${RABBITMQ_PASSWORD}
     connection-timeout: 3s
+    channel-rpc-timeout: ${AMQP_CHANNEL_RPC_TIMEOUT:1s}
     publisher-confirm-type: correlated
     publisher-returns: true
     listener:
@@ -52,7 +53,8 @@ spring:
         prefetch: 1
         # Spans (traceId in MDC) for the consumer thread; reads traceparent off the message.
         observation-enabled: true
-        # Exhausted retries -> RepublishMessageRecoverer (RabbitConfig) -> analysis.results.dlq.
+        # Result retries end in confirmed results DLQ publication. Progress and terminal DLQs
+        # use their own policies in RabbitConfig.
         # max-retries counts REDELIVERIES (3 = 4 attempts total); SB 4.0 dropped max-attempts —
         # the old key binds nowhere and is silently ignored.
         retry:
@@ -87,6 +89,10 @@ backpressure:
   max-inflight: ${BACKPRESSURE_MAX_INFLIGHT:20}
   retry-after-seconds: ${BACKPRESSURE_RETRY_AFTER_SECONDS:5}
 reliability:
+  amqp:
+    confirm-timeout: ${AMQP_RECOVERY_CONFIRM_TIMEOUT:2s}
+    recovery-delay: ${AMQP_RECOVERY_DELAY:5s}
+    max-recovery-delay: ${AMQP_MAX_RECOVERY_DELAY:60s}
   artifact-cleanup:
     enabled: ${ARTIFACT_CLEANUP_ENABLED:true}
     poll-interval-ms: ${ARTIFACT_CLEANUP_POLL_INTERVAL_MS:1000}
@@ -122,6 +128,11 @@ management:
   endpoint:
     health:
       show-details: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,amqpRecovery
   tracing:
     sampling:
       probability: 1.0          # dev: sample everything; prod → ~0.1

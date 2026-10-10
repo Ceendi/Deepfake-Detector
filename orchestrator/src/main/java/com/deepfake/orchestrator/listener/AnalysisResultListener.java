@@ -1,6 +1,8 @@
 package com.deepfake.orchestrator.listener;
 
 import com.deepfake.orchestrator.service.AnalysisService;
+import com.deepfake.orchestrator.config.RabbitConfig;
+import com.deepfake.orchestrator.config.AmqpRecoveryControl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -17,16 +19,16 @@ public class AnalysisResultListener {
     private static final String MDC_KEY = "correlationId";
 
     private final AnalysisService analysisService;
+    private final AmqpRecoveryControl recovery;
 
-    @RabbitListener(queues = "analysis.results")
+    @RabbitListener(id = RabbitConfig.RESULTS_LISTENER, queues = RabbitConfig.Q_RESULTS, containerFactory = "resultListenerFactory")
     public void onResult(Map<String, Object> payload) {
         withCorrelation(payload, () -> analysisService.handleResult(payload));
+        recovery.succeeded(RabbitConfig.RESULTS_LISTENER);
     }
 
-    @RabbitListener(queues = "analysis.progress")
+    @RabbitListener(id = RabbitConfig.PROGRESS_LISTENER, queues = RabbitConfig.Q_PROGRESS, containerFactory = "progressListenerFactory")
     public void onProgress(Map<String, Object> payload) {
-        // Day 1: log + write to Redis under progress:{analysis_id}.
-        // Frontend polls GET /api/analysis/{id}; once we add SSE, we will push instead.
         withCorrelation(payload, () -> analysisService.handleProgress(payload));
     }
 
