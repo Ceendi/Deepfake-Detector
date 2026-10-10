@@ -37,10 +37,19 @@ arguments (no DLX).
 
 `analysis.results.dlq` is bound to `analysis.dlx` with a routing key equal to the
 queue name, but it is **not** reached by broker dead-lettering — it is fed by the
-Orchestrator's `RepublishMessageRecoverer` after a result/progress listener exhausts
-its retries. `analysis.results` therefore keeps **no** DLX arguments, so the detectors
+Orchestrator's confirmed recoverer after the result listener exhausts its retries.
+Progress has an independent advisory policy and never enters this terminal DLQ. `analysis.results` therefore keeps **no** DLX arguments, so the detectors
 that also declare it don't hit `PRECONDITION_FAILED`. Only the Orchestrator declares
 and consumes `analysis.results.dlq`.
+
+Terminal DLQs use AUTO acknowledgements after the source-specific database commit.
+Poison payloads and exhausted terminal database retries are durably parked in the
+backend-owned `analysis.backend.quarantine`, bound to `analysis.dlx` with the same
+routing key. That queue has no automatic consumer. Every recovery publication is
+mandatory and awaits correlated publisher confirmation/returns before acknowledging
+the original. Publication failure pauses the affected listener, requeues the original,
+and resumes automatically with a delay increasing from 5s to a 60s cap. Readiness
+is DOWN until processing succeeds. See [backend AMQP recovery](../amqp-recovery.md).
 
 ## Message formats
 
