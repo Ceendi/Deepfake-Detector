@@ -63,6 +63,16 @@ class FlywayMigrationIntegrationTest {
         assertThat(types).hasSize(2).allMatch("timestamp with time zone"::equals);
     }
 
+    @Test
+    void artifactCleanupSurvivesParentDeletionAndHasDurableCursorAndLeases() throws Exception {
+        assertThat(query("SELECT constraint_name FROM information_schema.table_constraints WHERE table_name = 'artifact_cleanup' AND constraint_type = 'FOREIGN KEY'")).isEmpty();
+        assertThat(query("SELECT column_name FROM information_schema.columns WHERE table_name = 'artifact_cleanup'"))
+                .contains("object_key", "analysis_id", "next_attempt_at", "attempts", "lease_token", "lease_until");
+        assertThat(query("SELECT id::text FROM artifact_cleanup_scan")).containsExactly("1");
+        assertThat(query("SELECT indexname FROM pg_indexes WHERE tablename = 'analysis'"))
+                .contains("idx_analysis_video_gradcam_keys", "idx_analysis_audio_gradcam_keys");
+    }
+
     private static List<String> query(String sql) throws Exception {
         List<String> values = new ArrayList<>();
         try (Connection c = DriverManager.getConnection(

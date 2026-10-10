@@ -32,7 +32,8 @@ Credentials are split by purpose: detectors must not be able to write user
 uploads, the file service must not be able to overwrite ML artifacts, and the
 orchestrator must not be able to read user uploads at all. The orchestrator
 holds `Write` on `analysis-artifacts` only to reclaim an analysis's Grad-CAM
-objects when that analysis is deleted (`DELETE /api/analysis/{id}/record`) — it
+objects when that analysis is deleted (`DELETE /api/analysis/{id}/record`) and old
+unreferenced attempt objects via [durable cleanup](../artifact-cleanup.md) — it
 never produces artifacts, only serves and deletes them. The admin identity
 exists only for bootstrap and is never embedded in app config.
 
