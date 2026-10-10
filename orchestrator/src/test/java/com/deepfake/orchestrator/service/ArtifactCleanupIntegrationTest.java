@@ -111,6 +111,58 @@ class ArtifactCleanupIntegrationTest {
         assertThat(requests.get()).isZero();
     }
 
+    @Test void lastSharedReferenceDeletionRetainsCleanupWorkUntilItsTransactionCommits() throws Exception {
+        String shared = "legacy/audio/shared.png";
+        UUID first = seed("COMPLETED", List.of(shared));
+        UUID last = seed("COMPLETED", List.of(shared));
+        objects.add(shared);
+        analyses.delete(first, "alice");
+        assertThat(pending()).isEqualTo(1);
+        jdbc.update("UPDATE artifact_cleanup SET attempts = 3 WHERE object_key = ?", shared);
+        var enqueued = new CountDownLatch(1);
+        var commit = new CountDownLatch(1);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var deletion = executor.submit(() -> new TransactionTemplate(manager).executeWithoutResult(tx -> {
+                analyses.delete(last, "alice"); // Duplicate enqueue has run; this outer transaction is uncommitted.
+                enqueued.countDown();
+                try {
+                    if (!commit.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("commit latch timed out");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt(); throw new IllegalStateException(e);
+                }
+            }));
+            try {
+                assertThat(enqueued.await(5, TimeUnit.SECONDS)).isTrue();
+                long start = System.nanoTime();
+                // The row is locked by duplicate enqueue, so SKIP LOCKED must leave it intact. With
+                // DO NOTHING a claim instead sees the old reference and discards this legacy work.
+                assertThat(store.claim()).isNull();
+                assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofSeconds(1));
+                assertThat(pending()).isEqualTo(1);
+                assertThat(requests.get()).isZero();
+            } finally { commit.countDown(); }
+            deletion.get(5, TimeUnit.SECONDS);
+        }
+        assertThat(repository.findById(last)).isEmpty();
+        assertThat(pending()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT attempts FROM artifact_cleanup", Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT analysis_id FROM artifact_cleanup", UUID.class)).isEqualTo(first);
+        worker(restartedStore()).clean();
+        assertThat(objects).isEmpty(); assertThat(pending()).isZero();
+    }
+
+    @Test void duplicateEnqueuePreservesAnExistingLeaseAndRetryMetadata() {
+        UUID first = UUID.randomUUID(); String shared = "legacy/audio/shared.png";
+        enqueue(first, List.of(shared));
+        jdbc.update("UPDATE artifact_cleanup SET attempts = 3 WHERE object_key = ?", shared);
+        var work = store.claim();
+        var before = jdbc.queryForMap("SELECT * FROM artifact_cleanup");
+        enqueue(UUID.randomUUID(), List.of(shared, shared));
+        assertThat(jdbc.queryForMap("SELECT * FROM artifact_cleanup")).isEqualTo(before);
+        assertThat(restartedStore().claim()).isNull();
+        store.complete(work); assertThat(pending()).isZero();
+    }
+
     @Test void partialSuccessDuplicateWorkAndMissingObjectsAreIdempotent() {
         UUID id = UUID.randomUUID(); String failed = "a/audio/cam.png", good = "b/video/cam.png";
         enqueue(id, List.of(failed, good, good, "missing/video/cam.png"));
@@ -159,7 +211,7 @@ class ArtifactCleanupIntegrationTest {
     @Test void failedScanDatabaseBatchRollsBackBothDiscoveredWorkAndCursorAdvance() {
         var scan = store.claimScan();
         var good = new ArtifactCleanupStore.Candidate("legacy/audio/cam.png", UUID.randomUUID());
-        var invalid = new ArtifactCleanupStore.Candidate("invalid/audio/cam.png", null);
+        var invalid = new ArtifactCleanupStore.Candidate("zz-invalid/audio/cam.png", null);
         assertThatThrownBy(() -> store.finishScan(scan, List.of(good, invalid), "page2"))
                 .isInstanceOf(org.springframework.dao.DataAccessException.class);
         assertThat(pending()).isZero();

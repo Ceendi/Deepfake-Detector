@@ -3,6 +3,7 @@ package com.deepfake.orchestrator.service;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -51,7 +52,11 @@ public class ArtifactCleanupStore {
     }
 
     private void insert(Candidate candidate) {
-        jdbc.update("INSERT INTO artifact_cleanup (object_key, analysis_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+        // A duplicate must retain the tuple lock until the enclosing deletion commits. Otherwise a
+        // claimant can discard still-referenced work while the last reference is being deleted.
+        // The no-op update preserves the original owner, retry schedule, attempts and lease.
+        jdbc.update("INSERT INTO artifact_cleanup (object_key, analysis_id) VALUES (?, ?) "
+                + "ON CONFLICT (object_key) DO UPDATE SET object_key = EXCLUDED.object_key",
                 candidate.key(), candidate.analysisId());
     }
 
@@ -127,7 +132,10 @@ public class ArtifactCleanupStore {
         tx.executeWithoutResult(status -> {
             List<Integer> owned = jdbc.query("SELECT id FROM artifact_cleanup_scan WHERE id = 1 AND lease_token = ? FOR UPDATE", (rs, n) -> rs.getInt(1), scan.token());
             if (owned.isEmpty()) return;
-            for (Candidate candidate : candidates) {
+            // Match deletion enqueue order and deduplicate by key before acquiring shared row locks.
+            var ordered = new TreeMap<String, Candidate>();
+            candidates.forEach(candidate -> ordered.putIfAbsent(candidate.key(), candidate));
+            for (Candidate candidate : ordered.values()) {
                 if (!protectedObject(candidate.analysisId(), candidate.key())) insert(candidate);
             }
             jdbc.update("UPDATE artifact_cleanup_scan SET continuation_token = ?, lease_token = NULL, lease_until = NULL WHERE id = 1", nextToken);
