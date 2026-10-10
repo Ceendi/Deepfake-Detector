@@ -3,12 +3,17 @@
 `DELETE /api/analysis/{id}/record` keeps its owner check, terminal-state restriction and 204 response.
 The deletion transaction records every persisted Grad-CAM key in `artifact_cleanup` before removing
 its analysis. Both changes commit or roll back together. Migration V5 deliberately gives cleanup
-work no foreign key to the parent, so deletion cannot cascade away the work. No storage call runs
-on the deletion request thread. PostgreSQL failures still fail the request; storage outages leave
+work no foreign key to the parent, so deletion cannot cascade away the work. Duplicate enqueues retain
+the existing cleanup row lock until the deletion transaction commits,
+while preserving its owner, retry and lease metadata. This prevents a concurrent claim from discarding
+shared legacy-key work based on a reference whose deletion is still uncommitted. Multi-key deletion and
+scan inserts acquire queue locks in sorted key order. No storage call runs on the deletion request thread.
+PostgreSQL failures still fail the request; storage outages leave
 committed, durable work.
 
 Reference lookups use dedicated GIN indexes on the stored Grad-CAM arrays. Worker database
-transactions have a five-second timeout. The worker claims one due key in a short transaction using `FOR UPDATE SKIP LOCKED`, then releases
+transactions have a five-second timeout. The worker claims one due key in a short transaction using
+`FOR UPDATE SKIP LOCKED`, then releases
 the database connection before `DeleteObject`. A successful delete removes the queue record in a
 separate short transaction. Failure records exponential backoff; work is retained without a retry
 limit. Missing objects are removed idempotently. A crash before completion leaves a lease that
@@ -72,7 +77,8 @@ next due time and lease), and the listing cursor in `artifact_cleanup_scan`; ret
 `ArtifactCleanupIntegrationTest` uses real migrated PostgreSQL, the actual Spring deletion proxy and the
 production S3 client against an HTTP fault fixture. It covers deletion during storage outage, restart and
 restoration, rollback, duplicate/missing keys, partial success, expired leases and stale acknowledgments,
-active/referenced protection, durable cursor/batch rollback, and a blocked delete with zero checked-out
+active/referenced protection, concurrent last shared-reference deletion, unchanged duplicate lease/retry
+metadata, durable cursor/batch rollback, and a blocked delete with zero checked-out
 database connections. `ArtifactCleanupSchedulingTest` blocks cleanup while the ordinary scheduler continues.
 `ArtifactCleanupStorageBudgetTest` warms the production client, stalls live TCP delete/list requests
 under the default budgets, then verifies recovery with that same client without needing Docker.
