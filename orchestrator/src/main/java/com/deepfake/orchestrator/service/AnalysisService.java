@@ -53,7 +53,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 @Transactional
-@Import(OptionalRedisOperations.class)
+@Import({OptionalRedisOperations.class, ArtifactCleanupStore.class})
 public class AnalysisService {
 
     private static final BigDecimal W_VIDEO   = new BigDecimal("0.6");
@@ -74,6 +74,7 @@ public class AnalysisService {
     private final BackpressureGuard backpressure;
     private final IdempotencyGuard idempotency;
     private final AnalysisMetrics metrics;
+    private final ArtifactCleanupStore artifactCleanup;
     private final ResultDetailsExtractor detailsExtractor = new ResultDetailsExtractor();
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -246,13 +247,9 @@ public class AnalysisService {
      * skew {@code userStats}. Terminal state is stable (no transition leaves it), so the read here
      * and the delete need no CAS.
      *
-     * <p>Returns the raw {@code analysis-artifacts} object keys this analysis referenced (its Grad-CAM
-     * heatmaps), so the caller can reclaim them from storage <b>after</b> the row delete commits —
-     * best-effort and out of band, since a failed object delete must not fail the (committed) row
-     * delete. The uploaded file in {@code deepfake-uploads} is NOT reclaimed here: it lives in another
-     * service/bucket the orchestrator has no access to, and may be shared by other analyses — its
-     * lifecycle is the file service's (docs/contracts/object-storage.md). A storage bucket sweep stays
-     * the safety net for any object orphaned by a crash between the row delete and its reclaim.
+     * <p>Artifact deletion work is persisted in this same transaction and survives parent deletion.
+     * The worker retries storage outside database transactions. Uploaded files have the file service's
+     * separate lifecycle and are never reclaimed here. Returns captured keys for internal callers.
      */
     public List<String> delete(UUID id, String currentUserId) {
         Analysis a = repository.findById(id)
@@ -265,6 +262,7 @@ public class AnalysisService {
         }
 
         List<String> artifactKeys = gradcamKeysOf(a); // capture before the row (and its details) go away
+        artifactCleanup.enqueueDeletion(id, artifactKeys);
         repository.delete(a);
         metrics.deleted(a.getStatus());
         cleanupRedisAfterCommit(id);

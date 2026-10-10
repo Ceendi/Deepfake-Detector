@@ -62,7 +62,7 @@ class AnalysisServiceCacheIdorTest {
         service = new AnalysisService(repository, mock(com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository.class), template,
                 new OptionalRedisOperations(Duration.ofSeconds(2)),
                 new AnalysisCache(template, new OptionalRedisOperations(Duration.ofSeconds(2)), true), mock(AnalysisStreamRegistry.class),
-                mock(BackpressureGuard.class), mock(IdempotencyGuard.class), mock(AnalysisMetrics.class));
+                mock(BackpressureGuard.class), mock(IdempotencyGuard.class), mock(AnalysisMetrics.class), mock(ArtifactCleanupStore.class));
     }
 
     @Test

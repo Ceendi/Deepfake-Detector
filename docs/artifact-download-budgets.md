@@ -19,7 +19,7 @@ operation deadline even when every socket read remains active.
 | `ARTIFACT_STORAGE_CONNECT_TIMEOUT` | `500ms` | Connection establishment and pool acquisition |
 
 Production YAML and Compose expose these values. They apply only to the orchestrator's generated
-artifact S3 client, including its existing best-effort deletes. File-service upload clients and
+artifact S3 client, including durable cleanup deletes and listing. File-service upload clients and
 worker upload policies keep their own budgets. Oversized declared bodies are rejected before body
 allocation; bodies without a trustworthy length are read through at most the byte limit plus one
 byte. A successful read returns a bounded byte array. Memory use includes the bounded accumulation
@@ -52,4 +52,4 @@ runtime in `DETECTOR_TEST_PYTHON`. The PostgreSQL container and HTTP fixture are
 without touching developer services or volumes.
 
 This PR is stacked on `fix/redis-failure-budget`; merge the Redis PR first. Durable deletion retry
-and orphan cleanup remain the following PR's work.
+and orphan cleanup are documented in [artifact-cleanup.md](artifact-cleanup.md).

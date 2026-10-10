@@ -53,6 +53,8 @@ class AnalysisServicePushAfterCommitTest {
     OptionalRedisOperations optionalRedis =
             new OptionalRedisOperations(Duration.ofSeconds(2));
 
+    @Mock ArtifactCleanupStore artifactCleanup;
+
     @InjectMocks AnalysisService service;
 
     private final UUID id = UUID.randomUUID();

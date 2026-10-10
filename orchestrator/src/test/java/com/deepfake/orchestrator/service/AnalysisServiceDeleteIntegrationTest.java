@@ -87,7 +87,7 @@ class AnalysisServiceDeleteIntegrationTest {
         Instant since = now.minus(7, ChronoUnit.DAYS);
         UUID completed = persist("alice", AnalysisStatus.COMPLETED, "FAKE", "0.8000", now.minusSeconds(60));
         // Record a Grad-CAM object on the completed row (real jsonb) so we can assert its key round-trips
-        // back through delete() for the caller to reclaim from storage.
+        // through delete() and into durable cleanup before the parent disappears.
         em.getEntityManager()
                 .createNativeQuery("UPDATE analysis SET video_details = CAST(?1 AS jsonb) WHERE id = ?2")
                 .setParameter(1, "{\"gradcamKeys\": [\"" + completed + "/video/cam.png\"]}")
@@ -106,7 +106,7 @@ class AnalysisServiceDeleteIntegrationTest {
         em.flush(); // force the DELETE to the DB, then read fresh
         em.clear();
 
-        // The Grad-CAM key round-trips out of the real jsonb column for the caller to reclaim.
+        // The Grad-CAM key round-trips out of the real jsonb column into durable cleanup.
         assertThat(reclaimable).containsExactly(completed + "/video/cam.png");
         assertThat(repository.findById(completed)).isEmpty();
         // Siblings untouched: the active analysis and the other user's row are left alone.
