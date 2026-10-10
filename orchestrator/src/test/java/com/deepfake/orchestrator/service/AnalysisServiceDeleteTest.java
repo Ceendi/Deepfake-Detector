@@ -72,6 +72,8 @@ class AnalysisServiceDeleteTest {
     OptionalRedisOperations optionalRedis =
             new OptionalRedisOperations(Duration.ofSeconds(2));
 
+    @Mock ArtifactCleanupStore artifactCleanup;
+
     @InjectMocks
     AnalysisService service;
 
@@ -97,7 +99,7 @@ class AnalysisServiceDeleteTest {
 
     @Test
     void returnsGradcamKeysFromBothSourcesForReclaim() {
-        // The caller (controller) reclaims these object keys from analysis-artifacts after commit.
+        // Cleanup work captures both sources before the row disappears.
         Analysis a = Analysis.builder().id(id).userId("alice")
                 .status(AnalysisStatus.COMPLETED).type(AnalysisType.FULL)
                 .videoDetails(Map.of("gradcamKeys", List.of(id + "/video/f1.png", id + "/video/f2.png")))
@@ -109,6 +111,7 @@ class AnalysisServiceDeleteTest {
 
         assertThat(reclaimable).containsExactlyInAnyOrder(
                 id + "/video/f1.png", id + "/video/f2.png", id + "/audio/a1.png");
+        verify(artifactCleanup).enqueueDeletion(id, reclaimable);
         verify(repository).delete(a);
     }
 

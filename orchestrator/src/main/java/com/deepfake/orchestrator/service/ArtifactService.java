@@ -1,6 +1,5 @@
 package com.deepfake.orchestrator.service;
 
-import java.util.Collection;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -13,7 +12,6 @@ import org.springframework.web.server.ResponseStatusException;
 import lombok.extern.slf4j.Slf4j;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
@@ -57,22 +55,4 @@ public class ArtifactService {
         }
     }
 
-    /**
-     * Best-effort removal of an analysis's Grad-CAM objects from analysis-artifacts when the analysis
-     * is deleted (the orchestrator identity holds Write on this bucket — see object-storage.md). Each
-     * key is deleted independently and fail-open: a failure just leaves an orphan for a later storage
-     * sweep, and must never surface to the caller whose DB row is already gone. No-op on empty input.
-     */
-    public void deleteArtifacts(Collection<String> keys) {
-        if (keys == null || keys.isEmpty()) {
-            return;
-        }
-        for (String key : keys) {
-            try {
-                s3.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
-            } catch (SdkException e) {
-                log.warn("artifact delete failed for {} (left as orphan for cleanup): {}", key, e.getMessage());
-            }
-        }
-    }
 }

@@ -1,9 +1,7 @@
 package com.deepfake.orchestrator.controller;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -68,7 +66,7 @@ class AnalysisDeleteControllerTest {
     }
 
     @Test
-    void deleteReturns204AndReclaimsArtifacts() throws Exception {
+    void deleteReturns204WithoutRemoteStorageCalls() throws Exception {
         UUID id = UUID.randomUUID();
         when(service.delete(eq(id), eq("user-a"))).thenReturn(List.of(id + "/video/cam.png"));
 
@@ -77,8 +75,7 @@ class AnalysisDeleteControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(service).delete(id, "user-a");
-        // Keys the service returned are reclaimed from object storage after the row delete commits.
-        verify(artifactService).deleteArtifacts(List.of(id + "/video/cam.png"));
+        org.mockito.Mockito.verifyNoInteractions(artifactService);
     }
 
     @Test
@@ -92,7 +89,7 @@ class AnalysisDeleteControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
 
-        verify(artifactService, never()).deleteArtifacts(any()); // nothing deleted, nothing to reclaim
+        org.mockito.Mockito.verifyNoInteractions(artifactService);
     }
 
     @Test
@@ -106,7 +103,7 @@ class AnalysisDeleteControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"));
 
-        verify(artifactService, never()).deleteArtifacts(any());
+        org.mockito.Mockito.verifyNoInteractions(artifactService);
     }
 
     // Regression guard: /{id}/record must not shadow the cancel route. DELETE /{id} (no suffix)

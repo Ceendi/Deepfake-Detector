@@ -63,6 +63,8 @@ class AnalysisServiceBackpressureTest {
     OptionalRedisOperations optionalRedis =
             new OptionalRedisOperations(Duration.ofSeconds(2));
 
+    @Mock ArtifactCleanupStore artifactCleanup;
+
     @InjectMocks
     AnalysisService service;
 

@@ -87,6 +87,16 @@ backpressure:
   max-inflight: ${BACKPRESSURE_MAX_INFLIGHT:20}
   retry-after-seconds: ${BACKPRESSURE_RETRY_AFTER_SECONDS:5}
 reliability:
+  artifact-cleanup:
+    enabled: ${ARTIFACT_CLEANUP_ENABLED:true}
+    poll-interval-ms: ${ARTIFACT_CLEANUP_POLL_INTERVAL_MS:1000}
+    scan-interval-ms: ${ARTIFACT_CLEANUP_SCAN_INTERVAL_MS:60000}
+    batch-size: ${ARTIFACT_CLEANUP_BATCH_SIZE:10}
+    page-size: ${ARTIFACT_CLEANUP_PAGE_SIZE:100}
+    orphan-age: ${ARTIFACT_CLEANUP_ORPHAN_AGE:24h}
+    lease: ${ARTIFACT_CLEANUP_LEASE:30s}
+    retry: ${ARTIFACT_CLEANUP_RETRY:5s}
+    max-retry: ${ARTIFACT_CLEANUP_MAX_RETRY:1h}
   redis:
     degraded-bypass: ${REDIS_DEGRADED_BYPASS:2s}
   outbox:

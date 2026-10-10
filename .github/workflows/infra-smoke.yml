@@ -78,3 +78,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 infra/tests/test_s3_configuration.py
+
+  orchestrator-verify:
+    name: Manual orchestrator fault acceptance
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Install lightweight worker process fixtures
+        run: python -m pip install -r audio-detector/tests/requirements-light.txt
+      - name: Verify orchestrator and isolated fault fixtures
+        working-directory: orchestrator
+        run: ./mvnw -B verify
