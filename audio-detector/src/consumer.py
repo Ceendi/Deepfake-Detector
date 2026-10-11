@@ -60,6 +60,12 @@ except Exception as e:
     audio_inference = None
 
 
+class ModelUnavailableError(RuntimeError):
+    """Required inference models did not initialize successfully."""
+
+    code = "MODEL_UNAVAILABLE"
+
+
 class AnalysisCancelled(Exception):
     """Task aborted because the user cancelled the analysis (cooperative cancel)."""
 
@@ -82,8 +88,8 @@ def process(msg: dict, progress_callback=None) -> dict:
 
 
 def _process(msg: dict, input_path: str, progress_callback=None) -> dict:
-    if not audio_inference:
-        raise RuntimeError("AudioInference module not initialized properly.")
+    if audio_inference is None:
+        raise ModelUnavailableError("Audio inference model is unavailable.")
 
     mode = msg.get("mode", "accurate")
     try:
@@ -218,7 +224,7 @@ def _handle_message(ch, method, properties, body):
                     "source": SOURCE,
                     "status": "FAILED",
                     "result": None,
-                    "error": {"code": "PROCESSING_ERROR", "message": str(e)},
+                    "error": {"code": getattr(e, "code", "PROCESSING_ERROR"), "message": str(e)},
                 }
 
             # BlockingChannel waits for the broker confirm; mandatory returns/nacks raise.
@@ -234,11 +240,6 @@ def _handle_message(ch, method, properties, body):
 
 
 def run_consumer(health_state: dict) -> None:
-    if audio_inference is None:
-        health_state["ok"] = False
-        health_state["last_beat"] = 0.0
-        log.error("consumer_not_started_model_unavailable")
-        return
     while True:
         conn = None
         try:

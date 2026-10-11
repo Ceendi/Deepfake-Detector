@@ -71,6 +71,12 @@ except Exception as e:
     video_inference = None
 
 
+class ModelUnavailableError(RuntimeError):
+    """Required inference models did not initialize successfully."""
+
+    code = "MODEL_UNAVAILABLE"
+
+
 class AnalysisCancelled(Exception):
     """Task aborted because the user cancelled the analysis (cooperative cancel)."""
 
@@ -94,8 +100,8 @@ def process(msg: dict, progress_callback=None) -> dict:
 
 def _process(msg: dict, input_path: str, progress_callback=None) -> dict:
     """Download, infer and upload artifacts in this delivery's private directory."""
-    if not video_inference:
-        raise RuntimeError("VideoInference module not initialized properly.")
+    if video_inference is None:
+        raise ModelUnavailableError("Video inference model is unavailable.")
     analysis_id = msg["analysis_id"]
     # Start-ping PRZED downloadem: Orchestrator flipuje PENDING->PROCESSING w momencie
     # podjecia zadania, a kazdy progress jest heartbeatem dla stuck-job recovery.
@@ -250,11 +256,6 @@ def _handle_message(ch, method, properties, body):
 
 
 def run_consumer(health_state: dict) -> None:
-    if video_inference is None:
-        health_state["ok"] = False
-        health_state["last_beat"] = 0.0
-        log.error("consumer_not_started_model_unavailable")
-        return
     while True:
         conn = None
         try:

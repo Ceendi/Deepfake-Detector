@@ -28,6 +28,10 @@ def event(name, **fields):
 
 
 class ControlledInference:
+    def __init__(self):
+        if os.getenv("MODEL_UNAVAILABLE") == "true":
+            raise RuntimeError("controlled model initialization failure")
+
     def analyze(self, input_path, progress_callback, **kwargs):
         assert Path(input_path).read_bytes() == b"controlled test input"
         event("inference", input_path=input_path, workdir=kwargs.get("workdir"))
@@ -60,9 +64,11 @@ from src import consumer
 
 class ControlledInput:
     def download_file(self, bucket, key, destination):
+        event("download")
         Path(destination).write_bytes(b"controlled test input")
 
     def upload_file(self, local_path, bucket, key, **kwargs):
+        event("upload")
         # A shared filesystem object-store fixture makes accidental overwrites observable.
         root = Path(os.getenv("ARTIFACT_STORE", str(state / "artifacts")))
         destination = root / bucket / key
