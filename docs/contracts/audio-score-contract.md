@@ -69,9 +69,15 @@ AUDIO aggregation and persistence.
   energy gate (`0.005`) to model inference, publish `FAILED`, `result: null` and
   error code `NO_SPEECH` with localized guidance to upload clearly audible speech.
   Silence, quiet audio and empty inputs produce no authenticity verdict or score.
-  This energy gate does not establish semantic speech detection. AUDIO fails;
-  FULL also fails when its required audio source fails, retaining existing source
-  acceptance guards and aggregation rules for successful results.
+  This energy gate does not establish semantic speech detection. AUDIO fails.
+  For FULL only, an exact audio `NO_SPEECH` failure may instead persist
+  `details.audio = {status: "NOT_APPLICABLE", reason: "NO_SPEECH", message: "..."}`
+  with `audioProb: null`, no audio verdict, score, model or artifacts. FULL waits
+  for successful video and then uses video alone for verdict and distance confidence;
+  the completed UI and PDF explicitly identify that basis. The first accepted audio
+  score or not-applicable marker wins, including after Redis loss, and late audio
+  successes, failures or DLQs cannot replace it. Other errors still fail FULL;
+  successful two-source FULL keeps its existing weighted aggregation.
 
 The frontend compares only versioned shared scores to `0.5`. It uses the same
 strict decision at equality and distance-based confidence. Timeline colors use

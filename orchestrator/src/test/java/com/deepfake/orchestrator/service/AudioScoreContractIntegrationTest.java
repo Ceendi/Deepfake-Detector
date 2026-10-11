@@ -1,6 +1,11 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.awaitility.Awaitility.await;
 
 import java.math.BigDecimal;
@@ -11,11 +16,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
@@ -27,6 +37,11 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.annotation.DirtiesContext;
@@ -46,6 +61,7 @@ import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.Analysis;
+import com.deepfake.orchestrator.entity.AudioApplicability;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.listener.AnalysisResultListener;
@@ -60,7 +76,8 @@ import tools.jackson.databind.json.JsonMapper;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration({FlywayAutoConfiguration.class, RabbitAutoConfiguration.class})
-@Import({AnalysisService.class, RabbitConfig.class, AnalysisResultListener.class})
+@Import({AnalysisService.class, RabbitConfig.class, AnalysisResultListener.class,
+        IdempotencyGuard.class, AudioScoreContractIntegrationTest.RedisConfig.class})
 @EnableRabbit
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Testcontainers
@@ -78,6 +95,10 @@ class AudioScoreContractIntegrationTest {
             .withEnv("RABBITMQ_DEFAULT_PASS", "test").withExposedPorts(5672)
             .waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
 
+    @Container
+    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
+            .withExposedPorts(6379);
+
     @DynamicPropertySource
     static void connections(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
@@ -94,10 +115,11 @@ class AudioScoreContractIntegrationTest {
     @Autowired RabbitTemplate rabbitTemplate;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean BackpressureGuard backpressure;
-    @MockitoBean IdempotencyGuard idempotency;
+    @Autowired IdempotencyGuard idempotency;
+    @Autowired PlatformTransactionManager transactions;
     @MockitoBean AnalysisCache cache;
     @MockitoBean AnalysisStreamRegistry streams;
-    @MockitoBean StringRedisTemplate redis;
+    @Autowired StringRedisTemplate redis;
     @MockitoBean AnalysisMetrics metrics;
 
     static Stream<Arguments> fixtures() throws Exception {
@@ -171,7 +193,7 @@ class AudioScoreContractIntegrationTest {
     }
 
     @ParameterizedTest(name = "NO_SPEECH / {0}")
-    @EnumSource(value = AnalysisType.class, names = {"AUDIO", "FULL"})
+    @EnumSource(value = AnalysisType.class, names = {"AUDIO"})
     void noSpeechWireFailureHasNoAuthenticityVerdict(AnalysisType type) throws Exception {
         UUID id = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
                 .fileId("silent.wav").fileKey("silent.wav").type(type).build()).getId();
@@ -180,15 +202,6 @@ class AudioScoreContractIntegrationTest {
             audio = JSON.readValue(input, new TypeReference<>() {});
         }
         audio.put("analysis_id", id.toString());
-        if (type == AnalysisType.FULL) {
-            publish(Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
-                    "result", Map.of("prob_fake", 0.8)));
-            await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
-                Analysis partial = repository.findById(id).orElseThrow();
-                assertThat(partial.getVideoProb()).isEqualByComparingTo("0.8");
-                assertThat(partial.getStatus()).isEqualTo(AnalysisStatus.PENDING);
-            });
-        }
         publish(audio);
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                 assertThat(repository.findById(id).orElseThrow().getStatus())
@@ -201,8 +214,262 @@ class AudioScoreContractIntegrationTest {
         assertThat(response.audioProb()).isNull();
         assertThat(response.verdict()).isNull();
         assertThat(response.confidence()).isNull();
-        if (type == AnalysisType.FULL) {
-            assertThat(response.videoProb()).isEqualByComparingTo("0.8");
+    }
+
+    @ParameterizedTest(name = "FULL NO_SPEECH audio first: {0}")
+    @ValueSource(booleans = {false, true})
+    void fullNoSpeechWireMarkerCompletesFromVideoInEitherOrder(boolean audioFirst) throws Exception {
+        UUID id = newFull();
+        if (audioFirst) {
+            publish(noSpeech(id));
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                Analysis partial = repository.findById(id).orElseThrow();
+                assertThat(AudioApplicability.isNoSpeech(partial.getAudioDetails())).isTrue();
+                assertThat(partial.getStatus()).isEqualTo(AnalysisStatus.PENDING);
+                assertThat(partial.getVerdict()).isNull();
+            });
+            publish(success(id, "video", "0.8"));
+        } else {
+            publish(success(id, "video", "0.8"));
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                    assertThat(repository.findById(id).orElseThrow().getVideoProb())
+                            .isEqualByComparingTo("0.8"));
+            publish(noSpeech(id));
+        }
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.COMPLETED));
+        assertVideoOnly(id);
+    }
+
+    @Test
+    void durableMarkerRejectsLateAudioSuccessFailureAndDlqAfterRedisLoss() throws Exception {
+        UUID id = newFull();
+        service.handleResult(noSpeech(id));
+        assertThat(idempotency.alreadyProcessed(id, "audio")).isTrue();
+        idempotency.clear(id); // Real Redis hints lost; the committed JSONB outcome remains authoritative.
+        service.handleResult(success(id, "audio", "0.1"));
+        service.handleResult(failure(id, "audio", "MODEL_UNAVAILABLE"));
+        service.failFromDlq(id, "audio", "late audio task");
+        Analysis pending = repository.findById(id).orElseThrow();
+        assertThat(pending.getStatus()).isEqualTo(AnalysisStatus.PENDING);
+        assertThat(pending.getAudioProb()).isNull();
+        assertThat(AudioApplicability.isNoSpeech(pending.getAudioDetails())).isTrue();
+        service.handleResult(success(id, "video", "0.8"));
+        assertVideoOnly(id);
+        idempotency.clear(id);
+        service.handleResult(success(id, "audio", "0.9"));
+        service.handleResult(noSpeech(id));
+        assertVideoOnly(id);
+    }
+
+    @Test
+    void acceptedAudioScoreRejectsLateNoSpeechAndKeepsWeightedFull() throws Exception {
+        UUID id = newFull();
+        service.handleResult(success(id, "audio", "0.1"));
+        idempotency.clear(id);
+        service.handleResult(noSpeech(id));
+        service.handleResult(success(id, "video", "0.8"));
+        AnalysisResponse response = service.get(id, "audio-contract");
+        assertThat(response.status()).isEqualTo(AnalysisStatus.COMPLETED);
+        assertThat(response.audioProb()).isEqualByComparingTo("0.1");
+        assertThat(response.confidence()).isEqualByComparingTo("0.04"); // .6*.8 + .4*.1 = .52
+        assertThat(response.verdict()).isEqualTo("FAKE");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MODEL_UNAVAILABLE", "PROCESSING_ERROR", "VIDEO_DECODE_FAILED", "NO_FACE_DETECTED"})
+    void otherAudioFailuresRemainFatalForFull(String code) {
+        UUID id = newFull();
+        service.handleResult(failure(id, "audio", code));
+        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.FAILED);
+    }
+
+    @Test
+    void videoNoSpeechOrFailureAfterAudioMarkerStillFailsFull() throws Exception {
+        UUID id = newFull();
+        service.handleResult(noSpeech(id));
+        service.handleResult(failure(id, "video", "NO_SPEECH"));
+        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.FAILED);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = AnalysisStatus.class, names = {"CANCELLED", "FAILED", "COMPLETED"})
+    void terminalAnalysisRejectsNoSpeechMarker(AnalysisStatus status) throws Exception {
+        Analysis analysis = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
+                .fileId("f").fileKey("k").type(AnalysisType.FULL).build());
+        jdbc.update("UPDATE analysis SET status = ? WHERE id = ?", status.name(), analysis.getId());
+        service.handleResult(noSpeech(analysis.getId()));
+        Analysis stored = repository.findById(analysis.getId()).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(status);
+        assertThat(stored.getAudioDetails()).isNull();
+    }
+
+    @Test
+    void rolledBackMarkerLeavesNoDatabaseOrRedisAcceptanceAndCanReplay() throws Exception {
+        UUID id = newFull();
+        Map<String, Object> payload = noSpeech(id);
+        assertThatThrownBy(() -> new TransactionTemplate(transactions).executeWithoutResult(status -> {
+            service.handleResult(payload);
+            throw new IllegalStateException("controlled rollback");
+        })).isInstanceOf(IllegalStateException.class);
+        assertThat(repository.findById(id).orElseThrow().getAudioDetails()).isNull();
+        assertThat(idempotency.alreadyProcessed(id, "audio")).isFalse();
+        service.handleResult(success(id, "video", "0.8"));
+        publish(payload);
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.COMPLETED));
+        assertVideoOnly(id);
+    }
+
+    @Test
+    void concurrentVideoAndNoSpeechCompleteExactlyOnce() throws Exception {
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            for (int i = 0; i < 10; i++) {
+                UUID id = newFull();
+                CountDownLatch start = new CountDownLatch(1);
+                Map<String, Object> audio = noSpeech(id);
+                var videoTask = pool.submit(() -> { start.await(); service.handleResult(success(id, "video", "0.8")); return null; });
+                var audioTask = pool.submit(() -> { start.await(); service.handleResult(audio); return null; });
+                start.countDown();
+                videoTask.get(15, TimeUnit.SECONDS);
+                audioTask.get(15, TimeUnit.SECONDS);
+                assertVideoOnly(id);
+                verify(streams, times(1)).sendResult(eq(id), any());
+            }
+        }
+    }
+
+    static Stream<Arguments> competingNoSpeechOutcomes() {
+        return Stream.of(false, true).flatMap(failure -> Stream.of(false, true)
+                .map(rollback -> Arguments.of(failure, rollback)));
+    }
+
+    @ParameterizedTest(name = "held marker: competing failure={0}, rollback={1}")
+    @MethodSource("competingNoSpeechOutcomes")
+    void heldMarkerTransactionProtectsAcceptanceUntilCommitOrRollback(boolean failure,
+                                                                      boolean rollback) throws Exception {
+        UUID id = newFull();
+        Map<String, Object> marker = noSpeech(id);
+        CountDownLatch written = new CountDownLatch(1);
+        CountDownLatch finish = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(() -> new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+                service.handleResult(marker);
+                written.countDown();
+                try {
+                    if (!finish.await(15, TimeUnit.SECONDS)) throw new IllegalStateException("marker barrier timed out");
+                } catch (InterruptedException error) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(error);
+                }
+                if (rollback) tx.setRollbackOnly();
+            }));
+            try {
+                assertThat(written.await(10, TimeUnit.SECONDS)).isTrue();
+                assertThat(repository.findById(id).orElseThrow().getAudioDetails()).isNull();
+                assertThat(idempotency.alreadyProcessed(id, "audio")).isFalse();
+                var second = pool.submit(() -> service.handleResult(failure
+                        ? failure(id, "audio", "MODEL_UNAVAILABLE") : success(id, "audio", "0.1")));
+                await().atMost(Duration.ofSeconds(10)).until(() -> jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM pg_stat_activity
+                        WHERE datname = current_database() AND cardinality(pg_blocking_pids(pid)) > 0
+                        """, Long.class) > 0);
+                assertThat(second.isDone()).isFalse();
+                finish.countDown();
+                first.get(15, TimeUnit.SECONDS);
+                second.get(15, TimeUnit.SECONDS);
+            } finally {
+                finish.countDown();
+            }
+        }
+        Analysis accepted = repository.findById(id).orElseThrow();
+        if (rollback && failure) {
+            assertThat(accepted.getStatus()).isEqualTo(AnalysisStatus.FAILED);
+            assertThat(accepted.getAudioDetails()).isNull();
+            assertThat(accepted.getAudioProb()).isNull();
+        } else {
+            assertThat(accepted.getStatus()).isEqualTo(AnalysisStatus.PENDING);
+            assertThat(AudioApplicability.isNoSpeech(accepted.getAudioDetails())).isEqualTo(!rollback);
+            assertThat(accepted.getAudioProb() == null).isEqualTo(!rollback);
+            service.handleResult(success(id, "video", "0.8"));
+            if (rollback) {
+                AnalysisResponse response = service.get(id, "audio-contract");
+                assertThat(response.status()).isEqualTo(AnalysisStatus.COMPLETED);
+                assertThat(response.audioProb()).isEqualByComparingTo("0.1");
+                assertThat(response.confidence()).isEqualByComparingTo("0.04");
+            } else {
+                assertVideoOnly(id);
+            }
+        }
+        assertThat(idempotency.alreadyProcessed(id, "audio")).isTrue();
+    }
+
+    @Test
+    void videoAnalysisIgnoresUnexpectedAudioNoSpeech() throws Exception {
+        Analysis analysis = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
+                .fileId("f").fileKey("k").type(AnalysisType.VIDEO).build());
+        service.handleResult(noSpeech(analysis.getId()));
+        Analysis stored = repository.findById(analysis.getId()).orElseThrow();
+        assertThat(stored.getStatus()).isEqualTo(AnalysisStatus.PENDING);
+        assertThat(stored.getAudioDetails()).isNull();
+        assertThat(idempotency.alreadyProcessed(analysis.getId(), "audio")).isFalse();
+    }
+
+    @Test
+    void arbitraryAudioDetailsDoNotSatisfyFullReadiness() {
+        Analysis analysis = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
+                .fileId("f").fileKey("k").type(AnalysisType.FULL)
+                .audioDetails(Map.of("status", "NOT_APPLICABLE", "reason", "OTHER")).build());
+        service.handleResult(success(analysis.getId(), "video", "0.8"));
+        assertThat(repository.findById(analysis.getId()).orElseThrow().getStatus())
+                .isEqualTo(AnalysisStatus.PENDING);
+    }
+
+    private UUID newFull() {
+        return repository.saveAndFlush(Analysis.builder().userId("audio-contract")
+                .fileId("f").fileKey("k").type(AnalysisType.FULL).build()).getId();
+    }
+
+    private Map<String, Object> noSpeech(UUID id) throws Exception {
+        try (var input = getClass().getResourceAsStream("/contracts/audio-no-speech-result.json")) {
+            Map<String, Object> payload = JSON.readValue(input, new TypeReference<>() {});
+            payload.put("analysis_id", id.toString());
+            return payload;
+        }
+    }
+
+    private static Map<String, Object> success(UUID id, String source, String probability) {
+        return Map.of("analysis_id", id.toString(), "source", source, "status", "COMPLETED",
+                "result", Map.of("prob_fake", probability));
+    }
+
+    private static Map<String, Object> failure(UUID id, String source, String code) {
+        return Map.of("analysis_id", id.toString(), "source", source, "status", "FAILED",
+                "error", Map.of("code", code, "message", "controlled failure"));
+    }
+
+    private void assertVideoOnly(UUID id) {
+        AnalysisResponse response = service.get(id, "audio-contract");
+        assertThat(response.status()).isEqualTo(AnalysisStatus.COMPLETED);
+        assertThat(response.videoProb()).isEqualByComparingTo("0.8");
+        assertThat(response.audioProb()).isNull();
+        assertThat(response.verdict()).isEqualTo("FAKE");
+        assertThat(response.confidence()).isEqualByComparingTo("0.6");
+        assertThat(response.errorMessage()).isNull();
+        Map<?, ?> marker = (Map<?, ?>) response.details().get("audio");
+        assertThat(marker.get("status")).isEqualTo("NOT_APPLICABLE");
+        assertThat(marker.get("reason")).isEqualTo("NO_SPEECH");
+        assertThat(marker.get("message")).isInstanceOf(String.class);
+        assertThat(marker).hasSize(3); // No fake audio verdict/model/metadata/artifacts.
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class RedisConfig {
+        @Bean LettuceConnectionFactory redisConnectionFactory() {
+            return new LettuceConnectionFactory(redisContainer.getHost(), redisContainer.getMappedPort(6379));
+        }
+        @Bean StringRedisTemplate redisTemplate(LettuceConnectionFactory factory) {
+            return new StringRedisTemplate(factory);
         }
     }
 

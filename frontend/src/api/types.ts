@@ -42,9 +42,12 @@ export interface StartAnalysisRequest {
 export interface SourceDetails {
   verdict?: Verdict
   confidence?: number // Distance from the decision boundary for the versioned audio contract.
-  modelVersion: string
-  gradcamKeys: string[]
-  gradcamUrls: string[]
+  status?: 'NOT_APPLICABLE'
+  reason?: 'NO_SPEECH'
+  message?: string
+  modelVersion?: string
+  gradcamKeys?: string[]
+  gradcamUrls?: string[]
   metadata?: Record<string, unknown>
 }
 
