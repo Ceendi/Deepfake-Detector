@@ -114,13 +114,13 @@ failure, non-200/non-404 responses, or missing/invalid canonical metadata return
 `503` (`SERVICE_UNAVAILABLE`). These failures occur before the writer transaction
 and capacity admission: no analysis row, task publication or occupied slot.
 The complete HTTP response has a finite deadline (default 2 seconds, no retries).
-See [authorized input, rollout and acceptance tests](../analysis-file-ownership.md).
+See [input resolution](../reliability.md#creating-an-analysis).
 
 Capacity is the number of committed `PENDING`/`PROCESSING` rows in PostgreSQL.
 Admission is serialized by a transaction advisory lock until the create commits or
 rolls back. A failed create consumes no capacity, and a terminal update frees capacity
 only after commit. Redis availability does not affect this limit. See
-[deployment and regression evidence](../analysis-capacity.md).
+[capacity](../reliability.md#creating-an-analysis).
 
 Three distinct `429 Too Many Requests` can occur:
 
@@ -343,7 +343,7 @@ mailbox accepts only one terminal event. Failed reads and disconnected emitters 
 Delivery uses independent bounded per-connection writers and fixed mailboxes. A dedicated
 heartbeat/watchdog scheduler never writes HTTP responses. Routing removal or timeout alone
 does not recycle capacity while a physical writer/request remains blocked. See
-[delivery limits and fault acceptance](../sse-delivery-isolation.md).
+[SSE delivery](../reliability.md#sse-delivery).
 
 **Client recovery:** both upload and result screens use `watchAnalysis`, a fetch-based SSE
 client with a Bearer header. On EOF or a transient stream error without `result`, it immediately

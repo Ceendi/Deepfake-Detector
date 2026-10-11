@@ -30,9 +30,8 @@ native — zero deps); detectors log structlog JSON. Alloy reads every container
 - **Labels (low cardinality only):** `service` (compose service name), `level`.
 - **Structured metadata (NOT labels):** `correlation_id`, `trace_id` — high cardinality would explode
   Loki streams. Query them with `{service="orchestrator"} | json | trace_id="..."`.
-- The raw line always reaches Loki, so even if a JSON field path is off, `{service="..."} | json`
-  parses it client-side. (See `infra/alloy/config.alloy` `#G6` — verify ECS field paths against
-  `docker logs orchestrator` once the Java stack runs.)
+- Alloy reads both the detector field names and the Java ECS ones (`correlationId`, `traceId`).
+  The raw line always reaches Loki, so `{service="..."} | json` still works if a field is missing.
 
 ## Metrics (D3)
 
@@ -49,6 +48,12 @@ eureka scrape is intentionally skipped (low value).
 `trace_id`/`span_id` reach the logs always (D2). With OTLP export on, spans ship to Tempo over
 `tempo:4318`. Spans carry `analysis.id` / `analysis.type`. Grafana correlates both ways: a Loki
 `trace_id` links to Tempo (derived field), and a Tempo trace links back to Loki (`tracesToLogsV2`).
+
+Tempo 3 runs monolithic with local storage (`infra/tempo/tempo.yaml`, no Kafka): the live-store
+WAL is under `/var/tempo/live-store/traces`, completed blocks under `/var/tempo/blocks`, both in the
+`tempo-data` volume. Tempo 3 rejects the Tempo 2 `ingester`/`compactor` sections; retention is
+`overrides.defaults.compaction.block_retention`. `python3 infra/tests/test_tempo.py` checks
+ingestion, retention settings and trace lookup after restart in a disposable project.
 
 ## Decisions
 
