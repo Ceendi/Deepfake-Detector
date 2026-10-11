@@ -72,12 +72,12 @@ class AnalysisServiceStreamTest {
                 .status(AnalysisStatus.PROCESSING).type(AnalysisType.VIDEO).build();
         when(repository.streamSnapshot(id, "alice")).thenReturn(Optional.of(new AnalysisStreamSnapshot(id, a.getStatus(), a.getVerdict(), a.getConfidence())));
         SseEmitter emitter = mock(SseEmitter.class);
-        when(streams.register(id)).thenReturn(emitter);
+        when(streams.register(id, "alice")).thenReturn(emitter);
 
         SseEmitter result = service.openStream(id, "alice");
 
         assertThat(result).isSameAs(emitter);
-        verify(streams).register(id);
+        verify(streams).register(id, "alice");
         verify(streams, never()).sendResult(any(), any());
         verify(streams, never()).complete(any());
     }
@@ -105,7 +105,7 @@ class AnalysisServiceStreamTest {
         Analysis a = Analysis.builder().id(id).userId("alice").status(AnalysisStatus.COMPLETED)
                 .verdict("FAKE").confidence(new BigDecimal("0.8")).type(AnalysisType.VIDEO).build();
         when(repository.streamSnapshot(id, "alice")).thenReturn(Optional.of(new AnalysisStreamSnapshot(id, a.getStatus(), a.getVerdict(), a.getConfidence())));
-        when(streams.register(id)).thenReturn(mock(SseEmitter.class));
+        when(streams.register(id, "alice")).thenReturn(mock(SseEmitter.class));
 
         service.openStream(id, "alice");
 

@@ -73,6 +73,12 @@ public class GlobalExceptionHandler {
                         "retryAfterSeconds", ex.retryAfterSeconds()));
     }
 
+    @ExceptionHandler(TooManyStreamsException.class)
+    public ResponseEntity<ErrorResponse> handleStreamQuota(TooManyStreamsException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).header(HttpHeaders.RETRY_AFTER, "5")
+                .body(new ErrorResponse("TOO_MANY_REQUESTS", ex.getMessage(), null, correlationId(), Instant.now()));
+    }
+
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException ex) {
         return body(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authentication required", null);

@@ -1,0 +1,190 @@
+package com.deepfake.orchestrator.sse;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.awaitility.Awaitility.await;
+import java.io.*;
+import java.net.*;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.locks.LockSupport;
+import org.junit.jupiter.api.*;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
+import org.springframework.boot.webmvc.autoconfigure.*;
+import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
+import org.springframework.context.annotation.*;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.NativeWebRequest;
+import org.springframework.web.context.request.async.*;
+import org.springframework.web.servlet.config.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import com.deepfake.orchestrator.dto.sse.*;
+import com.deepfake.orchestrator.exception.GlobalExceptionHandler;
+
+/** Actual Tomcat sockets. Forced bounded-event bursts fill TCP buffers; these are transport stress, not inference rates. */
+@SpringBootTest(classes=SseHttpIsolationTest.Harness.class, webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
+ properties={"app.sse.global-connections=8","app.sse.user-connections=5","app.sse.analysis-connections=4",
+ "app.sse.heartbeat=30s","app.sse.slow-write=5s","app.sse.lifetime=2m"})
+class SseHttpIsolationTest {
+    @LocalServerPort int port;
+    @Autowired TestRegistry streams;
+    @Autowired Gate gate;
+    final List<Peer> peers=new ArrayList<>();
+    @AfterEach void cleanup() throws Exception {
+        gate.release.countDown(); peers.forEach(Peer::close);
+        await().atMost(Duration.ofSeconds(10)).pollInterval(Duration.ofMillis(50)).until(() -> { streams.heartbeat(); return streams.admitted()==0; });
+        gate.reset(); streams.shortTimeout=false; streams.timedOut=new CountDownLatch(1);
+    }
+    @Test void severalStoppedReadersKeepHealthyAndNewClientsAndProducerIndependent() throws Exception {
+        UUID id=UUID.randomUUID();
+        for(int i=0;i<3;i++) peers.add(open(id,"slow",false));
+        var healthy=open(id,"healthy",true); peers.add(healthy);
+        long until=System.nanoTime()+Duration.ofSeconds(12).toNanos(); int count=0;
+        while(System.nanoTime()<until && streams.writingLongerThan(Duration.ofMillis(700))<3) {
+            streams.sendProgress(id,progress(id,count++)); LockSupport.parkNanos(100_000);
+        }
+        System.out.println("SSE stopped-reader stress events="+count+" admitted="+streams.admitted()+" sustainedWrites="+streams.writingLongerThan(Duration.ofMillis(700)));
+        assertThat(count).isGreaterThan(100);
+        await().during(Duration.ofMillis(700)).atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(streams.writing()).isGreaterThanOrEqualTo(3));
+        assertThat(streams.admitted()).isEqualTo(4);
+        long started=System.nanoTime();
+        for(int i=0;i<10000;i++) { streams.sendProgress(id,progress(id,i)); streams.heartbeat(); streams.observe(); }
+        assertThat(Duration.ofNanos(System.nanoTime()-started)).isLessThan(Duration.ofSeconds(2));
+        assertThat(streams.admitted()).isEqualTo(4); // Watchdog cannot recycle a physically blocked writer.
+        var newcomer=open(UUID.randomUUID(),"new",true); peers.add(newcomer);
+        UUID next=newcomer.id;
+        streams.sendResult(next,result(next));
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(newcomer.lines).anyMatch(line -> line.contains("event:result")));
+        streams.sendResult(id,result(id));
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(healthy.lines).anyMatch(line -> line.contains("event:result")));
+        assertThat(streams.admitted()).isGreaterThanOrEqualTo(3);
+        peers.subList(0,3).forEach(Peer::close);
+        await().atMost(Duration.ofSeconds(8)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
+        peers.add(open(id,"slow",true)); // Actual peer close plus writer exit frees all three reservations.
+    }
+    @Test void servletTimeoutDuringTricklingBlockedSendDoesNotRecycleWriterCapacity() throws Exception {
+        UUID id=UUID.randomUUID();streams.shortTimeout=true;
+        var peer=open(id,"alice",false);peers.add(peer);
+        long until=System.nanoTime()+Duration.ofSeconds(4).toNanos();int count=0;
+        while(System.nanoTime()<until && streams.writingLongerThan(Duration.ofMillis(500))<1) {streams.sendProgress(id,progress(id,count++));LockSupport.parkNanos(100_000);}
+        await().during(Duration.ofMillis(100)).atMost(Duration.ofMillis(400)).untilAsserted(() -> assertThat(streams.writing()).isEqualTo(1));
+        var trickle=Thread.ofVirtual().start(() -> {try {while(!peer.socket.isClosed()) {peer.socket.getInputStream().read();Thread.sleep(100);}}catch(Exception ignored){}});
+        assertThat(streams.timedOut.await(7,TimeUnit.SECONDS)).isTrue();
+        assertThat(streams.admitted()).isEqualTo(1);assertThat(streams.writing()).isEqualTo(1);
+        peer.close();trickle.join(2000);
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
+    }
+    @Test void httpQuotasReturn429WithRetryAfterAndReleaseAfterRealCompletion() throws Exception {
+        UUID id=UUID.randomUUID();
+        for(int i=0;i<4;i++) peers.add(open(id,"alice",true));
+        try(var denied=raw(id,"bob",false,"/test/")) {
+            assertThat(denied.headers()).contains("429").containsIgnoringCase("Retry-After: 5");
+        }
+        peers.add(open(UUID.randomUUID(),"alice",true));
+        try(var denied=raw(UUID.randomUUID(),"alice",false,"/test/")) { assertThat(denied.headers()).contains("429"); }
+        for(int i=0;i<3;i++) peers.add(open(UUID.randomUUID(),"other"+i,true));
+        try(var denied=raw(UUID.randomUUID(),"last",false,"/test/")) { assertThat(denied.headers()).contains("429"); }
+        peers.getFirst().close(); streams.heartbeat();
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(streams.admitted()).isEqualTo(7));
+        peers.add(open(id,"bob",true));
+    }
+    @Test void actualMvcPreInitializationReplayUsesOnlyFixedMailboxAndFailureCannotArmOrphan() throws Exception {
+        UUID id=UUID.randomUUID(); gate.block=true;
+        try(var pool=Executors.newSingleThreadExecutor()) {
+            var connection=pool.submit(() -> raw(id,"alice",true,"/preinit/"));
+            assertThat(gate.entered.await(3,TimeUnit.SECONDS)).isTrue();
+            var session=streams.session(gate.emitter);
+            synchronized(session) { assertThat(session.writerStarted).isFalse(); assertThat(session.result).isEqualTo(result(id)); assertThat(session.video).isNull(); }
+            var early=org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter.class.getDeclaredField("earlySendAttempts");
+            early.setAccessible(true); assertThat((Set<?>)early.get(gate.emitter)).isEmpty();
+            gate.release.countDown(); var peer=connection.get(5,TimeUnit.SECONDS); peers.add(peer);
+            await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(peer.lines).anyMatch(line -> line.contains("event:result")));
+        }
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
+        gate.reset(); gate.fail=true;
+        try(var failed=raw(UUID.randomUUID(),"alice",false,"/preinit/")) { assertThat(failed.headers()).contains("500"); }
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
+        gate.reset();gate.failAfterStart=true;
+        try(var failed=raw(UUID.randomUUID(),"alice",false,"/preinit/")) { assertThat(failed.headers()).contains("500"); }
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
+        assertThat(gate.failedSession.writerStarted).isFalse();
+    }
+    Peer open(UUID id,String owner,boolean drain) throws Exception { var peer=raw(id,owner,drain,"/test/"); assertThat(peer.status).contains("200"); return peer; }
+    Peer raw(UUID id,String owner,boolean drain,String prefix) throws Exception {
+        var peer=new Peer(id,port,prefix+id+"?owner="+owner); peer.status=peer.headers(); if(drain)peer.drain(); return peer;
+    }
+    static AnalysisProgressEvent progress(UUID id,int value) { return new AnalysisProgressEvent(id.toString(),"video",value%101,"x".repeat(512),"PROCESSING"); }
+    static AnalysisResultEvent result(UUID id) { return new AnalysisResultEvent(id.toString(),"COMPLETED","FAKE",BigDecimal.ONE); }
+    static class Peer implements AutoCloseable {
+        final UUID id; final Socket socket=new Socket(); final BufferedReader reader;
+        final Queue<String> lines=new ConcurrentLinkedQueue<>(); String status;
+        Peer(UUID id,int port,String path)throws Exception { this(id,port,path,null); }
+        Peer(UUID id,int port,String path,String token)throws Exception {
+            this.id=id; socket.setReceiveBufferSize(1024); socket.setSoTimeout(5000); socket.connect(new InetSocketAddress("127.0.0.1",port));
+            socket.getOutputStream().write(("GET "+path+" HTTP/1.1\r\nHost: localhost\r\n"+(token==null?"":"Authorization: Bearer "+token+"\r\n")+"Connection: close\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            reader=new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        }
+        String headers()throws Exception { if(status!=null)return status; var text=new StringBuilder(); String line; while((line=reader.readLine())!=null&&!line.isEmpty())text.append(line).append('\n'); return text.toString(); }
+        void drain() { Thread.ofVirtual().start(() -> { try { String line; while((line=reader.readLine())!=null) { if(lines.size()>2000)lines.poll(); lines.add(line); }} catch(IOException ignored){} }); }
+        public void close() { try { socket.setSoLinger(true,0);socket.close(); }catch(IOException ignored){} }
+    }
+    @Configuration(proxyBeanMethods=false)
+    @org.springframework.boot.test.context.TestComponent
+    @ImportAutoConfiguration({DispatcherServletAutoConfiguration.class,WebMvcAutoConfiguration.class,
+        JacksonAutoConfiguration.class,HttpMessageConvertersAutoConfiguration.class})
+    @Import({SseMvcLifecycle.class,GlobalExceptionHandler.class,Endpoint.class})
+    static class Harness {
+        @Bean TomcatServletWebServerFactory server() {
+            var factory=new TomcatServletWebServerFactory(); factory.addConnectorCustomizers(connector -> {
+                connector.setProperty("socket.txBufSize","1024"); connector.setProperty("socket.appWriteBufSize","1024");
+                connector.setProperty("connectionTimeout","120000");
+            });return factory;
+        }
+        @Bean TestRegistry streams(SseLimits limits) { return new TestRegistry(limits); }
+        @Bean Gate gate(TestRegistry streams) { return new Gate(streams); }
+    }
+    static class TestRegistry extends AnalysisStreamRegistry {
+        volatile boolean shortTimeout;CountDownLatch timedOut=new CountDownLatch(1);
+        TestRegistry(SseLimits limits){super(limits);}
+        @Override protected SseEmitter createEmitter() {
+            var emitter=shortTimeout?new SseEmitter(5000L):super.createEmitter();
+            if(shortTimeout)emitter.onTimeout(timedOut::countDown);return emitter;
+        }
+    }
+    static class Gate implements WebMvcConfigurer {
+        final TestRegistry streams; AnalysisStreamRegistry.Session failedSession;
+        Gate(TestRegistry streams){this.streams=streams;}
+        volatile boolean block,fail,failAfterStart; volatile SseEmitter emitter;
+        CountDownLatch entered=new CountDownLatch(1),release=new CountDownLatch(1);
+        void reset(){block=false;fail=false;failAfterStart=false;emitter=null;entered=new CountDownLatch(1);release=new CountDownLatch(1);}
+        @Override public void configureAsyncSupport(AsyncSupportConfigurer config) {
+            config.registerDeferredResultInterceptors(new DeferredResultProcessingInterceptor() {
+                @Override public <T> void beforeConcurrentHandling(NativeWebRequest request,DeferredResult<T> result)throws Exception {
+                    if(fail)throw new IOException("initialization fault");
+                }
+                @Override public <T> void preProcess(NativeWebRequest request,DeferredResult<T> result)throws Exception {
+                    if(failAfterStart){failedSession=streams.session(emitter);throw new IOException("async-started initialization fault");}
+                    if(block){entered.countDown();if(!release.await(5,TimeUnit.SECONDS))throw new IOException("gate timed out");}
+                }
+            });
+        }
+    }
+    @RestController @org.springframework.boot.test.context.TestComponent static class Endpoint {
+        final AnalysisStreamRegistry streams; final Gate gate;
+        Endpoint(AnalysisStreamRegistry streams,Gate gate){this.streams=streams;this.gate=gate;}
+        @GetMapping(value={"/test/{id}","/preinit/{id}"},produces="text/event-stream")
+        SseEmitter stream(@PathVariable UUID id,@RequestParam String owner,jakarta.servlet.http.HttpServletRequest request) {
+            var emitter=streams.register(id,owner);
+            if(request.getRequestURI().startsWith("/preinit")) {
+                gate.emitter=emitter;for(int i=0;i<10000;i++)streams.sendProgress(id,progress(id,i));streams.sendResult(id,result(id));
+            }
+            return emitter;
+        }
+    }
+}

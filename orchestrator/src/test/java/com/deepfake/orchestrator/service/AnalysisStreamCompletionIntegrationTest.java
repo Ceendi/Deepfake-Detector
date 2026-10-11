@@ -1,6 +1,9 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+import java.time.Duration;
+import com.deepfake.orchestrator.sse.RegistryTestHarness;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
@@ -80,6 +83,7 @@ class AnalysisStreamCompletionIntegrationTest {
     void seed() {
         streams.beforeRegister = () -> {};
         streams.afterRegister = () -> {};
+        streams.emitters.forEach(e -> RegistryTestHarness.completed(streams,e));
         streams.emitters.clear();
         repository.deleteAll();
         id = repository.saveAndFlush(Analysis.builder().userId("alice").fileId("file")
@@ -107,7 +111,9 @@ class AnalysisStreamCompletionIntegrationTest {
     @Test
     void completionAfterBothReadsIsPushedToBothSubscribersAndLateSubscriber() {
         var first = (RecordingEmitter) service.openStream(id, "alice");
+        RegistryTestHarness.ready(streams, first);
         var second = (RecordingEmitter) service.openStream(id, "alice");
+        RegistryTestHarness.ready(streams, second);
         assertThat(first.results).isEmpty();
         assertThat(second.results).isEmpty();
         finish();
@@ -139,6 +145,7 @@ class AnalysisStreamCompletionIntegrationTest {
         RecordingEmitter emitter = tx.execute(status -> {
             finish(); // Joins this transaction; the afterCommit push has not run.
             var subscription = (RecordingEmitter) service.openStream(id, "alice");
+            RegistryTestHarness.ready(streams, subscription);
             assertThat(subscription.results).isEmpty();
             assertThat(subscription.closed).isFalse();
             if (rollback) status.setRollbackOnly();
@@ -171,7 +178,7 @@ class AnalysisStreamCompletionIntegrationTest {
         assertThatThrownBy(() -> service.openStream(id, "alice"))
                 .isInstanceOf(ResponseStatusException.class);
         var emitter = streams.emitters.getFirst();
-        assertThat(emitter.closed).isTrue();
+        assertThat(RegistryTestHarness.admitted(streams)).isZero();
         assertThat(emitter.results).isEmpty();
         streams.sendResult(id, new AnalysisResultEvent(id.toString(), "COMPLETED", "FAKE", BigDecimal.ONE));
         assertThat(emitter.results).isEmpty();
@@ -191,6 +198,8 @@ class AnalysisStreamCompletionIntegrationTest {
     }
 
     private void assertResult(RecordingEmitter emitter) {
+        RegistryTestHarness.ready(streams, emitter);
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(emitter.closed).isTrue());
         assertThat(emitter.results).hasSize(1);
         assertThat(emitter.results.getFirst().status()).isEqualTo("COMPLETED");
         assertThat(emitter.results.getFirst().verdict()).isEqualTo("FAKE");
@@ -207,9 +216,9 @@ class AnalysisStreamCompletionIntegrationTest {
         Runnable beforeRegister = () -> {};
         Runnable afterRegister = () -> {};
         final List<RecordingEmitter> emitters = new ArrayList<>();
-        @Override public SseEmitter register(UUID id) {
+        @Override public SseEmitter register(UUID id, String owner) {
             beforeRegister.run();
-            SseEmitter emitter = super.register(id);
+            SseEmitter emitter = super.register(id, owner);
             afterRegister.run();
             return emitter;
         }
@@ -221,8 +230,8 @@ class AnalysisStreamCompletionIntegrationTest {
     }
 
     static class RecordingEmitter extends SseEmitter {
-        final List<AnalysisResultEvent> results = new ArrayList<>();
-        boolean closed;
+        final List<AnalysisResultEvent> results = new java.util.concurrent.CopyOnWriteArrayList<>();
+        volatile boolean closed;
         @Override public void send(SseEventBuilder builder) throws IOException {
             if (closed) throw new IllegalStateException("Emitter closed");
             builder.build().forEach(data -> {

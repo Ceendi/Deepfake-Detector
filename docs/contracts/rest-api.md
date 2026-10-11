@@ -122,12 +122,13 @@ rolls back. A failed create consumes no capacity, and a terminal update frees ca
 only after commit. Redis availability does not affect this limit. See
 [deployment and regression evidence](../analysis-capacity.md).
 
-Two distinct `429 Too Many Requests` can occur:
+Three distinct `429 Too Many Requests` can occur:
 
 - **Orchestrator backpressure** (in-flight analysis limit): body
   `{ "queuePosition": <int>, "retryAfterSeconds": <int> }` plus a `Retry-After`
   header. `queuePosition` is the active analysis count plus this rejected request,
   capped at the maximum signed integer.
+- **SSE connection admission**: normal error body (`TOO_MANY_REQUESTS`) and `Retry-After: 5`; configurable global/owner/analysis connection caps apply after ownership checks.
 - **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
   carried in `X-RateLimit-*` headers (Spring Cloud Gateway default).
 
@@ -306,7 +307,9 @@ Authorization: Bearer <token>
 `200 OK` (`text/event-stream`) for the owner. `404 Not Found` at open time if the
 analysis does not exist OR `userId != jwt.sub` (IDOR guard — never `403`). This open
 check is repeated after registration; both reads are scoped to the owner, and events are then
-pushed by `analysisId`.
+pushed by `analysisId`. Exhausted SSE connection admission returns `429` with
+`Retry-After: 5`. Defaults are128 global,4 per owner and4 per analysis; retained
+physical connections count until their writer and HTTP request both finish.
 
 Events:
 
@@ -318,11 +321,12 @@ event: result
 data: {"analysisId":"uuid","status":"COMPLETED","verdict":"FAKE","confidence":0.74}
 ```
 
-- `progress` fires per detector update; `source` is `video` | `audio`.
+- `progress` coalesces to the latest pending update per detector source; `source` is `video` | `audio`.
 - `result` carries the terminal state (`COMPLETED` | `FAILED` | `CANCELLED`; `verdict`
   and `confidence` are `null` unless `COMPLETED`); the server closes the stream right
-  after sending it. Opening a stream for an already-finished analysis delivers `result`
-  immediately, then closes.
+  after sending it. Opening a stream for an already-finished analysis queues its own `result`
+  for delivery after MVC initialization, then closes. Slow connections can instead close
+  without terminal delivery and use the GET reconciliation below.
 - Comment lines (`: ...`) are sent ~every 15 s as a heartbeat to keep idle connections
   alive through proxies; clients ignore them.
 
@@ -335,7 +339,11 @@ second read; completion afterwards reaches the registered emitter through the ex
 after-commit publication. Replay targets only the new emitter. Broadcast terminal delivery
 atomically detaches the current subscribers before sending and closing them, so it cannot
 close a later subscriber without a result. Concurrent push and replay can race; a completed
-emitter rejects the redundant send. Failed reads and disconnected emitters are removed.
+mailbox accepts only one terminal event. Failed reads and disconnected emitters are removed.
+Delivery uses independent bounded per-connection writers and fixed mailboxes. A dedicated
+heartbeat/watchdog scheduler never writes HTTP responses. Routing removal or timeout alone
+does not recycle capacity while a physical writer/request remains blocked. See
+[delivery limits and fault acceptance](../sse-delivery-isolation.md).
 
 **Client recovery:** both upload and result screens use `watchAnalysis`, a fetch-based SSE
 client with a Bearer header. On EOF or a transient stream error without `result`, it immediately
