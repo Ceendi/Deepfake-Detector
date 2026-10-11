@@ -90,8 +90,12 @@ class SseHttpIsolationTest {
         try(var denied=raw(UUID.randomUUID(),"alice",false,"/test/")) { assertThat(denied.headers()).contains("429"); }
         for(int i=0;i<3;i++) peers.add(open(UUID.randomUUID(),"other"+i,true));
         try(var denied=raw(UUID.randomUUID(),"last",false,"/test/")) { assertThat(denied.headers()).contains("429"); }
-        peers.getFirst().close(); streams.heartbeat();
-        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(streams.admitted()).isEqualTo(7));
+        peers.getFirst().close();
+        // A successful write can race the peer RST; probe until actual physical completion.
+        await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
+            streams.heartbeat();
+            assertThat(streams.admitted()).isEqualTo(7);
+        });
         peers.add(open(id,"bob",true));
     }
     @Test void actualMvcPreInitializationReplayUsesOnlyFixedMailboxAndFailureCannotArmOrphan() throws Exception {
