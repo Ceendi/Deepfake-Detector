@@ -1,4 +1,4 @@
-// Generatory plików testowych in-memory — nie commitujemy binariów mediów (CLAUDE.md).
+// Generatory plików testowych in-memory — nie commitujemy binariów mediów (AGENTS.md).
 // Playwright `setInputFiles({ name, mimeType, buffer })` przyjmuje payload z pamięci, więc
 // nie potrzebujemy plików na dysku ani natywnego okna wyboru.
 

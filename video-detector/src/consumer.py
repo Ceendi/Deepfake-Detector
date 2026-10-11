@@ -263,7 +263,7 @@ def run_consumer(health_state: dict) -> None:
             conn = pika.BlockingConnection(params)
             ch = conn.channel()
             ch.basic_qos(prefetch_count=1)
-            ch.confirm_delivery()  # publisher confirms (CLAUDE.md D6)
+            ch.confirm_delivery()  # publisher confirms (AGENTS.md D6)
 
             # Topology declaration — broker boots empty, every publisher/consumer
             # must declare its own exchanges/queues on startup. Arguments MUST
