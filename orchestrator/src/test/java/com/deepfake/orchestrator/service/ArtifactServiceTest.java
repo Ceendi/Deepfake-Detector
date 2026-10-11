@@ -1,13 +1,10 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -28,12 +25,10 @@ import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 
-import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 /**
@@ -54,20 +49,20 @@ class ArtifactServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ArtifactService(repository, s3, "analysis-artifacts");
+        service = new ArtifactService(new ArtifactAuthorizationService(repository), s3, "analysis-artifacts", 8388608);
     }
 
     @Test
     void servesRecordedArtifactToOwnerUsingStoredKey() {
         givenAnalysis(Map.of("gradcamKeys", List.of(id + "/audio/gradcam.png")));
-        when(s3.getObjectAsBytes(any(GetObjectRequest.class))).thenReturn(
-                ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), png));
+        when(s3.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class))).thenReturn(
+                png);
 
         byte[] got = service.download(id, "audio", "gradcam.png", "alice");
 
         assertThat(got).isEqualTo(png);
         ArgumentCaptor<GetObjectRequest> req = ArgumentCaptor.forClass(GetObjectRequest.class);
-        verify(s3).getObjectAsBytes(req.capture());
+        verify(s3).getObject(req.capture(), any(ResponseTransformer.class));
         assertThat(req.getValue().bucket()).isEqualTo("analysis-artifacts");
         assertThat(req.getValue().key()).isEqualTo(id + "/audio/gradcam.png");
     }
@@ -79,7 +74,7 @@ class ArtifactServiceTest {
         assertThatThrownBy(() -> service.download(id, "audio", "gradcam.png", "mallory"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
-        verify(s3, never()).getObjectAsBytes(any(GetObjectRequest.class));
+        verify(s3, never()).getObject(any(GetObjectRequest.class), any(ResponseTransformer.class));
     }
 
     @Test
@@ -91,53 +86,22 @@ class ArtifactServiceTest {
         assert404(() -> service.download(id, "lidar", "gradcam.png", "alice"));   // not video|audio
         assert404(() -> service.download(id, "video", "gradcam.png", "alice"));   // no video details
         assert404(() -> service.download(id, "audio", "other.png", "alice"));     // name not recorded
-        verify(s3, never()).getObjectAsBytes(any(GetObjectRequest.class));
+        verify(s3, never()).getObject(any(GetObjectRequest.class), any(ResponseTransformer.class));
     }
 
     @Test
     void missingObjectIs404AndStorageOutageIs503() {
         givenAnalysis(Map.of("gradcamKeys", List.of(id + "/audio/gradcam.png")));
 
-        when(s3.getObjectAsBytes(any(GetObjectRequest.class)))
+        when(s3.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
                 .thenThrow(NoSuchKeyException.builder().build());
         assert404(() -> service.download(id, "audio", "gradcam.png", "alice"));
 
-        when(s3.getObjectAsBytes(any(GetObjectRequest.class)))
+        when(s3.getObject(any(GetObjectRequest.class), any(ResponseTransformer.class)))
                 .thenThrow(SdkClientException.create("connection refused"));
         assertThatThrownBy(() -> service.download(id, "audio", "gradcam.png", "alice"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         e -> assertThat(e.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE));
-    }
-
-    @Test
-    void deleteArtifactsRemovesEachKeyFromTheBucket() {
-        service.deleteArtifacts(List.of(id + "/video/a.png", id + "/audio/b.png"));
-
-        ArgumentCaptor<DeleteObjectRequest> req = ArgumentCaptor.forClass(DeleteObjectRequest.class);
-        verify(s3, times(2)).deleteObject(req.capture());
-        assertThat(req.getAllValues()).allSatisfy(r -> assertThat(r.bucket()).isEqualTo("analysis-artifacts"));
-        assertThat(req.getAllValues()).extracting(DeleteObjectRequest::key)
-                .containsExactly(id + "/video/a.png", id + "/audio/b.png");
-    }
-
-    @Test
-    void deleteArtifactsIsFailOpenAndAttemptsEveryKey() {
-        // A storage error on one object must not throw (the row is already gone) nor skip the rest.
-        when(s3.deleteObject(any(DeleteObjectRequest.class)))
-                .thenThrow(SdkClientException.create("storage down"));
-
-        assertThatCode(() -> service.deleteArtifacts(List.of(id + "/video/a.png", id + "/audio/b.png")))
-                .doesNotThrowAnyException();
-
-        verify(s3, times(2)).deleteObject(any(DeleteObjectRequest.class));
-    }
-
-    @Test
-    void deleteArtifactsIsNoOpForEmptyOrNull() {
-        service.deleteArtifacts(List.of());
-        service.deleteArtifacts(null);
-
-        verifyNoInteractions(s3);
     }
 
     private void givenAnalysis(Map<String, Object> audioDetails) {

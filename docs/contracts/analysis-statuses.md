@@ -41,13 +41,15 @@ PENDING ──► PROCESSING ──► COMPLETED
 - Stuck-job recovery: a `@Scheduled` scan (every 5 min) fails analyses left
   `PENDING`/`PROCESSING` with no progress past the threshold (default 600s) — sets `FAILED`,
   releases the in-flight slot, and notifies the client over SSE.
-- DLQ consumer: any message reaching a `*.dlq` flips the analysis to `FAILED` and notifies
-  the client over SSE.
+- DLQ consumer: a valid task or terminal result dead letter fails only an expected,
+  unaccepted source of an active analysis. Accepted FULL sources and cancelled/terminal
+  analyses are preserved; poison and exhausted database failures are durably quarantined.
 
 ## Paths to `FAILED`
 
 1. Detector publishes a result message with `status: "FAILED"`.
-2. A result/progress message exhausts retries and is republished to `analysis.results.dlq`
+2. A terminal result exhausts retries and is confirmed into `analysis.results.dlq`
    (or a detector task lands in `analysis.video.dlq` / `analysis.audio.dlq`); the DLQ
-   consumer then fails the analysis.
+   consumer fails an active analysis only for an expected, unaccepted source. Progress
+   has an independent advisory policy and never causes this transition.
 3. Stuck-job recovery fires (no progress past the threshold while `PENDING`/`PROCESSING`).

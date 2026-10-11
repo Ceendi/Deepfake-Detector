@@ -52,6 +52,8 @@ class AnalysisServiceProcessingTransitionTest {
     OptionalRedisOperations optionalRedis =
             new OptionalRedisOperations(Duration.ofSeconds(2));
 
+    @Mock ArtifactCleanupStore artifactCleanup;
+
     @InjectMocks AnalysisService service;
 
     private final UUID id = UUID.randomUUID();
@@ -95,6 +97,47 @@ class AnalysisServiceProcessingTransitionTest {
         verify(cache, never()).evictById(any());
         verifyNoInteractions(streams);
         verify(redis, never()).opsForValue();
+    }
+
+    @Test
+    void progressSideEffectsWaitForCommitAndRollbackEmitsNothing() {
+        when(repository.recordProgress(eq(id), any(), any(), any())).thenReturn(1);
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.handleProgress(progress());
+            verifyNoInteractions(cache, redis, streams);
+            var callbacks = org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations();
+            callbacks.forEach(callback -> callback.afterCompletion(
+                    org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+            verifyNoInteractions(cache, redis, streams);
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void afterCommitDeliveryFailureDoesNotChangeDatabaseSuccess() {
+        when(repository.recordProgress(eq(id), any(), any(), any())).thenReturn(1);
+        doThrow(new IllegalStateException("closed emitter")).when(streams).sendProgress(eq(id), any());
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.handleProgress(progress());
+            verifyNoInteractions(cache, redis, streams);
+            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+            verify(streams).sendProgress(eq(id), any());
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void databaseErrorPropagatesToAdvisoryRetryWithoutSideEffects() {
+        when(repository.recordProgress(eq(id), any(), any(), any()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("offline"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.handleProgress(progress()))
+                .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
+        verifyNoInteractions(cache, redis, streams);
     }
 
     private Map<String, Object> progress() {
