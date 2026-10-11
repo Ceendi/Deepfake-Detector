@@ -171,7 +171,7 @@ public class AnalysisService {
     public SseEmitter openStream(UUID id, String currentUserId) {
         repository.streamSnapshot(id, currentUserId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        SseEmitter emitter = streams.register(id);
+        SseEmitter emitter = streams.register(id, currentUserId);
         try {
             var fresh = repository.streamSnapshot(id, currentUserId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));

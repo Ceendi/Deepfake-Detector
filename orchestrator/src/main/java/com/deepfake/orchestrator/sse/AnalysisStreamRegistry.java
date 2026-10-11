@@ -1,114 +1,206 @@
 package com.deepfake.orchestrator.sse;
 
 import java.io.IOException;
-import java.time.Duration;
-import java.util.Collection;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-
-import org.springframework.scheduling.annotation.Scheduled;
+import java.util.*;
+import java.util.concurrent.*;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
 import com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent;
 import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
+import com.deepfake.orchestrator.exception.TooManyStreamsException;
 
-/**
- * Holds the live SSE emitters keyed by analysisId and owns their lifecycle (register / send /
- * complete / cleanup / heartbeat), keeping that concern out of the business service. Emitters are
- * in-memory and instance-bound — fine for the single-instance orchestrator (MVP); a multi-replica
- * setup would need a backplane (V2).
- */
+/** Single-instance routing; each admitted HTTP connection owns one bounded mailbox and writer. */
 @Component
 public class AnalysisStreamRegistry {
+    private final Object admission = new Object();
+    private final Map<UUID, Set<Session>> byId = new HashMap<>();
+    private final Map<SseEmitter, Session> sessions = new IdentityHashMap<>();
+    private final Map<String, Integer> users = new HashMap<>();
+    private final Map<UUID, Integer> analyses = new HashMap<>();
+    private final SseLimits limits;
+    private final ScheduledExecutorService clock = Executors.newSingleThreadScheduledExecutor(
+            Thread.ofPlatform().daemon().name("sse-watchdog").factory());
 
-    private static final long TIMEOUT_MS = Duration.ofMinutes(10).toMillis();
-
-    private final Map<UUID, Collection<SseEmitter>> byId = new ConcurrentHashMap<>();
-
-    public SseEmitter register(UUID id) {
-        SseEmitter emitter = createEmitter();
-        byId.compute(id, (key, emitters) -> {
-            if (emitters == null) emitters = new CopyOnWriteArrayList<>();
-            emitters.add(emitter);
-            return emitters;
-        });
-        emitter.onCompletion(() -> remove(id, emitter));
-        emitter.onTimeout(() -> { emitter.complete(); remove(id, emitter); }); // The client catches up when the stream closes.
-        emitter.onError(e -> remove(id, emitter));
-        return emitter;
+    public AnalysisStreamRegistry() { this(SseLimits.defaults()); }
+    @Autowired public AnalysisStreamRegistry(SseLimits limits) { this.limits = limits; }
+    @PostConstruct public void start() {
+        clock.scheduleAtFixedRate(this::heartbeat, limits.heartbeat().toMillis(), limits.heartbeat().toMillis(), TimeUnit.MILLISECONDS);
+        clock.scheduleAtFixedRate(this::observe, 1, 1, TimeUnit.SECONDS);
+    }
+    @PreDestroy public void shutdown() {
+        clock.shutdownNow();
+        snapshot().forEach(Session::close);
     }
 
-    protected SseEmitter createEmitter() {
-        return new SseEmitter(TIMEOUT_MS);
+    public SseEmitter register(UUID id, String owner) {
+        synchronized (admission) {
+            if (sessions.size() >= limits.globalConnections()
+                    || users.getOrDefault(owner, 0) >= limits.userConnections()
+                    || analyses.getOrDefault(id, 0) >= limits.analysisConnections()) throw new TooManyStreamsException();
+            SseEmitter emitter = createEmitter();
+            Session session = new Session(id, owner, emitter);
+            sessions.put(emitter, session);
+            users.merge(owner, 1, Integer::sum); analyses.merge(id, 1, Integer::sum);
+            byId.computeIfAbsent(id, key -> new HashSet<>()).add(session);
+            emitter.onCompletion(session::physicalCompletion);
+            emitter.onError(error -> session.close());
+            emitter.onTimeout(session::close);
+            return emitter;
+        }
     }
-
+    protected SseEmitter createEmitter() { return new SseEmitter(limits.lifetime().toMillis()); }
+    Session session(SseEmitter emitter) { synchronized (admission) { return sessions.get(emitter); } }
+    private List<Session> snapshot() { synchronized (admission) { return List.copyOf(sessions.values()); } }
+    private List<Session> subscribers(UUID id, boolean detach) {
+        synchronized (admission) {
+            Set<Session> set = detach ? byId.remove(id) : byId.get(id);
+            return set == null ? List.of() : List.copyOf(set);
+        }
+    }
+    private void detach(Session session) {
+        synchronized (admission) {
+            Set<Session> set = byId.get(session.id);
+            if (set != null && set.remove(session) && set.isEmpty()) byId.remove(session.id);
+        }
+    }
+    private void release(Session session) {
+        detach(session);
+        synchronized (admission) {
+            if (sessions.remove(session.emitter) == null) return;
+            users.compute(session.owner, (key, n) -> n == 1 ? null : n - 1);
+            analyses.compute(session.id, (key, n) -> n == 1 ? null : n - 1);
+        }
+    }
     public void sendProgress(UUID id, AnalysisProgressEvent event) {
-        send(id, "progress", event);
+        // Keep advisory retention bounded even for an arbitrary producer stage/status string.
+        if (event == null || event.stage() != null && event.stage().length() > 512
+                || event.status() != null && event.status().length() > 32
+                || event.analysisId() == null || event.analysisId().length() > 36) return;
+        subscribers(id, false).forEach(session -> session.progress(event));
     }
-
     public void sendResult(UUID id, AnalysisResultEvent event) {
-        // Detach exactly the current subscribers before sending/closing. A later subscriber
-        // stays registered and receives its own committed replay in openStream.
-        Collection<SseEmitter> emitters = byId.remove(id);
-        if (emitters != null) emitters.forEach(e -> finish(id, e, event));
+        subscribers(id, true).forEach(session -> session.terminal(event));
     }
-
-    /** Replay only to the subscribing emitter, without affecting other subscribers. */
     public void sendResult(UUID id, SseEmitter emitter, AnalysisResultEvent event) {
-        remove(id, emitter);
-        finish(id, emitter, event);
+        Session session = session(emitter);
+        if (session != null && session.id.equals(id)) { detach(session); session.terminal(event); }
     }
-
     public void discard(UUID id, SseEmitter emitter) {
-        remove(id, emitter);
-        emitter.complete();
-    }
-
-    private void finish(UUID id, SseEmitter emitter, AnalysisResultEvent event) {
-        deliver(id, emitter, SseEmitter.event().name("result").data(event));
-        emitter.complete();
-    }
-
-    /** Send the terminal event(s) already buffered, then close every emitter for this analysis. */
-    public void complete(UUID id) {
-        Collection<SseEmitter> emitters = byId.remove(id);
-        if (emitters != null) {
-            emitters.forEach(SseEmitter::complete);
+        Session session = session(emitter);
+        if (session != null && session.id.equals(id)) {
+            session.close();
+            // A failed fresh snapshot never returns this emitter to MVC, hence no physical request exists.
+            synchronized (session) { if (session.bound) return; }
+            session.physicalCompletion();
         }
     }
-
-    /** Comments keep idle connections alive through proxies until the first real event arrives. */
-    @Scheduled(fixedRate = 15_000)
-    public void heartbeat() {
-        byId.forEach((id, emitters) ->
-                emitters.forEach(e -> deliver(id, e, SseEmitter.event().comment("hb"))));
+    public void complete(UUID id) { subscribers(id, true).forEach(Session::close); }
+    public void heartbeat() { subscribersSnapshot().forEach(Session::heartbeat); }
+    private List<Session> subscribersSnapshot() {
+        synchronized (admission) { return byId.values().stream().flatMap(Collection::stream).toList(); }
+    }
+    public void observe() { snapshot().forEach(Session::observe); }
+    // Package-private observations for fault acceptance; never expose an HTTP administration surface.
+    int admitted() { synchronized (admission) { return sessions.size(); } }
+    long writing() { return writingLongerThan(java.time.Duration.ZERO); }
+    long writingLongerThan(java.time.Duration duration) {
+        return snapshot().stream().filter(session -> { synchronized (session) {
+            return session.writeSince != 0 && System.nanoTime()-session.writeSince >= duration.toNanos();
+        }}).count();
     }
 
-    private void send(UUID id, String name, Object data) {
-        Collection<SseEmitter> emitters = byId.get(id);
-        if (emitters == null) {
-            return; // no open stream for this analysis — state still lives in DB/Redis
+    final class Session {
+        final UUID id; final String owner; final SseEmitter emitter;
+        final long created = System.nanoTime();
+        AnalysisProgressEvent video, audio;
+        AnalysisResultEvent result;
+        boolean heartbeat, closing, bound, initialized, initializationFailure, physical, writerStarted, writerExited, released;
+        long writeSince;
+        Session(UUID id, String owner, SseEmitter emitter) { this.id=id; this.owner=owner; this.emitter=emitter; }
+        synchronized void bind() { bound = true; }
+        synchronized void initialized() { initialized = true; }
+        void ready() {
+            synchronized (this) {
+                if (!initialized || initializationFailure || physical || writerStarted) return;
+                if (!closing && result == null) heartbeat = true;
+                writerStarted = true;
+            }
+            try { Thread.ofVirtual().name("sse-" + id).start(this::drain); }
+            catch (RuntimeException failure) { close(); exited(); throw failure; }
         }
-        emitters.forEach(e -> deliver(id, e, SseEmitter.event().name(name).data(data)));
-    }
-
-    private void deliver(UUID id, SseEmitter emitter, SseEmitter.SseEventBuilder event) {
-        try {
-            emitter.send(event);
-        } catch (IOException | IllegalStateException ex) {
-            // client gone (IOException) or emitter already completed by a concurrent terminal
-            // event (IllegalStateException) — either way it's dead, drop it.
-            remove(id, emitter);
+        synchronized void progress(AnalysisProgressEvent event) {
+            if (closing || result != null || physical) return;
+            if ("video".equals(event.source())) video=event;
+            else if ("audio".equals(event.source())) audio=event;
+            else return;
+            notifyAll();
         }
-    }
-
-    private void remove(UUID id, SseEmitter emitter) {
-        byId.computeIfPresent(id, (key, emitters) -> {
-            emitters.remove(emitter);
-            return emitters.isEmpty() ? null : emitters;
-        });
+        synchronized void terminal(AnalysisResultEvent event) {
+            if (closing || physical || result != null) return;
+            result=event; video=null; audio=null; heartbeat=false; notifyAll();
+        }
+        synchronized void heartbeat() { if (!closing && result == null && !physical) { heartbeat=true; notifyAll(); } }
+        void close() {
+            synchronized (this) { closing=true; video=null; audio=null; heartbeat=false; notifyAll(); }
+            detach(this);
+        }
+        void initializationFailed() { synchronized (this) { initializationFailure=true; } close(); }
+        void physicalCompletion() {
+            synchronized (this) { physical=true; closing=true; video=null; audio=null; result=null; heartbeat=false; notifyAll(); }
+            detach(this); releaseIfFinished();
+        }
+        void exited() { synchronized (this) { writerExited=true; writeSince=0; } releaseIfFinished(); }
+        void releaseIfFinished() {
+            synchronized (this) {
+                if (released || !physical || writerStarted && !writerExited) return;
+                released=true;
+            }
+            release(this);
+        }
+        void observe() {
+            boolean stale;
+            synchronized (this) {
+                long now=System.nanoTime();
+                stale=now-created >= limits.lifetime().toNanos()
+                        || writeSince != 0 && now-writeSince >= limits.slowWrite().toNanos();
+            }
+            if (stale) close(); // Observe and isolate; this is not a promise of forced socket abortion.
+        }
+        void drain() {
+            try {
+                while (true) {
+                    Object item;
+                    synchronized (this) {
+                        while (!physical && !closing && result == null && video == null && audio == null && !heartbeat) wait();
+                        if (physical) return;
+                        if (closing) item=null;
+                        else if (result != null) { item=result; result=null; closing=true; }
+                        else if (video != null) { item=video; video=null; }
+                        else if (audio != null) { item=audio; audio=null; }
+                        else { item="hb"; heartbeat=false; }
+                        writeSince=System.nanoTime();
+                    }
+                    if (item == null) { emitter.complete(); return; }
+                    if (item instanceof AnalysisResultEvent terminal) {
+                        emitter.send(SseEmitter.event().name("result").data(terminal));
+                        emitter.complete(); return;
+                    }
+                    if (item instanceof AnalysisProgressEvent progress)
+                        emitter.send(SseEmitter.event().name("progress").data(progress));
+                    else emitter.send(SseEmitter.event().comment("hb"));
+                    synchronized (this) { writeSince=0; }
+                }
+            } catch (IOException failure) {
+                // Servlet error dispatch completes the physical request; never recycle its permit early.
+                close();
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt(); close();
+            } catch (RuntimeException failure) {
+                close(); emitter.completeWithError(failure);
+            } finally { exited(); }
+        }
     }
 }

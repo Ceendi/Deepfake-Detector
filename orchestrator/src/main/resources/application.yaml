@@ -156,3 +156,11 @@ management:
 logging:
   pattern:
     console: '%d{ISO8601} %-5level [%X{correlationId:-},%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n'
+app:
+  sse:
+    global-connections: ${SSE_GLOBAL_CONNECTIONS:128}
+    user-connections: ${SSE_USER_CONNECTIONS:4}
+    analysis-connections: ${SSE_ANALYSIS_CONNECTIONS:4}
+    lifetime: ${SSE_LIFETIME:10m}
+    heartbeat: ${SSE_HEARTBEAT:15s}
+    slow-write: ${SSE_SLOW_WRITE:5s}
