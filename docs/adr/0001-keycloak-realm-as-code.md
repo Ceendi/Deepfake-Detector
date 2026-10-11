@@ -89,11 +89,11 @@ Key configuration:
 - **Cultural shift "don't touch managed resources in Admin UI".** A team
   member who adds a new role via the UI will see it disappear on the next
   sync (managed mode `full`). Mitigated by docs in [`infra/keycloak/README.md`](../../infra/keycloak/README.md)
-  + linking from CLAUDE.md. Throwaway test users are explicitly carved out
+  + linking from AGENTS.md. Throwaway test users are explicitly carved out
   by `IMPORT_MANAGED_USER=no-delete`.
 - **One extra container at startup.** ~145 MB image, ~256 MB heap JVM
   running for ~5–10 s on each `up`. Negligible on dev hardware (16 GB RAM
-  baseline assumed per CLAUDE.md).
+  baseline assumed per AGENTS.md).
 - **Dev users' passwords reset on every sync.** Anyone changing `alice` /
   `bob` passwords via UI will see them revert. This is intentional — known
   passwords for scripted tests. Documented in README.
@@ -167,4 +167,4 @@ kc-config-cli badly.
 - [keycloak-config-cli repository](https://github.com/adorsys/keycloak-config-cli)
 - [Managed resources documentation](https://github.com/adorsys/keycloak-config-cli/blob/main/docs/MANAGED.md)
 - [Keycloak `--import-realm` behavior](https://www.keycloak.org/server/importExport)
-- This project's CLAUDE.md (§"Co NIE robić", §"Stack — wersje")
+- This project's AGENTS.md (§"Granice", §"Wersje i pułapki stosu")

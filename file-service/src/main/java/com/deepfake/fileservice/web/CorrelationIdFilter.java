@@ -19,7 +19,7 @@ import jakarta.servlet.http.HttpServletResponse;
  * every log line and the ErrorResponse carry it. The client-facing response echo is owned by the
  * gateway (the sole ingress), so this filter deliberately does not set the response header.
  * Ordered before the security chain so 401/403 logs are correlated too. Conscious duplicate of
- * orchestrator's filter (see CLAUDE.md).
+ * orchestrator's filter (see AGENTS.md).
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
