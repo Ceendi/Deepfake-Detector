@@ -8,7 +8,7 @@ and an asynchronous RabbitMQ pipeline.
 
 ## Getting started
 
-You need Docker Engine 24+ with Compose v2, Node.js 20+ and npm. Allow about 8 GB
+You need Docker Engine 24+ with Compose v2, Node.js 22 LTS (or 20.19+) and npm. Allow about 8 GB
 of RAM for the backend and authentication, or 14–16 GB with both ML detectors.
 
 **First time here?** Follow [SETUP.md](SETUP.md) for the complete walkthrough,

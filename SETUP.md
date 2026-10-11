@@ -14,12 +14,13 @@ building the Docker images.
 ## Requirements
 
 - **Docker Engine 24+** with Compose v2 (`docker compose version`)
-- **Node.js 20+** and `npm` (for the frontend)
+- **Node.js 22 LTS** (or 20.19+, required by Vite) and `npm` (for the frontend)
 - **RAM:** ~14–16 GB for the full set (`core` + `auth` + `ml` profiles; the detectors alone are 2×3 GB)
 - **Disk:** ~10–12 GB for the Docker images
 - **Internet for the first `--build`** — the `video-detector` image compiles `insightface`
   and downloads the `buffalo_l` face-detector pack; the first build takes several to ~15 minutes.
-- Free host ports: `5432, 5672, 6379, 8080, 8180, 8333, 15672` and `5173` (frontend).
+- Free host ports: `5432, 5672, 6379, 8080, 8180, 8333, 15672, 15692` and `5173` (frontend);
+  with `monitoring` also `3000, 3100, 3200, 9090, 12345`.
 
 ---
 
@@ -83,8 +84,8 @@ last.ckpt
 The `video-epoch*.ckpt` files and the `grid/` subfolder (if any) are not needed — skip them.
 
 > ⚠️ **Most common mistake:** a renamed/incomplete file name, or skipping the `*.onnx.data` sidecar.
-> Then the container starts but every analysis ends with status `FAILED`. Copy **all** files from
-> the given SharePoint folder without renaming them.
+> Then the detector container is `unhealthy` and every analysis ends `FAILED` with `MODEL_UNAVAILABLE`.
+> Copy **all** files from the given SharePoint folder without renaming them.
 
 ### Verify placement (run from the project root)
 
@@ -130,8 +131,8 @@ In a separate terminal:
 ```bash
 docker compose ps
 ```
-Services should reach `healthy` within ~60 s. To confirm the models actually loaded, check the logs
-(no `Failed to load ...` / checkpoint-load errors):
+Services should reach `healthy` within ~60 s. A detector reports `healthy` only after its models
+loaded; if one stays `unhealthy`, check its logs for `failed_to_load_*_inference`:
 ```bash
 docker compose logs audio-detector video-detector | grep -iE "ready|load|error"
 ```
@@ -148,8 +149,8 @@ npm install
 npm run dev
 ```
 
-The app will be at **<http://localhost:5173>**. The frontend proxies `/api` to the gateway
-(`localhost:8080`) and login to Keycloak (`localhost:8180`) — both addresses are whitelisted in
+The app will be at **<http://localhost:5173>**. The dev server proxies `/api` to the gateway
+(`localhost:8080`); login goes directly to Keycloak (`localhost:8180`). Both are whitelisted in
 the realm, so registration/login work out of the box.
 
 You can create an account (open registration) and upload a video or audio file for analysis.
@@ -185,7 +186,7 @@ Stop the frontend with `Ctrl+C` in its terminal.
 
 ## Troubleshooting
 
-- **Analysis ends `FAILED` but the detector container started** → missing models or a wrong file name.
+- **Detector `unhealthy`, analyses end `FAILED` with `MODEL_UNAVAILABLE`** → missing models or a wrong file name.
   Check Step 2 (especially exact names and the `*.onnx.data` sidecars), then rebuild the detectors:
   ```bash
   docker compose --profile ml up -d --build video-detector audio-detector
