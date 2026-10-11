@@ -9,6 +9,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
 import org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration;
@@ -40,6 +41,7 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
+import com.deepfake.orchestrator.sse.SseLimits;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -50,6 +52,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
  * Real committed PostgreSQL transactions must remain authoritative throughout the outage.
  */
 @DataJpaTest
+@EnableConfigurationProperties(SseLimits.class)
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration({FlywayAutoConfiguration.class, DataRedisAutoConfiguration.class})
 @Import({AnalysisService.class, AnalysisCache.class, BackpressureGuard.class, IdempotencyGuard.class,
