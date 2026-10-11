@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
-from .consumer import run_consumer
+from . import consumer
 
 # every log line is JSON + correlation_id + trace_id (Loki + OpenTelemetry).
 # contextvars.merge_contextvars pulls in bind_contextvars(...) set by the consumer handler.
@@ -35,7 +35,7 @@ _consumer_alive = {"ok": False, "last_beat": 0.0}
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    threading.Thread(target=run_consumer, args=(_consumer_alive,), daemon=True).start()
+    threading.Thread(target=consumer.run_consumer, args=(_consumer_alive,), daemon=True).start()
     yield
 
 
@@ -49,6 +49,7 @@ def health():
     # Sama flaga "connected" nie wystarcza: zaklinowany watek consumera dalej trzyma
     # polaczenie — dopiero cisza heartbeatu powyzej progu oznacza serwis DOWN.
     silence = time.time() - _consumer_alive.get("last_beat", 0.0)
-    if _consumer_alive["ok"] and silence <= HEALTH_MAX_SILENCE_SECONDS:
+    if (consumer.video_inference is not None and _consumer_alive["ok"]
+            and silence <= HEALTH_MAX_SILENCE_SECONDS):
         return {"status": "UP"}
     return JSONResponse(status_code=503, content={"status": "DOWN"})

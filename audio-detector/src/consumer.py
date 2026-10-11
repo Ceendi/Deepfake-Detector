@@ -234,6 +234,11 @@ def _handle_message(ch, method, properties, body):
 
 
 def run_consumer(health_state: dict) -> None:
+    if audio_inference is None:
+        health_state["ok"] = False
+        health_state["last_beat"] = 0.0
+        log.error("consumer_not_started_model_unavailable")
+        return
     while True:
         conn = None
         try:

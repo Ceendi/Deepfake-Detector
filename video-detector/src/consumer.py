@@ -67,8 +67,6 @@ try:
 
     video_inference = VideoInference()
 except Exception as e:
-    # Brak modeli (np. niewyeksportowany ONNX) nie moze polozyc /health calego serwisu;
-    # kazde zadanie konczy sie wtedy publikacja FAILED z czytelnym bledem.
     log.exception("failed_to_load_video_inference", error=str(e))
     video_inference = None
 
@@ -252,6 +250,11 @@ def _handle_message(ch, method, properties, body):
 
 
 def run_consumer(health_state: dict) -> None:
+    if video_inference is None:
+        health_state["ok"] = False
+        health_state["last_beat"] = 0.0
+        log.error("consumer_not_started_model_unavailable")
+        return
     while True:
         conn = None
         try:
