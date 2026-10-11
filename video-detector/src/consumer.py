@@ -67,10 +67,14 @@ try:
 
     video_inference = VideoInference()
 except Exception as e:
-    # Brak modeli (np. niewyeksportowany ONNX) nie moze polozyc /health calego serwisu;
-    # kazde zadanie konczy sie wtedy publikacja FAILED z czytelnym bledem.
     log.exception("failed_to_load_video_inference", error=str(e))
     video_inference = None
+
+
+class ModelUnavailableError(RuntimeError):
+    """Required inference models did not initialize successfully."""
+
+    code = "MODEL_UNAVAILABLE"
 
 
 class AnalysisCancelled(Exception):
@@ -96,8 +100,8 @@ def process(msg: dict, progress_callback=None) -> dict:
 
 def _process(msg: dict, input_path: str, progress_callback=None) -> dict:
     """Download, infer and upload artifacts in this delivery's private directory."""
-    if not video_inference:
-        raise RuntimeError("VideoInference module not initialized properly.")
+    if video_inference is None:
+        raise ModelUnavailableError("Video inference model is unavailable.")
     analysis_id = msg["analysis_id"]
     # Start-ping PRZED downloadem: Orchestrator flipuje PENDING->PROCESSING w momencie
     # podjecia zadania, a kazdy progress jest heartbeatem dla stuck-job recovery.
