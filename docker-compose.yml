@@ -389,7 +389,6 @@ services:
 
   keycloak-config-cli:
     # The pinned CLI was smoke-tested against Keycloak 26.8.0 with this realm.
-    # See docs/compose-upgrade.md for validation and rollout limits.
     image: deepfake-keycloak-config-cli:6.5.1-security
     build: ./infra/keycloak-config-cli
     profiles: ["auth"]

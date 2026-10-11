@@ -35,8 +35,9 @@ Zmieniasz cudzy obszar w sposób, który zmienia zachowanie → zaznacz to w PR,
 - Kontrakty (źródło prawdy, czytaj przed zmianą API/AMQP/S3): `docs/contracts/*.md`
 - Decyzje architektoniczne: `docs/adr/`; obserwowalność: `docs/observability.md`;
   Keycloak (realm jako kod, nie zmieniaj ról w Admin UI): `infra/keycloak/README.md`
-- Opisy mechanizmów niezawodności: `docs/amqp-recovery.md`, `docs/sse-delivery-isolation.md`,
-  `docs/redis-failure-budgets.md`, `docs/artifact-cleanup.md`, `docs/media-probing.md`
+- Mechanizmy niezawodności (outbox, idempotencja, DLQ, recovery, Redis, SSE, artefakty):
+  `docs/reliability.md`
+- Raporty pomiarowe (D4, MO): `docs/reports/`
 
 W komentarzach w kodzie odwołuj się tylko do `docs/adr`, `docs/contracts` i `README.md`.
 

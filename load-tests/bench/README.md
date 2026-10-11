@@ -1,7 +1,7 @@
 # MO benchmarks — cache / index / connection pool
 
 Measures the three backend optimizations (orchestrator). Report:
-[`docs/optimization-reports/backend-cache-index-pool.md`](../../docs/optimization-reports/backend-cache-index-pool.md).
+[`docs/reports/backend-cache-index-pool.md`](../../docs/reports/backend-cache-index-pool.md).
 
 **Tools:** `psql` (in the postgres container), `wrk` (via `williamyeh/wrk`, run on the `deepfake`
 network), and the `deepfake-loadtest` client for a token (added in the D4 PR; the orchestrator

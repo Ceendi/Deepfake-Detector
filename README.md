@@ -64,9 +64,10 @@ through an internal Eureka registry, and the frontend receives progress via SSE.
 ## Documentation
 
 - [Setup, models and troubleshooting](SETUP.md)
-- [Local backend configuration, discovery and upgrades](docs/local-backend.md)
+- [Local backend configuration](docs/local-backend.md)
 - [API and message contracts](docs/contracts/)
 - [Monitoring](docs/observability.md)
+- [Backend reliability](docs/reliability.md)
 - [Keycloak configuration](infra/keycloak/README.md)
 - [Infisical secrets setup](infra/INFISICAL.md)
 

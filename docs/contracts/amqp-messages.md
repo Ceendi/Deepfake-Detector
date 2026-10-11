@@ -49,7 +49,8 @@ routing key. That queue has no automatic consumer. Every recovery publication is
 mandatory and awaits correlated publisher confirmation/returns before acknowledging
 the original. Publication failure pauses the affected listener, requeues the original,
 and resumes automatically with a delay increasing from 5s to a 60s cap. Readiness
-is DOWN until processing succeeds. See [backend AMQP recovery](../amqp-recovery.md).
+is DOWN until processing succeeds. See
+[listener retries, DLQs and quarantine](../reliability.md#listener-retries-dlqs-and-quarantine).
 
 ## Message formats
 
@@ -244,7 +245,7 @@ Contract:
   failures do not generate an inference FAILED result. A confirmed result followed
   by process loss before ACK may be published again; source acceptance in PostgreSQL
   makes this safe. Cancelled work is ACKed without a result after a cancellation flag
-  check. See [worker recovery, rollout and validation](../backend-pr06-worker-redelivery.md).
+  check. See [detector workers](../reliability.md#detector-workers).
 - **Result acceptance:** PostgreSQL accepts the first terminal result of an expected source.
   `VIDEO` expects `video`, `AUDIO` expects `audio`, and `FULL` expects both. Source names
   are case-sensitive; invalid/missing sources and statuses other than `COMPLETED` or
@@ -258,13 +259,14 @@ Contract:
   when the marker expires, is lost, or Redis is unavailable. Rollback leaves the source
   retryable and does not set a marker. Terminal transitions and capacity changes commit
   together; duplicates of terminal analyses do not release capacity again.
-  See [result acceptance and validation](../backend-pr05-result-idempotence.md).
+  See [result acceptance](../reliability.md#result-acceptance-and-idempotence).
 - **Stuck-job recovery:** a scheduled scan fails analyses left `PENDING` / `PROCESSING`
   past a threshold (default 600s) → `FAILED` + PostgreSQL capacity freed + SSE.
   PR07 adds a separate 120-second deadline for any unsent outbox source; the final
   recovery transaction rechecks state and time after locking the analysis.
-- **Redis degradation:** every Redis touch fails open (cache → DB, gauge → admit, dedup →
-  DB guard, progress snapshot → skipped). Redis is an accelerator, not the source of truth.
+- **Redis degradation:** every Redis touch fails open (cache → DB, dedup → DB guard,
+  progress snapshot → skipped, cancel flag → detector finishes). Redis is an accelerator,
+  not the source of truth.
 
 
 ## Transactional task dispatch (PR07)
@@ -280,5 +282,5 @@ database failure can cause a duplicate. PR05/PR06 make those duplicates safe.
 Cancel/recovery/results serialize with publication on the analysis row. Terminal
 analyses and expired dispatch deadlines are never replayed. FULL sources have
 independent sent markers and a finite creation-based dispatch deadline, even if
-one source is already progressing. See [PR07 deployment and recovery policy](../backend-pr07-transactional-dispatch.md)
-for retry settings, legacy PENDING rows, retained backlog and publisher rollback.
+one source is already progressing. See
+[transactional dispatch](../reliability.md#creating-an-analysis) for retry settings and deadlines.

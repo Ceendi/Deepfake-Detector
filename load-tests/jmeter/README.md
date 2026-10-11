@@ -4,7 +4,7 @@ Proves D4: replicating `file-service` behind the Gateway's Eureka load balancer 
 50 concurrent threads × 60s, ~5 MB multipart upload through the Gateway (`lb://file-service`).
 
 **Tools:** Apache JMeter 5.6.x (on PATH), ffmpeg (sample), Docker. Report lands in
-[`docs/optimization-reports/d4-replication.md`](../../docs/optimization-reports/d4-replication.md).
+[`docs/reports/d4-replication.md`](../../docs/reports/d4-replication.md).
 
 ## 0. One-time prep
 
