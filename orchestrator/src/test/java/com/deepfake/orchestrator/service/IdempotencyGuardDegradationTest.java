@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
 import java.time.Duration;
 import java.util.UUID;
 
@@ -29,7 +31,7 @@ class IdempotencyGuardDegradationTest {
     void checkMissesWhenRedisDown() {
         when(redis.hasKey(anyString())).thenThrow(new RedisConnectionFailureException("down"));
 
-        IdempotencyGuard guard = new IdempotencyGuard(redis, 900);
+        IdempotencyGuard guard = new IdempotencyGuard(redis, new OptionalRedisOperations(Duration.ofSeconds(2)), 900);
 
         assertThat(guard.alreadyProcessed(UUID.randomUUID(), "video")).isFalse();
     }
@@ -40,7 +42,7 @@ class IdempotencyGuardDegradationTest {
         doThrow(new RedisConnectionFailureException("down"))
                 .when(valueOps).set(anyString(), anyString(), any(Duration.class));
 
-        IdempotencyGuard guard = new IdempotencyGuard(redis, 900);
+        IdempotencyGuard guard = new IdempotencyGuard(redis, new OptionalRedisOperations(Duration.ofSeconds(2)), 900);
 
         assertThatCode(() -> guard.markProcessed(UUID.randomUUID(), "video")).doesNotThrowAnyException();
     }

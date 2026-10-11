@@ -9,6 +9,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
+import java.time.Duration;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.Optional;
@@ -16,6 +19,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
@@ -59,6 +63,10 @@ class AnalysisServiceSsePushTest {
     IdempotencyGuard idempotency;
     @Mock
     AnalysisMetrics metrics;
+    @Spy
+    OptionalRedisOperations optionalRedis =
+            new OptionalRedisOperations(Duration.ofSeconds(2));
+
     @InjectMocks
     AnalysisService service;
 

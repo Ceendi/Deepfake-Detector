@@ -16,6 +16,8 @@ spring:
       host: ${REDIS_HOST:redis}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD}
+      connect-timeout: ${REDIS_CONNECT_TIMEOUT:250ms}
+      timeout: ${REDIS_COMMAND_TIMEOUT:250ms}
   cloud:
     gateway:
       server:
@@ -43,6 +45,7 @@ spring:
                   args:
                     redis-rate-limiter.replenishRate: ${UPLOAD_RL_REPLENISH:1}
                     redis-rate-limiter.burstCapacity: ${UPLOAD_RL_BURST:10}
+                    rate-limiter: "#{@protectiveRedisRateLimiter}"
                     key-resolver: "#{@userKeyResolver}"
             - id: file-service
               uri: lb://file-service
@@ -53,6 +56,7 @@ spring:
                   args:
                     redis-rate-limiter.replenishRate: 2
                     redis-rate-limiter.burstCapacity: 100
+                    rate-limiter: "#{@protectiveRedisRateLimiter}"
                     key-resolver: "#{@userKeyResolver}"
             - id: orchestrator
               uri: lb://orchestrator
@@ -63,11 +67,14 @@ spring:
                   args:
                     redis-rate-limiter.replenishRate: 2
                     redis-rate-limiter.burstCapacity: 100
+                    rate-limiter: "#{@protectiveRedisRateLimiter}"
                     key-resolver: "#{@userKeyResolver}"
           default-filters:
             - name: RequestSize
               args:
                 maxSize: 500MB
+gateway:
+  redis-limiter-budget: ${GATEWAY_REDIS_LIMITER_BUDGET:750ms}
 eureka:
   client:
     service-url:

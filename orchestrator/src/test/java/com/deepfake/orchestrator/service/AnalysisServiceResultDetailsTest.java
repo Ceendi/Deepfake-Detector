@@ -7,6 +7,9 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
+import java.time.Duration;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +18,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Spy;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
@@ -46,6 +50,10 @@ class AnalysisServiceResultDetailsTest {
     @Mock BackpressureGuard backpressure;
     @Mock IdempotencyGuard idempotency;
     @Mock AnalysisMetrics metrics;
+    @Spy
+    OptionalRedisOperations optionalRedis =
+            new OptionalRedisOperations(Duration.ofSeconds(2));
+
     @InjectMocks AnalysisService service;
 
     @Captor

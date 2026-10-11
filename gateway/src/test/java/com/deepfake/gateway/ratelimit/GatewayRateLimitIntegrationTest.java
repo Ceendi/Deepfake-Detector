@@ -3,6 +3,10 @@ package com.deepfake.gateway.ratelimit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.time.Duration;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import java.util.List;
 import java.util.Map;
 
@@ -54,13 +58,15 @@ class GatewayRateLimitIntegrationTest {
                     .subject("user-a")
                     .claim("realm_access", Map.of("roles", List.of("USER")))
                     .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(300)).build();
-            return token -> Mono.just(jwt);
+            return token -> "test-token".equals(token) ? Mono.just(jwt) : Mono.error(new BadJwtException("Invalid token"));
         }
     }
 
     @Value("${local.server.port}")
     int port;
 
+    @Autowired ProtectiveRedisRateLimiter limiter;
+    @Autowired LettuceConnectionFactory connectionFactory;
     WebTestClient client;
 
     @BeforeEach
@@ -80,6 +86,30 @@ class GatewayRateLimitIntegrationTest {
             }
         }
         assertThat(rateLimited).as("burst of 10 exhausted -> later requests get 429").isGreaterThan(0);
+    }
+
+    @Test
+    void pausedWarmRedisReturnsBounded503AndStillRequiresAuthenticationThenRecovers() {
+        assertThat(connectionFactory.getClientConfiguration().getCommandTimeout()).isEqualTo(Duration.ofMillis(250));
+        assertThat(connectionFactory.getClientConfiguration().getClientOptions().orElseThrow()
+                .getSocketOptions().getConnectTimeout()).isEqualTo(Duration.ofMillis(250));
+        assertThat(limiter.isAllowed("file-service-upload", "outage-user").block().isAllowed()).isTrue();
+        redis.getDockerClient().pauseContainerCmd(redis.getContainerId()).exec();
+        try {
+            long start = System.nanoTime();
+            client.post().uri("/api/files/upload").header("Authorization", "Bearer test-token")
+                    .exchange().expectStatus().isEqualTo(503)
+                    .expectHeader().doesNotExist("X-RateLimit-Remaining");
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofMillis(1500));
+            client.post().uri("/api/files/upload").exchange().expectStatus().isUnauthorized();
+            client.post().uri("/api/files/upload").header("Authorization", "Bearer invalid")
+                    .exchange().expectStatus().isUnauthorized();
+        } finally {
+            redis.getDockerClient().unpauseContainerCmd(redis.getContainerId()).exec();
+        }
+        var recovered = limiter.isAllowed("file-service-upload", "recovered-user").block(Duration.ofSeconds(3));
+        assertThat(recovered.isAllowed()).isTrue();
+        assertThat(Long.parseLong(recovered.getHeaders().get("X-RateLimit-Remaining"))).isGreaterThanOrEqualTo(0);
     }
 
     private int upload() {

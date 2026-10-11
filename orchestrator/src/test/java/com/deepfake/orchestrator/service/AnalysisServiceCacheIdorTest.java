@@ -7,6 +7,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -57,7 +60,8 @@ class AnalysisServiceCacheIdorTest {
 
         repository = mock(AnalysisRepository.class);
         service = new AnalysisService(repository, mock(com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository.class), template,
-                new AnalysisCache(template, true), mock(AnalysisStreamRegistry.class),
+                new OptionalRedisOperations(Duration.ofSeconds(2)),
+                new AnalysisCache(template, new OptionalRedisOperations(Duration.ofSeconds(2)), true), mock(AnalysisStreamRegistry.class),
                 mock(BackpressureGuard.class), mock(IdempotencyGuard.class), mock(AnalysisMetrics.class));
     }
 

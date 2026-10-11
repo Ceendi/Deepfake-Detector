@@ -2,6 +2,9 @@ package com.deepfake.orchestrator.cache;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
+import java.time.Duration;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -42,7 +45,7 @@ class AnalysisCacheIntegrationTest {
         cf.afterPropertiesSet();
         StringRedisTemplate template = new StringRedisTemplate(cf);
         template.afterPropertiesSet();
-        cache = new AnalysisCache(template, true);
+        cache = new AnalysisCache(template, new OptionalRedisOperations(Duration.ofSeconds(2)), true);
     }
 
     @Test

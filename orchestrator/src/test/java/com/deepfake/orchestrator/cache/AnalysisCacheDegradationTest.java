@@ -7,6 +7,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
+import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,7 +43,7 @@ class AnalysisCacheDegradationTest {
 
     @BeforeEach
     void setUp() {
-        cache = new AnalysisCache(redis, true);
+        cache = new AnalysisCache(redis, new OptionalRedisOperations(Duration.ofSeconds(2)), true);
     }
 
     @Test
