@@ -1,7 +1,6 @@
 package com.deepfake.fileservice.validation;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -9,73 +8,123 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Optional;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
-import com.deepfake.fileservice.validation.MediaProbe.ProbeResult;
-
-/**
- * Exercises the real ffprobe subprocess against a hand-built minimal WAV. Skipped (assumption) where
- * the ffprobe binary is absent — the file-service Docker image ships ffmpeg, and CI runners need it
- * too; locally it relies on ffprobe being on PATH.
- */
+/** Real ffprobe and Tika tests are required: missing ffmpeg fails rather than silently skipping. */
 class FfprobeMediaProbeIntegrationTest {
-
-    private final FfprobeMediaProbe probe = new FfprobeMediaProbe();
-    @TempDir
-    Path tmp;
+    private static final int OUTPUT_LIMIT = 65536;
+    private final FfprobeMediaProbe probe = new FfprobeMediaProbe(OUTPUT_LIMIT);
+    private final FileValidator validator = new FileValidator(probe);
+    @TempDir Path tmp;
 
     @BeforeAll
-    static void requireFfprobe() {
-        assumeTrue(ffprobeAvailable(), "ffprobe not on PATH — skipping real-probe test");
+    static void requireFfprobeAndFfmpeg() throws Exception {
+        for (String binary : List.of("ffprobe", "ffmpeg")) {
+            Process process = new ProcessBuilder(binary, "-version")
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+            try {
+                assertThat(process.waitFor(10, TimeUnit.SECONDS)).as(binary + " is required for real media tests").isTrue();
+                assertThat(process.exitValue()).isZero();
+            } finally {
+                process.destroyForcibly().waitFor();
+            }
+        }
     }
 
     @Test
     void probesValidWavAndReportsFormatAndDuration() throws IOException {
         Path wav = tmp.resolve("tone.wav");
-        Files.write(wav, minimalWav(8000, 800)); // 800 samples @ 8 kHz = 0.1 s
+        Files.write(wav, wav(new byte[0]));
+        FileValidator.Result result = validator.validate(wav);
+        assertThat(FileValidator.MIME_WHITELIST).contains(result.mimetype());
+        assertThat(result.durationSeconds()).isCloseTo(0.1, org.assertj.core.data.Offset.offset(0.05));
+    }
 
-        Optional<ProbeResult> result = probe.probe(wav);
+    @ParameterizedTest
+    @ValueSource(strings = {"mp4", "mov", "avi", "mp3", "flac"})
+    void preservesRealTikaAndProbeAcceptanceForSupportedContainers(String extension) throws Exception {
+        Path media = tmp.resolve("media." + extension);
+        List<String> command = new ArrayList<>(List.of("ffmpeg", "-v", "error", "-y"));
+        if (List.of("mp3", "flac").contains(extension)) {
+            Path source = tmp.resolve("source.wav");
+            Files.write(source, wav(new byte[0]));
+            command.addAll(List.of("-i", source.toString()));
+        } else {
+            command.addAll(List.of("-f", "lavfi", "-i", "color=c=black:s=16x16:r=10",
+                    "-t", "0.1", "-c:v", "mpeg4"));
+        }
+        command.add(media.toString());
+        runToFile(command, tmp.resolve("generation.log"));
+        FileValidator.Result result = validator.validate(media);
+        assertThat(FileValidator.MIME_WHITELIST).contains(result.mimetype());
+        assertThat(result.durationSeconds()).isPositive();
+    }
 
-        assertThat(result).isPresent();
-        assertThat(result.get().formatName()).contains("wav");
-        assertThat(result.get().durationSeconds()).isCloseTo(0.1, org.assertj.core.data.Offset.offset(0.05));
+    @Test
+    void ignoresLargeControlByteTagsWithoutAmplifyingRetainedOutput() throws Exception {
+        byte[] comment = new byte[1024 * 1024];
+        java.util.Arrays.fill(comment, (byte) 1);
+        comment[comment.length - 1] = 0;
+        Path media = tmp.resolve("tagged.wav");
+        Files.write(media, wav(comment));
+
+        // Negative control demonstrates that this valid upload would previously expand over 6 MiB.
+        Path unrestricted = tmp.resolve("unrestricted.json");
+        runToFile(List.of("ffprobe", "-v", "quiet", "-print_format", "json",
+                "-show_format", "-show_streams", media.toString()), unrestricted);
+        assertThat(Files.size(unrestricted)).isGreaterThan(6L * 1024 * 1024);
+
+        Path restricted = tmp.resolve("restricted.json");
+        runToFile(List.of("ffprobe", "-v", "quiet", "-print_format", "json", "-show_entries",
+                "format=format_name,duration:stream=index", media.toString()), restricted);
+        assertThat(Files.size(restricted)).isLessThan(1024);
+        assertThat(Files.readString(restricted)).doesNotContain("tags", "comment", "\\u0001");
+        assertThat(validator.validate(media).mimetype()).isIn(FileValidator.MIME_WHITELIST);
+        assertThat(new FfprobeMediaProbe(1024).probe(media)).isPresent();
     }
 
     @Test
     void returnsEmptyForNonMediaBytes() throws IOException {
         Path junk = tmp.resolve("not-media.bin");
-        Files.write(junk, "definitely not a media container".getBytes(StandardCharsets.UTF_8));
-
+        Files.writeString(junk, "definitely not a media container");
         assertThat(probe.probe(junk)).isEmpty();
     }
 
-    private static boolean ffprobeAvailable() {
+    private static void runToFile(List<String> command, Path output) throws Exception {
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(output.toFile()).start();
         try {
-            return new ProcessBuilder("ffprobe", "-version").start().waitFor() == 0;
-        } catch (IOException | InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
+            assertThat(process.waitFor(15, TimeUnit.SECONDS)).as("fixture subprocess deadline").isTrue();
+            assertThat(process.exitValue()).as("fixture subprocess: " + command.getFirst()).isZero();
+        } finally {
+            process.destroyForcibly().waitFor();
         }
     }
 
-    /** PCM 16-bit mono WAV with {@code samples} silent frames at {@code sampleRate} Hz. */
-    private static byte[] minimalWav(int sampleRate, int samples) {
-        int bitsPerSample = 16;
-        int blockAlign = bitsPerSample / 8; // mono
-        int byteRate = sampleRate * blockAlign;
-        int dataSize = samples * blockAlign;
-        ByteBuffer buf = ByteBuffer.allocate(44 + dataSize).order(ByteOrder.LITTLE_ENDIAN);
-        buf.put("RIFF".getBytes(StandardCharsets.US_ASCII)).putInt(36 + dataSize)
+    /** PCM 16-bit mono, 800 silent frames at 8 kHz, with an optional WAV LIST/INFO comment. */
+    private static byte[] wav(byte[] comment) {
+        int metadataSize = comment.length == 0 ? 0 : 20 + comment.length;
+        int dataSize = 1600;
+        ByteBuffer buf = ByteBuffer.allocate(44 + dataSize + metadataSize).order(ByteOrder.LITTLE_ENDIAN);
+        buf.put("RIFF".getBytes(StandardCharsets.US_ASCII)).putInt(36 + dataSize + metadataSize)
                 .put("WAVE".getBytes(StandardCharsets.US_ASCII));
         buf.put("fmt ".getBytes(StandardCharsets.US_ASCII)).putInt(16)
-                .putShort((short) 1).putShort((short) 1) // PCM, mono
-                .putInt(sampleRate).putInt(byteRate)
-                .putShort((short) blockAlign).putShort((short) bitsPerSample);
+                .putShort((short) 1).putShort((short) 1).putInt(8000).putInt(16000)
+                .putShort((short) 2).putShort((short) 16);
+        if (metadataSize != 0) {
+            buf.put("LIST".getBytes(StandardCharsets.US_ASCII)).putInt(12 + comment.length)
+                    .put("INFO".getBytes(StandardCharsets.US_ASCII))
+                    .put("ICMT".getBytes(StandardCharsets.US_ASCII)).putInt(comment.length).put(comment);
+        }
         buf.put("data".getBytes(StandardCharsets.US_ASCII)).putInt(dataSize);
-        return buf.array(); // data stays zero-filled (silence)
+        return buf.array();
     }
 }

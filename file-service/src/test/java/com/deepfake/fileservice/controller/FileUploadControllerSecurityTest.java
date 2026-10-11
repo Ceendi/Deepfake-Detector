@@ -3,6 +3,7 @@ package com.deepfake.fileservice.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -10,6 +11,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicReference;
+
+import com.deepfake.fileservice.exception.InvalidFileException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -90,6 +96,36 @@ class FileUploadControllerSecurityTest {
         ArgumentCaptor<PutObjectRequest> captor = ArgumentCaptor.forClass(PutObjectRequest.class);
         verify(s3Client).putObject(captor.capture(), any(RequestBody.class));
         assertThat(captor.getValue().metadata()).containsEntry("user-id", "user-a");
+    }
+
+    @Test
+    void invalidProbeResponseReturns422AndDeletesUpload() throws Exception {
+        AtomicReference<Path> upload = new AtomicReference<>();
+        when(fileValidator.validate(any())).thenAnswer(invocation -> {
+            upload.set(invocation.getArgument(0));
+            throw new InvalidFileException("not a valid media container");
+        });
+        mvc.perform(multipart("/api/files/upload").file(sampleFile())
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("INVALID_FILE"));
+        assertThat(upload.get()).doesNotExist();
+        verifyNoInteractions(s3Client, metadataRepository);
+    }
+
+    @Test
+    void probeIoFailureReturns500AndDeletesUpload() throws Exception {
+        AtomicReference<Path> upload = new AtomicReference<>();
+        when(fileValidator.validate(any())).thenAnswer(invocation -> {
+            upload.set(invocation.getArgument(0));
+            throw new IOException("probe pipe failure");
+        });
+        mvc.perform(multipart("/api/files/upload").file(sampleFile())
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+        assertThat(upload.get()).doesNotExist();
+        verifyNoInteractions(s3Client, metadataRepository);
     }
 
     @Test
