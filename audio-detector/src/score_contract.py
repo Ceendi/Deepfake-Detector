@@ -5,6 +5,17 @@ import math
 SCORE_CONTRACT = "audio-threshold-v1"
 
 
+class NoSpeechError(Exception):
+    """No audio window passed the existing energy gate to model inference."""
+
+    code = "NO_SPEECH"
+
+    def __init__(self):
+        super().__init__(
+            "Brak wystarczająco wyraźnego sygnału audio do analizy. "
+            "Wgraj nagranie z wyraźnie słyszalną mową.")
+
+
 def normalize_audio_score(raw_score: float, threshold: float) -> float:
     """Map [0, threshold, 1] to [0, 0.5, 1], preserving the strict decision after rounding."""
     if not math.isfinite(threshold) or not 0 < threshold < 1:
@@ -57,14 +68,15 @@ def generate_insights(segment_predictions: list[dict], probability: float) -> li
 def build_audio_result(raw_segments: list[dict], threshold: float, mode: str) -> dict:
     """Pool the highest 30% of raw window scores, then map once to the shared scale.
 
-    Window scores stay unrounded until pooling. Empty speech keeps the existing
-    neutral fallback (the model threshold), hence REAL with zero confidence.
+    Window scores stay unrounded until pooling. Absent model evidence is a failure.
     """
+    if not raw_segments:
+        raise NoSpeechError()
     segments = [dict(segment, prob_fake=normalize_audio_score(
         segment["raw_prob_fake"], threshold)) for segment in raw_segments]
     scores = sorted((s["raw_prob_fake"] for s in raw_segments), reverse=True)
     top_k = max(1, int(len(scores) * 0.3))
-    raw_score = math.fsum(scores[:top_k]) / top_k if scores else threshold
+    raw_score = math.fsum(scores[:top_k]) / top_k
     probability = normalize_audio_score(raw_score, threshold)
     return {
         "prob_fake": probability,

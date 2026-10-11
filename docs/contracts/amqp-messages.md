@@ -191,7 +191,11 @@ by the other detector.
 
 Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no decodable
 frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
-`PROCESSING_ERROR` (generic fallback, shared with audio).
+`PROCESSING_ERROR` (generic fallback, shared with audio). Audio also publishes
+`NO_SPEECH` when no window reaches model inference through its existing energy
+threshold. Its localized message asks for clearly audible speech; it makes no
+claim about authenticity. Required-source failure retains the existing AUDIO/FULL
+failure semantics.
 
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
 

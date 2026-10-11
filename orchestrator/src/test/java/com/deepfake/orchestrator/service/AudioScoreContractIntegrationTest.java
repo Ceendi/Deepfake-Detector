@@ -14,6 +14,7 @@ import java.util.stream.Stream;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
@@ -166,6 +167,42 @@ class AudioScoreContractIntegrationTest {
                 .isEqualTo(JSON.readTree(JSON.writeValueAsString(details)));
         if (type == AnalysisType.AUDIO) {
             assertThat(response.confidence()).isEqualByComparingTo(decimal(result.get("confidence")));
+        }
+    }
+
+    @ParameterizedTest(name = "NO_SPEECH / {0}")
+    @EnumSource(value = AnalysisType.class, names = {"AUDIO", "FULL"})
+    void noSpeechWireFailureHasNoAuthenticityVerdict(AnalysisType type) throws Exception {
+        UUID id = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
+                .fileId("silent.wav").fileKey("silent.wav").type(type).build()).getId();
+        Map<String, Object> audio;
+        try (var input = getClass().getResourceAsStream("/contracts/audio-no-speech-result.json")) {
+            audio = JSON.readValue(input, new TypeReference<>() {});
+        }
+        audio.put("analysis_id", id.toString());
+        if (type == AnalysisType.FULL) {
+            publish(Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
+                    "result", Map.of("prob_fake", 0.8)));
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+                Analysis partial = repository.findById(id).orElseThrow();
+                assertThat(partial.getVideoProb()).isEqualByComparingTo("0.8");
+                assertThat(partial.getStatus()).isEqualTo(AnalysisStatus.PENDING);
+            });
+        }
+        publish(audio);
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                assertThat(repository.findById(id).orElseThrow().getStatus())
+                        .isEqualTo(AnalysisStatus.FAILED));
+
+        Map<?, ?> error = (Map<?, ?>) audio.get("error");
+        AnalysisResponse response = service.get(id, "audio-contract");
+        assertThat(response.status()).isEqualTo(AnalysisStatus.FAILED);
+        assertThat(response.errorMessage()).isEqualTo("[NO_SPEECH] " + error.get("message"));
+        assertThat(response.audioProb()).isNull();
+        assertThat(response.verdict()).isNull();
+        assertThat(response.confidence()).isNull();
+        if (type == AnalysisType.FULL) {
+            assertThat(response.videoProb()).isEqualByComparingTo("0.8");
         }
     }
 

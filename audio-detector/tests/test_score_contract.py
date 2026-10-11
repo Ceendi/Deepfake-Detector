@@ -7,7 +7,12 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from src.score_contract import build_audio_result, generate_insights, normalize_audio_score
+from src.score_contract import (
+    NoSpeechError,
+    build_audio_result,
+    generate_insights,
+    normalize_audio_score,
+)
 
 FIXTURES = json.loads((Path(__file__).resolve().parents[2] /
     "orchestrator/src/test/resources/contracts/audio-score-results.json").read_text())
@@ -75,10 +80,11 @@ def test_pooling_uses_raw_scores_before_mapping_and_rounding():
 
 
 @pytest.mark.parametrize("threshold", [.3049, .3, math.nextafter(0.0, 1.0)])
-def test_empty_speech_is_neutral_with_no_segment_evidence(threshold):
-    result = build_audio_result([], threshold, "fast")
-    assert (result["prob_fake"], result["verdict"], result["confidence"]) == (.5, "REAL", 0)
-    assert result["metadata"]["insights"] == ["Brak danych do analizy odcinkowej."]
+def test_empty_speech_is_explicit_failure_without_a_verdict(threshold):
+    with pytest.raises(NoSpeechError) as error:
+        build_audio_result([], threshold, "fast")
+    assert error.value.code == "NO_SPEECH"
+    assert "Wgraj nagranie" in str(error.value)
 
 
 def test_insights_use_the_published_scale_and_strict_boundary():

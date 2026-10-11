@@ -8,7 +8,6 @@ import soundfile as sf
 import torch
 
 matplotlib.use('Agg')
-import math
 import sys
 import time
 
@@ -154,21 +153,25 @@ class AudioInference:
         if os.path.exists(path_16k):
             os.remove(path_16k)
         
-        duration_sec = len(wav_16k) / 16000.0
+        num_samples = len(wav_16k)
+        duration_sec = num_samples / 16000.0
         chunk_len_16k = 16000
         step_16k = 8000
-        num_chunks = math.floor((len(wav_16k) - chunk_len_16k) / step_16k) + 1
-        
-        if num_chunks < 1:
-            wav_16k = torch.nn.functional.pad(wav_16k, (0, chunk_len_16k - len(wav_16k)))
-            num_chunks = 1
+        last_start = max(0, num_samples - chunk_len_16k)
+        chunk_starts = list(range(0, last_start + 1, step_16k))
+        # Retain regular windows and cover any remaining tail with one end-aligned window.
+        if chunk_starts[-1] != last_start:
+            chunk_starts.append(last_start)
+        num_chunks = len(chunk_starts)
+
+        if num_samples < chunk_len_16k:
+            wav_16k = torch.nn.functional.pad(wav_16k, (0, chunk_len_16k - num_samples))
             
         segment_predictions = []
         highest_fake_prob = -1.0
         worst_chunk_16k = None
         
-        for i in range(num_chunks):
-            start_16k = i * step_16k
+        for i, start_16k in enumerate(chunk_starts):
             end_16k = start_16k + chunk_len_16k
             chunk_16_tensor = wav_16k[start_16k:end_16k]
             
@@ -195,8 +198,8 @@ class AudioInference:
                 w2v2_logits = w2v2_outs[0][0][0]
                 prob_b = 1.0 / (1.0 + np.exp(-w2v2_logits))
                 final_prob = float(prob_b)
-            start_time = i * 0.5
-            end_time = start_time + 1.0
+            start_time = start_16k / 16000.0
+            end_time = min(end_16k, num_samples) / 16000.0
             
             segment_predictions.append({
                 "start_time": start_time,
@@ -215,6 +218,8 @@ class AudioInference:
                     {"current_segment": i+1, "total_segments": num_chunks}
                 )
 
+        # Reject absent model evidence before emitting completion progress or artifacts.
+        result = build_audio_result(segment_predictions, threshold, mode)
         gradcam_path = f"{file_path}_gradcam.png"
         if worst_chunk_16k is not None:
             if progress_callback:
@@ -224,10 +229,9 @@ class AudioInference:
         if progress_callback:
             progress_callback(100, "POSTPROCESSING")
             
-        result = build_audio_result(segment_predictions, threshold, mode)
         result["local_gradcam_path"] = gradcam_path
         result["metadata"].update({
-            "duration_seconds": round(duration_sec, 2),
+            "duration_seconds": duration_sec,
             "analysis_time_seconds": round(time.time() - start_analysis, 2),
             "segments_processed": num_chunks,
         })

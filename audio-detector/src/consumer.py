@@ -218,7 +218,7 @@ def _handle_message(ch, method, properties, body):
                     "source": SOURCE,
                     "status": "FAILED",
                     "result": None,
-                    "error": {"code": "PROCESSING_ERROR", "message": str(e)},
+                    "error": {"code": getattr(e, "code", "PROCESSING_ERROR"), "message": str(e)},
                 }
 
             # BlockingChannel waits for the broker confirm; mandatory returns/nacks raise.

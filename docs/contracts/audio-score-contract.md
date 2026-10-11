@@ -52,9 +52,11 @@ AUDIO aggregation and persistence.
 - `metadata.threshold_used`, `mode_used`: effective model threshold and mode.
 - `metadata.segment_predictions`: overlapping one-second windows every 0.5 s,
   excluding VAD silence. Each entry retains `start_time`, `end_time`, unrounded
-  `raw_prob_fake`, and mapped four-decimal `prob_fake`. Padded short recordings
-  can have a final window ending after the original duration. Grad-CAM still
-  uses the window with the highest raw score and the existing MelCNN path.
+  `raw_prob_fake`, and mapped four-decimal `prob_fake`. If regular windows leave
+  a tail, one final end-aligned window covers it. Subsecond recordings have one
+  zero-padded model input. Timestamps always refer to real content, so padding
+  never extends `end_time` past `duration_seconds`; duration retains sample precision.
+  Grad-CAM still uses the window with the highest raw score and the existing MelCNN path.
   The Orchestrator may uniformly sample the timeline to at most 500 entries;
   it retains the per-window fields and marks `segment_predictions_downsampled`.
 - `metadata.insights`: localized heuristic text derived from published scores,
@@ -63,9 +65,13 @@ AUDIO aggregation and persistence.
   `>0.5`. The longest cluster joins starts at most 0.6 s apart; three or more
   windows yield a cluster description. Otherwise up to three suspicious windows
   with overall score `<=0.5` yield a local artifact description. The fallback
-  states ambiguity. With no speech windows, retain the neutral raw score `t`,
-  published `0.5`, `REAL`, zero confidence and an explicit no-segment-data insight.
-  This fallback supplies no evidence of authenticity.
+  states ambiguity for completed results. If no window passes the existing RMS
+  energy gate (`0.005`) to model inference, publish `FAILED`, `result: null` and
+  error code `NO_SPEECH` with localized guidance to upload clearly audible speech.
+  Silence, quiet audio and empty inputs produce no authenticity verdict or score.
+  This energy gate does not establish semantic speech detection. AUDIO fails;
+  FULL also fails when its required audio source fails, retaining existing source
+  acceptance guards and aggregation rules for successful results.
 
 The frontend compares only versioned shared scores to `0.5`. It uses the same
 strict decision at equality and distance-based confidence. Timeline colors use
