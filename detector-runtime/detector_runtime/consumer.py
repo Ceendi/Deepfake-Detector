@@ -41,7 +41,8 @@ class Artifact:
 
 class DetectorRuntime:
     def __init__(self, *, source, queue, log, tracer, s3_client, redis_client,
-                 process_task, record_outcome, inference_timer=nullcontext):
+                 process_task, record_outcome, inference_timer=nullcontext,
+                 progress_interval_seconds=0):
         self.source = source
         self.queue = queue
         self.log = log
@@ -51,6 +52,7 @@ class DetectorRuntime:
         self.process_task = process_task
         self.record_outcome = record_outcome
         self.inference_timer = inference_timer
+        self.progress_interval_seconds = progress_interval_seconds
         self.health_state = {"ok": False, "last_beat": 0.0}
         self.propagator = TraceContextTextMapPropagator()
         self.rabbit_host = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -139,10 +141,23 @@ class DetectorRuntime:
                     ch.basic_ack(delivery_tag=method.delivery_tag)
                     return
 
+                last_progress = None
+
                 def progress_callback(pct: int, stage: str = "INFERENCE",
                                       details: dict | None = None):
+                    nonlocal last_progress
                     if self.is_cancelled(analysis_id):
                         raise AnalysisCancelled()
+                    now = time.monotonic()
+                    final_tick = (pct == 100 or (details is not None
+                                  and details.get("current_segment") is not None
+                                  and details.get("current_segment") == details.get("total_segments")))
+                    # Cancellation is checked even on ticks whose publication is suppressed.
+                    if (last_progress is not None and self.progress_interval_seconds > 0
+                            and stage == last_progress[1] and not final_tick
+                            and pct < last_progress[0] + 1
+                            and now - last_progress[2] < self.progress_interval_seconds):
+                        return
                     payload = {
                         "analysis_id": analysis_id, "correlation_id": correlation_id,
                         "source": self.source, "progress": pct, "stage": stage,
@@ -150,6 +165,7 @@ class DetectorRuntime:
                     if details is not None:
                         payload["details"] = details
                     self.publish(ch, "analysis.progress", payload)
+                    last_progress = (pct, stage, now)
 
                 self.log.info("processing_started", redelivered=method.redelivered)
                 try:

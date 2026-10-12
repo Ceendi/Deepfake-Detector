@@ -12,6 +12,8 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
@@ -81,6 +83,52 @@ class FileValidatorTest {
         assertThatThrownBy(() -> validator().validate(file))
                 .isInstanceOf(InvalidFileException.class)
                 .hasMessageContaining("unsupported container format");
+    }
+
+    @Test
+    void rejectsMediaOverThirtyMinutes() throws IOException {
+        Path file = write("long.mp4", MP4_MAGIC);
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", 1800.001)));
+        assertThatThrownBy(() -> validator().validate(file))
+                .isInstanceOf(InvalidFileException.class).hasMessageContaining("duration");
+    }
+
+    @Test
+    void acceptsMediaAtDurationLimit() throws IOException {
+        Path file = write("boundary.mp4", MP4_MAGIC);
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", 1800.0)));
+        assertThat(validator().validate(file).durationSeconds()).isEqualTo(1800.0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {-1, Double.NaN, Double.POSITIVE_INFINITY})
+    void rejectsInvalidDuration(double duration) throws IOException {
+        Path file = write("invalid.mp4", MP4_MAGIC);
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", duration)));
+        assertThatThrownBy(() -> validator().validate(file)).isInstanceOf(InvalidFileException.class);
+    }
+
+    @Test
+    void preservesUnknownDurationAcceptance() throws IOException {
+        Path file = write("unknown.mp4", MP4_MAGIC);
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", null)));
+        assertThat(validator().validate(file).durationSeconds()).isNull();
+    }
+
+    @Test
+    void appliesConfiguredDurationLimit() throws IOException {
+        Path file = write("configured.mp4", MP4_MAGIC);
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", 60.1)));
+        assertThatThrownBy(() -> new FileValidator(mediaProbe, 60).validate(file))
+                .isInstanceOf(InvalidFileException.class);
+        assertThat(new FileValidator(mediaProbe, 61).validate(file).durationSeconds()).isEqualTo(60.1);
+    }
+
+    @ParameterizedTest
+    @ValueSource(doubles = {0, -1, Double.NaN, Double.POSITIVE_INFINITY})
+    void rejectsInvalidConfiguredLimit(double limit) {
+        assertThatThrownBy(() -> new FileValidator(mediaProbe, limit))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private Path write(String name, byte[] bytes) throws IOException {

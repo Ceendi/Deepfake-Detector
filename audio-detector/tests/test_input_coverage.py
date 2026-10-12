@@ -52,6 +52,7 @@ def analyzer(inference_module, monkeypatch):
     instance.w2v2_session = MagicMock()
     instance.w2v2_session.run.side_effect = w2v2
     instance.generate_gradcam = MagicMock()
+    instance._check_duration = MagicMock()
     instance._extract_audio = MagicMock(side_effect=lambda path, sr, out: Path(out).write_bytes(b"wav"))
 
     def load(samples):

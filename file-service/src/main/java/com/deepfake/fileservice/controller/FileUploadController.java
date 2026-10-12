@@ -39,7 +39,7 @@ public class FileUploadController {
     @Operation(summary = "Upload a media file for analysis")
     @ApiResponse(responseCode = "200", description = "Stored; returns fileId, fileKey, size, detected mimetype")
     @ApiResponse(responseCode = "413", description = "File exceeds the 500 MB limit")
-    @ApiResponse(responseCode = "422", description = "Not a whitelisted A/V container (magic bytes + ffprobe)")
+    @ApiResponse(responseCode = "422", description = "Invalid A/V container or media duration exceeds configured limit (default 1800 seconds)")
     @PostMapping("/upload")
     public FileUploadResponse upload(@CurrentUser AuthenticatedUser user,
                                      @RequestParam MultipartFile file) throws IOException {

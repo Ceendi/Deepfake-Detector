@@ -58,6 +58,7 @@ runtime = DetectorRuntime(
     redis_client=create_redis_client(),
     process_task=lambda msg, progress_callback: process(msg, progress_callback=progress_callback),
     record_outcome=_record_outcome,
+    progress_interval_seconds=1,
 )
 
 _handle_message = runtime.handle_message

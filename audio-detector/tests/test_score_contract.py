@@ -101,6 +101,7 @@ def test_real_analyze_path_selects_model_and_builds_contract(
     module = inference_module
     monkeypatch.setattr(module, "np", np)
     instance = module.AudioInference.__new__(module.AudioInference)
+    instance._check_duration = MagicMock()
     instance._extract_audio = MagicMock()
     waveform = MagicMock()
     waveform.__len__.return_value = 16000
