@@ -157,6 +157,29 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
         self.assertTrue(ids, f'No running containers for {service}')
         return json.loads(command('docker', 'inspect', *ids))
 
+    def test_java_heap_uses_container_budget_with_native_headroom(self):
+        for name, limit in JAVA_LIMITS.items():
+            for container in self.containers(name):
+                with self.subTest(service=name, container=container['Name']):
+                    output = command('docker', 'exec', container['Id'],
+                                     'java', '-XX:+PrintFlagsFinal', '-version')
+                    flags = {}
+                    for line in output.splitlines():
+                        fields = line.split()
+                        if len(fields) >= 4 and fields[1] in (
+                            'MaxRAMPercentage', 'MaxHeapSize',
+                            'UseCompactObjectHeaders', 'UseContainerSupport',
+                        ):
+                            flags[fields[1]] = fields[3]
+                    self.assertEqual('true', flags['UseContainerSupport'])
+                    self.assertEqual('true', flags['UseCompactObjectHeaders'])
+                    self.assertEqual(75.0, float(flags['MaxRAMPercentage']))
+                    heap = int(flags['MaxHeapSize'])
+                    self.assertGreaterEqual(heap, limit * 0.70)
+                    self.assertLessEqual(heap, limit * 0.75)
+                    print(f'{name}: max heap {heap // 1024**2} MiB / '
+                          f'container {limit // 1024**2} MiB', flush=True)
+
     def test_java_process_exits_restart_with_bounded_memory_and_logs(self):
         originals = {}
         for name, limit in JAVA_LIMITS.items():

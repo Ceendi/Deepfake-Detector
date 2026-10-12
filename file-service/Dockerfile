@@ -15,6 +15,6 @@ RUN addgroup -S app && adduser -S app -G app
 USER app
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
-ENV JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders"
+ENV JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders -XX:MaxRAMPercentage=75"
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

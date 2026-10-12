@@ -21,6 +21,13 @@ each for orchestrator/file-service (per replica). With two file-service replicas
 `core` + `auth` + `ml` services have 14.25 GiB of configured memory limits; allow additional room
 for Docker, the host and optional monitoring services.
 
+Java images set `-XX:MaxRAMPercentage=75` alongside compact object headers. The maximum heap is
+approximately 384 MiB for Eureka/gateway and 768 MiB for orchestrator/file-service, rather than
+[the JVM's default 25%](https://docs.oracle.com/en/java/javase/25/docs/specs/man/java.html)
+of the container limit. The remaining quarter of the container budget is
+for native JVM memory and subprocesses such as ffprobe; total container limits stay the same.
+The core integration test reads effective JVM flags and heap sizes inside every Java container.
+
 The orchestrator container probes `/actuator/health/liveness`. The `amqpRecovery` contributor
 remains in readiness, which can stay DOWN after a broker outage until a successful delivery or
 recovery publication. That readiness state must not make a live process an unhealthy container.
