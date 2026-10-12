@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "deepfake-detector-runtime"
 version = "0.1.0"
-description = "Shared synchronous AMQP runtime for the deepfake detectors"
+description = "Shared AMQP worker runtime for the deepfake detectors"
 requires-python = ">=3.12"
 dependencies = [
     "pika==1.4.*",

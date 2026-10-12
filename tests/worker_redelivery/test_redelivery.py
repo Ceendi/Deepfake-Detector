@@ -2,8 +2,10 @@
 import json
 import os
 import subprocess
+import time
 import uuid
 
+import pika
 import pytest
 import redis
 from support import ROOT, Worker, connect, declare, publish, result, wait_for
@@ -22,7 +24,10 @@ def broker():
     for queue in ["analysis.video", "analysis.audio", "analysis.results", "analysis.progress"]:
         channel.queue_purge(queue)
     yield channel
-    connection.close()
+    try:
+        connection.close()
+    except pika.exceptions.AMQPConnectionError:
+        pass  # A broker-restart regression deliberately disconnects this fixture too.
 
 
 @pytest.fixture
@@ -148,6 +153,36 @@ def test_cooperative_cancel_acks_without_result(source, broker, rds, workers, du
         assert not (worker.directory / "inference").exists()
 
 
+def test_broker_disconnect_during_inference_redelivers_without_stale_result(source, broker, rds, workers):
+    worker = workers(source, BLOCK_AT="inference", TEST_HEARTBEAT_SECONDS="2")
+    analysis_id = str(uuid.uuid4())
+    publish(broker, source, analysis_id)
+    worker.wait("inference")
+    project = os.environ["WORKER_TEST_COMPOSE_PROJECT"]
+    compose = ["docker", "compose", "-p", project, "-f", str(ROOT / "tests/worker_redelivery/compose.yml")]
+    # Restart the broker application, preserving the fixture's ephemeral host port.
+    subprocess.run([*compose, "exec", "-T", "rabbit", "rabbitmqctl", "stop_app"],
+                   check=True, capture_output=True, timeout=30)
+    try:
+        wait_for(lambda: not json.loads((worker.directory / "health.json").read_text())["ok"])
+        worker.release()
+    finally:
+        subprocess.run([*compose, "exec", "-T", "rabbit", "rabbitmqctl", "start_app"],
+                       check=True, capture_output=True, timeout=30)
+    worker.wait("acked")
+    events = [json.loads(line) for line in (worker.directory / "events.jsonl").read_text().splitlines()]
+    assert [entry["redelivered"] for entry in events if entry["event"] == "claimed"] == [False, True]
+    assert [entry["status"] for entry in events if entry["event"] == "confirmed"] == ["COMPLETED"]
+    # The fixture's original channel also lost its connection when the broker stopped.
+    connection = connect()
+    try:
+        channel = connection.channel()
+        assert result(channel)["analysis_id"] == analysis_id
+        assert channel.basic_get("analysis.results", auto_ack=True)[0] is None
+    finally:
+        connection.close()
+
+
 @pytest.mark.parametrize("failed_route", ["analysis.results", "analysis.progress"])
 def test_unroutable_publication_reconnects_and_redelivers_without_failed_result(
         source, broker, rds, workers, failed_route):
@@ -184,3 +219,27 @@ def test_unavailable_model_consumes_and_confirms_failed_without_input(source, br
         assert not (worker.directory / operation).exists()
     assert broker.basic_get("analysis.progress", auto_ack=True)[0] is None
     assert not (worker.directory.parent / "artifacts").exists()
+
+
+@pytest.mark.parametrize("operation", ["download", "inference", "upload"])
+def test_long_blocking_work_keeps_heartbeat_health_and_single_delivery(
+        source, broker, rds, workers, operation):
+    worker = workers(source, BLOCK_AT=operation, TEST_HEARTBEAT_SECONDS="2")
+    analysis_id = str(uuid.uuid4())
+    publish(broker, source, analysis_id)
+    worker.wait(operation)
+    started = time.time()
+    # Exceed two broker heartbeats and the API's test health threshold without progress.
+    time.sleep(10)
+    health = json.loads((worker.directory / "health.json").read_text())
+    worker.release()
+    worker.wait("acked")
+    events = [json.loads(line) for line in (worker.directory / "events.jsonl").read_text().splitlines()]
+    deliveries = [entry for entry in events if entry["event"] == "claimed"]
+    assert len(deliveries) == 1 and deliveries[0]["redelivered"] is False
+    assert health["status"] == "UP"
+    assert health["last_beat"] > started + 5
+    payload = result(broker)
+    assert payload["analysis_id"] == analysis_id
+    assert payload["status"] == "COMPLETED"
+    assert broker.basic_get("analysis.results", auto_ack=True)[0] is None

@@ -16,8 +16,7 @@ def runtime(request):
     return DetectorRuntime(source=request.param, queue=f"analysis.{request.param}",
                            log=MagicMock(), tracer=trace.get_tracer("src.consumer"),
                            s3_client=MagicMock(), redis_client=redis,
-                           process_task=MagicMock(), record_outcome=MagicMock(),
-                           consume_iterator=request.param == "audio")
+                           process_task=MagicMock(), record_outcome=MagicMock())
 
 
 @pytest.fixture

@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 
@@ -11,6 +12,8 @@ import redis
 import structlog
 from opentelemetry.trace import SpanKind, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+from .connection import ConnectionChannel
 
 EXCHANGE = "analysis.exchange"
 DLX = "analysis.dlx"
@@ -38,8 +41,7 @@ class Artifact:
 
 class DetectorRuntime:
     def __init__(self, *, source, queue, log, tracer, s3_client, redis_client,
-                 process_task, record_outcome, inference_timer=nullcontext,
-                 consume_iterator=False):
+                 process_task, record_outcome, inference_timer=nullcontext):
         self.source = source
         self.queue = queue
         self.log = log
@@ -49,8 +51,6 @@ class DetectorRuntime:
         self.process_task = process_task
         self.record_outcome = record_outcome
         self.inference_timer = inference_timer
-        # Preserve the existing per-detector heartbeat timing until the worker-thread change.
-        self.consume_iterator = consume_iterator
         self.health_state = {"ok": False, "last_beat": 0.0}
         self.propagator = TraceContextTextMapPropagator()
         self.rabbit_host = os.getenv("RABBITMQ_HOST", "rabbitmq")
@@ -213,6 +213,9 @@ class DetectorRuntime:
             health_state = self.health_state
         while True:
             conn = None
+            channel = None
+            executor = None
+            deliveries = []
             try:
                 creds = pika.PlainCredentials(self.rabbit_user, self.rabbit_password)
                 params = pika.ConnectionParameters(
@@ -225,26 +228,40 @@ class DetectorRuntime:
                 ch.basic_qos(prefetch_count=1)
                 ch.confirm_delivery()
                 self.declare_topology(ch)
+                channel = ConnectionChannel(conn, ch)
+                # One model invocation at a time; pika stays exclusively on this I/O thread.
+                executor = ThreadPoolExecutor(max_workers=1,
+                                              thread_name_prefix=f"{self.source}-inference")
+
+                def dispatch(ch, method, properties, body, *, executor=executor,
+                             channel=channel, deliveries=deliveries):
+                    deliveries.append(executor.submit(self.handle_message, channel,
+                                                      method, properties, body))
+
+                ch.basic_consume(queue=self.queue, on_message_callback=dispatch, auto_ack=False)
                 health_state["ok"] = True
                 health_state["last_beat"] = time.time()
                 self.log.info("consumer_ready", queue=self.queue, source=self.source)
-                if self.consume_iterator:
-                    for method, properties, body in ch.consume(self.queue, inactivity_timeout=5):
-                        health_state["last_beat"] = time.time()
-                        if method is not None:
-                            self.handle_message(ch, method, properties, body)
-                else:
-                    ch.basic_consume(queue=self.queue, on_message_callback=self.handle_message,
-                                     auto_ack=False)
-                    while True:
-                        conn.process_data_events(time_limit=5)
-                        health_state["last_beat"] = time.time()
+                while True:
+                    conn.process_data_events(time_limit=1)
+                    for delivery in deliveries[:]:
+                        if delivery.done():
+                            delivery.result()
+                            deliveries.remove(delivery)
+                    health_state["last_beat"] = time.time()
             except Exception as e:
                 health_state["ok"] = False
                 self.log.exception("consumer_crashed_reconnecting", error=str(e), backoff_seconds=5)
+            finally:
+                health_state["ok"] = False
+                if channel is not None:
+                    channel.close()
                 if conn is not None and conn.is_open:
                     try:
                         conn.close()
                     except pika.exceptions.AMQPError:
                         self.log.warning("consumer_connection_close_failed")
-                time.sleep(5)
+                if executor is not None:
+                    # Drain the abandoned attempt before reconnecting and reusing its model.
+                    executor.shutdown(wait=True, cancel_futures=True)
+            time.sleep(5)

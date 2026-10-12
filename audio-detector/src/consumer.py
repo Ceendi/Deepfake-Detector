@@ -57,7 +57,7 @@ runtime = DetectorRuntime(
     s3_client=create_s3_client("http://localhost:9000", "minioadmin", "minioadmin"),
     redis_client=create_redis_client(),
     process_task=lambda msg, progress_callback: process(msg, progress_callback=progress_callback),
-    record_outcome=_record_outcome, consume_iterator=True,
+    record_outcome=_record_outcome,
 )
 
 _handle_message = runtime.handle_message

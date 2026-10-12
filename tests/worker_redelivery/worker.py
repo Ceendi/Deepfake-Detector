@@ -6,6 +6,7 @@ This executable is test-only and never imported by a deployed detector.
 import json
 import os
 import sys
+import threading
 import time
 import types
 from pathlib import Path
@@ -59,7 +60,30 @@ inference = types.ModuleType("src.inference")
 setattr(inference, "VideoInference" if source == "video" else "AudioInference", ControlledInference)
 sys.modules["src.inference"] = inference
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / f"{source}-detector"))
-from src import consumer
+from detector_runtime import consumer as runtime_module
+from src import consumer, main
+
+# Speed up broker heartbeat and health expiry only in this isolated process fixture.
+if os.getenv("TEST_HEARTBEAT_SECONDS"):
+    real_parameters = runtime_module.pika.ConnectionParameters
+
+    def test_parameters(**kwargs):
+        kwargs["heartbeat"] = int(os.environ["TEST_HEARTBEAT_SECONDS"])
+        return real_parameters(**kwargs)
+
+    runtime_module.pika.ConnectionParameters = test_parameters
+    main.HEALTH_MAX_SILENCE_SECONDS = int(os.environ["TEST_HEARTBEAT_SECONDS"])
+
+
+def observe_health():
+    while True:
+        response = main.health()
+        snapshot = {**consumer.runtime.health_state,
+                    "status": response.get("status") if isinstance(response, dict) else "DOWN"}
+        temporary = state / "health.tmp"
+        temporary.write_text(json.dumps(snapshot))
+        temporary.replace(state / "health.json")
+        time.sleep(0.1)
 
 
 class ControlledInput:
@@ -107,4 +131,5 @@ def observed_publish(channel, routing_key, payload):
 
 consumer.runtime.handle_message = observed_handle
 consumer.runtime.publish = observed_publish
-consumer.run_consumer({})
+threading.Thread(target=observe_health, daemon=True).start()
+consumer.run_consumer()
