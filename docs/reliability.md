@@ -11,6 +11,36 @@ Ground rules:
   fails open; correctness never depends on it.
 - **Side effects run after commit** (cache eviction, SSE, Redis markers), so a rollback leaves none.
 
+## Container recovery and broker storage
+
+Compose runs Eureka, gateway, file-service and the single orchestrator instance with
+`restart: unless-stopped`: a process crash restarts its container, while an explicit stop stays
+stopped. An unhealthy healthcheck alone does not restart a container. Java containers use bounded
+`json-file` logs (three 10 MiB files) and memory limits: 512 MiB each for Eureka/gateway, 1 GiB
+each for orchestrator/file-service (per replica). With two file-service replicas, the running
+`core` + `auth` + `ml` services have 14.25 GiB of configured memory limits; allow additional room
+for Docker, the host and optional monitoring services.
+
+The orchestrator container probes `/actuator/health/liveness`. The `amqpRecovery` contributor
+remains in readiness, which can stay DOWN after a broker outage until a successful delivery or
+recovery publication. That readiness state must not make a live process an unhealthy container.
+
+RabbitMQ uses a stable hostname (`RABBITMQ_HOSTNAME`, default `rabbitmq`) so the node name and
+its storage directory remain the same when Compose recreates the container with `rabbitmqdata`.
+Queue durability and persistent publications then survive recreation, not just a process restart.
+
+**Existing volumes:** before the first recreation with this configuration, read the running
+container's hostname (`docker compose exec -T rabbitmq hostname`) and pin that exact value as
+`RABBITMQ_HOSTNAME` in the deployment environment. Keep it pinned on later deployments. Changing
+the node name on an existing volume starts a different node directory and hides its old queues
+and messages; a definitions export alone does not preserve messages. If the old container is
+already gone, identify the original node name in the volume or restore a backup under its original
+node name before starting RabbitMQ. See [RabbitMQ backup and restore](https://www.rabbitmq.com/docs/backup).
+
+Tests: `infra/tests/test_core_reliability.py` boots `core` on fresh isolated volumes, kills Java
+processes, recreates RabbitMQ with a persistent message, verifies liveness during failed AMQP
+recovery, and checks real Prometheus scrapes during file-service scaling.
+
 ## Creating an analysis
 
 `POST /api/analysis` goes through three steps.

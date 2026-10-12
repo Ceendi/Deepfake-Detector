@@ -43,6 +43,12 @@ Every Java service needs `micrometer-registry-prometheus` for `/actuator/prometh
 actuator starter ships only the disabled OTLP registry). Present in gateway/orchestrator/file-service;
 eureka scrape is intentionally skipped (low value).
 
+File-service uses DNS discovery (`type: A`, port 8081), refreshed every 30 s. Each address
+returned for the Compose service becomes a separate target and `instance`, so all replicas are
+scraped and scaling/recreation updates the target list. The `job="file-service"` label and
+`/actuator/prometheus` path stay the same. `python3 infra/tests/test_core_reliability.py` verifies
+healthy scrapes of the real replicas during a 2 → 1 → 2 scale cycle.
+
 ## Traces
 
 `trace_id`/`span_id` reach the logs always (D2). With OTLP export on, spans ship to Tempo over
