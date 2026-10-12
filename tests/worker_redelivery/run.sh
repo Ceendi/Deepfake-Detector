@@ -3,7 +3,15 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 project="pr06-worker-${GITHUB_RUN_ID:-local}-$$"
 compose=(docker compose -p "$project" -f "$root/tests/worker_redelivery/compose.yml")
-cleanup() { "${compose[@]}" down -v --remove-orphans; }
+cleanup() {
+  status=$?
+  # Keep broker/Redis diagnostics: a fixture that dies at startup is otherwise invisible.
+  if [ "$status" -ne 0 ]; then
+    "${compose[@]}" ps -a || true
+    "${compose[@]}" logs --no-color --tail 200 || true
+  fi
+  "${compose[@]}" down -v --remove-orphans
+}
 trap cleanup EXIT
 "${compose[@]}" up -d --wait --wait-timeout 180
 export WORKER_TEST_COMPOSE_PROJECT="$project"
