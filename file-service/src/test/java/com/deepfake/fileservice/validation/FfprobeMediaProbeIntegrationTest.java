@@ -1,6 +1,9 @@
 package com.deepfake.fileservice.validation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.deepfake.fileservice.exception.InvalidFileException;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -97,6 +100,15 @@ class FfprobeMediaProbeIntegrationTest {
         Path junk = tmp.resolve("not-media.bin");
         Files.writeString(junk, "definitely not a media container");
         assertThat(probe.probe(junk)).isEmpty();
+    }
+
+    @Test
+    void realWavDurationRespectsConfiguredLimit() throws IOException {
+        Path media = tmp.resolve("duration.wav");
+        Files.write(media, wav(new byte[0]));
+        assertThatThrownBy(() -> new FileValidator(probe, 0.05).validate(media))
+                .isInstanceOf(InvalidFileException.class).hasMessageContaining("duration");
+        assertThat(new FileValidator(probe, 0.1).validate(media).durationSeconds()).isEqualTo(0.1);
     }
 
     private static void runToFile(List<String> command, Path output) throws Exception {

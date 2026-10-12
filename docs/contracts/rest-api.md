@@ -21,7 +21,11 @@ Body: file=@<file>
 Two-stage validation (magic bytes via Tika, then `ffprobe`) runs before the file
 is stored; `mimetype` is the **detected** type, not the client-supplied one.
 Rejections: `413` (over the 500 MB limit), `422` (not a whitelisted A/V container —
-MP4/MOV/AVI/WAV/MP3/FLAC). `422` body uses code `INVALID_FILE`.
+MP4/MOV/AVI/WAV/MP3/FLAC, invalid duration, or known duration above
+`MEDIA_MAX_DURATION_SECONDS`, default 1800 seconds for both audio and video).
+Exactly the limit is accepted. Unknown duration remains accepted; the audio detector
+also bounds decoding and checks the decoded WAV before allocating its waveform.
+`422` body uses code `INVALID_FILE`; no S3 object or metadata row is stored.
 
 Response `200 OK`:
 

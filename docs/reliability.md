@@ -149,6 +149,30 @@ Tests: `detector-runtime/tests/` (shared delivery guards), `tests/worker_redeliv
 (real worker processes with RabbitMQ and Redis; inference is
 stubbed), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
 
+## Media duration and audio progress
+
+`MEDIA_MAX_DURATION_SECONDS` (positive finite seconds, default 1800) is shared by
+file-service and audio-detector in Compose. Upload validation rejects a known
+duration above this limit before writing S3 or PostgreSQL, using `422 INVALID_FILE`.
+Audio checks container duration before extraction and decoded WAV frame count before
+allocating samples; an overlong input returns confirmed `FAILED/MEDIA_TOO_LONG` before ACK.
+This also protects old uploads or tasks created outside the upload endpoint.
+
+Unknown container duration remains accepted. Extraction disables video and stops
+after at most the limit plus one output sample, so even missing or misleading
+duration metadata cannot create an unbounded decoded WAV. The extra sample detects
+overflow instead of silently classifying a truncated prefix. Decoded WAVs are removed
+after success, extraction/read failures and cancellation; the runtime also removes
+the private attempt directory. SIGKILL cannot run cleanup and may leave local files.
+
+Audio keeps every inference/cancellation tick but publishes progress only on a stage
+change, one percentage point of progress, or one elapsed second. Final segment and
+completion ticks bypass throttling. The gate runs in the shared runtime and is enabled
+only by the audio adapter; video keeps its existing publication behavior.
+
+Tests: `FileValidatorTest`, `FfprobeMediaProbeIntegrationTest`,
+`audio-detector/tests/test_media_limits.py` and shared runtime delivery tests.
+
 ## Task queue upgrade
 
 `analysis.video` and `analysis.audio` change from classic to quorum. RabbitMQ cannot change

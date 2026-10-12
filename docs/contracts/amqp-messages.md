@@ -203,7 +203,11 @@ by the other detector.
 
 Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no decodable
 frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
-`PROCESSING_ERROR` (generic fallback, shared with audio). Audio also publishes
+`PROCESSING_ERROR` (generic fallback, shared with audio). Audio publishes
+`MEDIA_TOO_LONG` when the input container or decoded waveform exceeds
+`MEDIA_MAX_DURATION_SECONDS` (default 1800 seconds), with the neutral message
+`Media duration exceeds the configured limit.` This fails both AUDIO and FULL;
+result confirmation still precedes task ACK. Audio also publishes
 `NO_SPEECH` when no window reaches model inference through its existing energy
 threshold. Its localized message asks for clearly audible speech; it makes no
 claim about authenticity. AUDIO remains FAILED. For FULL, only exact audio
@@ -215,6 +219,12 @@ score blocks later audio results/failures/DLQs, regardless of Redis markers. Oth
 source failures retain the existing whole-analysis failure semantics.
 
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
+
+Audio progress is published when the stage changes, the percentage advances by at
+least one point, or one second passes since its last published tick. The last
+segment tick and 100% tick are always published when reached; a failed analysis
+does not emit a fabricated 100%. Cancellation is checked on every tick, including
+ticks whose publication is suppressed. Video progress is unchanged.
 
 ### Cancellation — Orchestrator → Detector (via Redis)
 

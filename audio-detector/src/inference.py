@@ -1,3 +1,5 @@
+import json
+import math
 import os
 import subprocess
 
@@ -29,6 +31,16 @@ MEL_CKPT_PATH = os.path.join(
 
 MEL_EER_THRESHOLD = float(os.getenv("MEL_EER_THRESHOLD", "0.3049"))
 W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.3000"))
+MEDIA_MAX_DURATION_SECONDS = float(os.getenv("MEDIA_MAX_DURATION_SECONDS", "1800"))
+if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <= 0:
+    raise ValueError("Media duration limit must be finite and positive")
+
+
+class MediaTooLongError(RuntimeError):
+    code = "MEDIA_TOO_LONG"
+
+    def __init__(self):
+        super().__init__("Media duration exceeds the configured limit.")
 
 INFERENCE_TIME = Histogram(
     "audio_inference_duration_seconds",
@@ -55,16 +67,41 @@ class AudioInference:
         # as a cryptic sf.read error on the missing/empty wav.
         proc = subprocess.run([
             "ffmpeg", "-y", "-i", input_path,
+            "-vn", "-t", str(MEDIA_MAX_DURATION_SECONDS + 1 / sr),
             "-ar", str(sr), "-ac", "1", out_path
         ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False)
         if proc.returncode != 0:
             tail = proc.stderr.decode(errors="replace").strip()[-500:]
             raise RuntimeError(f"ffmpeg extraction failed (rc={proc.returncode}): {tail}")
 
+    def _check_duration(self, path):
+        try:
+            proc = subprocess.run([
+                "ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+                "-of", "json", path,
+            ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=10)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Media duration probe timed out.") from None
+        if proc.returncode != 0:
+            return
+        try:
+            duration = float(json.loads(proc.stdout)["format"]["duration"])
+        except (ValueError, TypeError, KeyError):
+            return
+        if math.isfinite(duration) and duration > MEDIA_MAX_DURATION_SECONDS:
+            raise MediaTooLongError()
+
     def _load_wav(self, path):
         # torchaudio 2.11 routes load() through torchcodec (not bundled); soundfile is already a
         # dependency and backend-independent. ffmpeg wrote mono wavs, so take channel 0.
-        data, _ = sf.read(path, dtype="float32", always_2d=True)
+        # Inspect the header before allocating samples; bound unknown/misreported input too.
+        with sf.SoundFile(path) as audio:
+            max_frames = math.floor(MEDIA_MAX_DURATION_SECONDS * audio.samplerate)
+            if audio.frames > max_frames:
+                raise MediaTooLongError()
+            data = audio.read(frames=max_frames + 1, dtype="float32", always_2d=True)
+            if len(data) > max_frames:
+                raise MediaTooLongError()
         return torch.from_numpy(data[:, 0])
 
     def generate_gradcam(self, audio_chunk_16k, out_png_path):
@@ -144,14 +181,15 @@ class AudioInference:
         # Derive temp paths from file_path (carries the analysis id) — fixed /tmp names would
         # collide between concurrent tasks (prefetch > 1 or a second worker in one container).
         path_16k = f"{file_path}_16k.wav"
-        self._extract_audio(file_path, 16000, path_16k)
-
-        if progress_callback:
-            progress_callback(10, "PREPROCESSING")
-
-        wav_16k = self._load_wav(path_16k)
-        if os.path.exists(path_16k):
-            os.remove(path_16k)
+        self._check_duration(file_path)
+        try:
+            self._extract_audio(file_path, 16000, path_16k)
+            if progress_callback:
+                progress_callback(10, "PREPROCESSING")
+            wav_16k = self._load_wav(path_16k)
+        finally:
+            if os.path.exists(path_16k):
+                os.remove(path_16k)
         
         num_samples = len(wav_16k)
         duration_sec = num_samples / 16000.0

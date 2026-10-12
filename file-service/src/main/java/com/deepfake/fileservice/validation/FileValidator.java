@@ -1,6 +1,7 @@
 package com.deepfake.fileservice.validation;
 
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.apache.tika.detect.DefaultDetector;
 import org.apache.tika.detect.Detector;
 import org.apache.tika.io.TikaInputStream;
@@ -18,7 +19,6 @@ import java.util.Set;
  * content type or extension — decides acceptance. Returns the detected MIME + duration.
  */
 @Component
-@RequiredArgsConstructor
 public class FileValidator {
 
     // Every alias Tika may emit per format (e.g. WAV as audio/vnd.wave or audio/x-wav).
@@ -32,7 +32,22 @@ public class FileValidator {
     static final Set<String> FFPROBE_FORMATS = Set.of("mp4", "mov", "m4a", "avi", "wav", "mp3", "flac");
 
     private final MediaProbe mediaProbe;
+    private final double maxDurationSeconds;
     private final Detector detector = new DefaultDetector();
+
+    public FileValidator(MediaProbe mediaProbe) {
+        this(mediaProbe, 1800);
+    }
+
+    @Autowired
+    public FileValidator(MediaProbe mediaProbe,
+                         @Value("${media.max-duration-seconds:1800}") double maxDurationSeconds) {
+        if (!Double.isFinite(maxDurationSeconds) || maxDurationSeconds <= 0) {
+            throw new IllegalArgumentException("Media duration limit must be finite and positive");
+        }
+        this.mediaProbe = mediaProbe;
+        this.maxDurationSeconds = maxDurationSeconds;
+    }
 
     public Result validate(Path file) throws IOException {
         String mime = detectMime(file);
@@ -43,6 +58,13 @@ public class FileValidator {
                 .orElseThrow(() -> new InvalidFileException("not a valid media container"));
         if (!formatAllowed(probe.formatName())) {
             throw new InvalidFileException("unsupported container format: " + probe.formatName());
+        }
+        Double duration = probe.durationSeconds();
+        if (duration != null && (!Double.isFinite(duration) || duration < 0)) {
+            throw new InvalidFileException("invalid media duration");
+        }
+        if (duration != null && duration > maxDurationSeconds) {
+            throw new InvalidFileException("media duration exceeds " + maxDurationSeconds + " seconds");
         }
         return new Result(mime, probe.durationSeconds());
     }

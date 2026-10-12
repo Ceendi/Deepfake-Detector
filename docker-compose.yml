@@ -496,6 +496,7 @@ services:
       FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
       FILE_SERVICE_DB_PASSWORD: ${FILE_SERVICE_DB_PASSWORD}
       MEDIA_PROBE_MAX_OUTPUT_BYTES: ${MEDIA_PROBE_MAX_OUTPUT_BYTES:-65536}
+      MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
       S3_FILE_SERVICE_KEY: ${S3_FILE_SERVICE_KEY}
       S3_FILE_SERVICE_SECRET: ${S3_FILE_SERVICE_SECRET}
       # Host baked into presigned URLs — must be browser-reachable, not the internal endpoint.
@@ -631,6 +632,7 @@ services:
       seaweedfs-bucket-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     environment:
+      MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
