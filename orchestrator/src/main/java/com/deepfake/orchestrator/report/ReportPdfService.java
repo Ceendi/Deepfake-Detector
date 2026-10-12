@@ -16,6 +16,8 @@ import org.openpdf.text.pdf.PdfWriter;
 import org.springframework.stereotype.Service;
 
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
+import com.deepfake.orchestrator.entity.AnalysisStatus;
+import com.deepfake.orchestrator.entity.AnalysisType;
 
 /**
  * Renders a one-page analysis report PDF from the API view. Semester 1: title + a field table over
@@ -64,6 +66,14 @@ public class ReportPdfService {
         row(table, "Confidence", plain(a.confidence()));
         row(table, "Video probability", plain(a.videoProb()));
         row(table, "Audio probability", plain(a.audioProb()));
+        if (a.type() == AnalysisType.FULL && a.status() == AnalysisStatus.COMPLETED
+                && a.audioProb() == null && a.details() != null
+                && a.details().get("audio") instanceof java.util.Map<?, ?> audio
+                && "NOT_APPLICABLE".equals(audio.get("status"))
+                && "NO_SPEECH".equals(audio.get("reason"))) {
+            row(table, "Audio applicability", "Not applicable (NO_SPEECH)");
+            row(table, "Result basis", "Video only (no audio score); confidence uses video only");
+        }
         row(table, "Created at", String.valueOf(a.createdAt()));
         row(table, "Updated at", String.valueOf(a.updatedAt()));
         return table;

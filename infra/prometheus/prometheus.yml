@@ -19,8 +19,11 @@ scrape_configs:
       - targets: ['gateway:8080']
   - job_name: file-service
     metrics_path: /actuator/prometheus
-    static_configs:
-      - targets: ['file-service:8081']
+    dns_sd_configs:
+      - names: ['file-service']
+        type: A
+        port: 8081
+        refresh_interval: 30s
 
   # RabbitMQ broker metrics (rabbitmq_prometheus plugin, port 15692) — queue depth, etc.
   - job_name: rabbitmq

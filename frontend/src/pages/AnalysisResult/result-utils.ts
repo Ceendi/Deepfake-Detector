@@ -1,4 +1,10 @@
-import type { AnalysisType, AudioSegmentPrediction, SourceDetails, Verdict } from '@/api/types'
+import type {
+  Analysis,
+  AnalysisType,
+  AudioSegmentPrediction,
+  SourceDetails,
+  Verdict,
+} from '@/api/types'
 
 const dayFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'long', year: 'numeric' })
 const timeFmt = new Intl.DateTimeFormat('pl-PL', { hour: '2-digit', minute: '2-digit' })
@@ -53,6 +59,17 @@ export function sourceOutcome(prob: number): SourceOutcome {
     verdict: prob > 0.5 ? 'FAKE' : 'REAL',
     confidence: Number((Math.abs(prob - 0.5) * 2).toFixed(4)),
   }
+}
+
+export function isAudioNotApplicable(analysis: Analysis): boolean {
+  const audio = analysis.details?.audio
+  return (
+    analysis.type === 'FULL' &&
+    analysis.status === 'COMPLETED' &&
+    analysis.audioProb == null &&
+    audio?.status === 'NOT_APPLICABLE' &&
+    audio.reason === 'NO_SPEECH'
+  )
 }
 
 export function hasAudioScoreContract(metadata: Record<string, unknown> | undefined): boolean {

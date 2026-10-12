@@ -65,10 +65,20 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     @Query("""
             UPDATE Analysis a SET a.audioProb = :prob, a.audioDetails = :details, a.updatedAt = :now
             WHERE a.id = :id AND a.status IN :active AND a.type IN (AUDIO, FULL)
-                AND a.audioProb IS NULL
+                AND a.audioProb IS NULL AND a.audioDetails IS NULL
             """)
     int writeAudioProb(@Param("id") UUID id, @Param("prob") BigDecimal prob,
             @Param("details") Map<String, Object> details,
+            @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
+
+    // A first accepted no-speech outcome owns audio details without inventing a probability.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Analysis a SET a.audioDetails = :details, a.updatedAt = :now
+            WHERE a.id = :id AND a.status IN :active AND a.type = FULL
+                AND a.audioProb IS NULL AND a.audioDetails IS NULL
+            """)
+    int writeAudioNotApplicable(@Param("id") UUID id, @Param("details") Map<String, Object> details,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
     // CAS the status: 1 row => this caller won the transition, so it runs the side effects exactly once.
@@ -78,14 +88,15 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
             @Param("confidence") BigDecimal confidence, @Param("active") Collection<AnalysisStatus> active,
             @Param("now") Instant now);
 
-    // A source failure is terminal for the whole analysis. It can win only before that
-    // expected source has an accepted success; no separate failure marker is needed.
+    // Ordinary source failures are terminal only before that source has an accepted outcome.
+    // Audio details also protect a durable FULL no-speech outcome from late failures/DLQs.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE Analysis a SET a.status = :to, a.errorMessage = :msg, a.updatedAt = :now
             WHERE a.id = :id AND a.status IN :active AND (
                 (:source = 'video' AND a.type IN (VIDEO, FULL) AND a.videoProb IS NULL) OR
-                (:source = 'audio' AND a.type IN (AUDIO, FULL) AND a.audioProb IS NULL))
+                (:source = 'audio' AND a.type IN (AUDIO, FULL) AND a.audioProb IS NULL
+                    AND a.audioDetails IS NULL))
             """)
     int failSourceIfUnaccepted(@Param("id") UUID id, @Param("source") String source,
             @Param("to") AnalysisStatus to, @Param("msg") String msg,

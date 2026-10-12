@@ -17,8 +17,9 @@ export function AnalysisStatusState({ analysis }: { analysis: Analysis }) {
         </span>
         <h2 className={styles.statusTitle}>Analiza nie powiodła się</h2>
         <p className={styles.statusText}>
-          Nie udało się dokończyć przetwarzania tego materiału. Plik może być uszkodzony lub
-          zapisany w nieobsługiwanym formacie. Spróbuj ponownie lub wgraj inny plik.
+          {analysis.errorMessage?.startsWith('[NO_SPEECH]')
+            ? 'Brak wystarczająco wyraźnego sygnału audio do analizy. Wgraj nagranie z wyraźnie słyszalną mową.'
+            : 'Nie udało się dokończyć przetwarzania tego materiału. Plik może być uszkodzony lub zapisany w nieobsługiwanym formacie. Spróbuj ponownie lub wgraj inny plik.'}
         </p>
         {analysis.errorMessage && <p className={styles.statusDetail}>{analysis.errorMessage}</p>}
         <div className={styles.statusActions}>

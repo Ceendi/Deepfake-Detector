@@ -138,6 +138,8 @@ services:
 
   rabbitmq:
     image: rabbitmq:4.3.6-management-alpine
+    # The node's data directory follows its hostname; recreation must keep the same identity.
+    hostname: ${RABBITMQ_HOSTNAME:-rabbitmq}
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # flush queues to disk before exit
@@ -430,6 +432,9 @@ services:
   eureka-server:
     build: ./eureka-server
     profiles: ["core"]
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *default-logging
     # Registry API and dashboard are reachable only on the Compose network.
     # Do not publish this unauthenticated registration endpoint on the host.
     environment:
@@ -443,6 +448,9 @@ services:
   gateway:
     build: ./gateway
     profiles: ["core"]
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *default-logging
     depends_on:
       eureka-server:
         condition: service_healthy
@@ -464,6 +472,9 @@ services:
   file-service:
     build: ./file-service
     profiles: ["core"]
+    restart: unless-stopped
+    mem_limit: 1g
+    logging: *default-logging
     # D4: scale 1<->2 via FILE_SERVICE_REPLICAS. Replicas only work here because the service has no
     # host port (reached via Gateway lb://file-service) — do NOT add ports/container_name. The CPU
     # cap is the point: 1 vCPU/replica, so a 2nd replica ~doubles the CPU-bound (ffprobe+Tika) capacity.
@@ -498,6 +509,9 @@ services:
   orchestrator:
     build: ./orchestrator
     profiles: ["core"]
+    restart: unless-stopped
+    mem_limit: 1g
+    logging: *default-logging
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -550,7 +564,7 @@ services:
       CACHE_ENABLED: ${CACHE_ENABLED:-true}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/actuator/health/liveness"]
       interval: 15s
       retries: 15
       start_period: 40s

@@ -15,6 +15,7 @@ on:
       - infra/keycloak/**
       - infra/keycloak-config-cli/**
       - infra/postgres/**
+      - infra/prometheus/**
       - .github/workflows/infra-smoke.yml
   push:
     branches: [main]
@@ -31,6 +32,7 @@ on:
       - infra/keycloak/**
       - infra/keycloak-config-cli/**
       - infra/postgres/**
+      - infra/prometheus/**
       - .github/workflows/infra-smoke.yml
   workflow_dispatch:
 
@@ -38,6 +40,14 @@ permissions:
   contents: read
 
 jobs:
+  core-reliability:
+    name: Core restart, persistence and replica monitoring
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 infra/tests/test_core_reliability.py
+
   tempo:
     name: Tempo ingest and persistence
     runs-on: ubuntu-latest

@@ -4,7 +4,7 @@ import { clsx } from 'clsx'
 import type { Analysis, Verdict } from '@/api/types'
 import { Card, CardBody } from '@/components/ui/Card/Card'
 
-import { audioOutcome, sourceOutcome } from '../result-utils'
+import { audioOutcome, isAudioNotApplicable, sourceOutcome } from '../result-utils'
 
 import styles from '../AnalysisResult.module.css'
 
@@ -58,6 +58,12 @@ export function SummarySection({ analysis }: { analysis: Analysis }) {
   if (audioProb != null) {
     const audio = audioOutcome(audioProb, analysis.details?.audio)
     if (audio) findings.push(AUDIO_FINDING[audio.verdict])
+  }
+  if (isAudioNotApplicable(analysis)) {
+    findings.push({
+      tone: 'muted',
+      text: 'Audio pominięte: brak wystarczająco wyraźnego sygnału audio. Werdykt i pewność dotyczą wyłącznie wideo.',
+    })
   }
   findings.push(RECOMMENDATION[verdict])
 

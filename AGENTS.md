@@ -63,7 +63,8 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
   z Jackson 2; w AMQP `JacksonJsonMessageConverter`, nie `Jackson2JsonMessageConverter`. Spring Cloud **2025.1**
   (2025.0 nie działa z SB 4.0). Flyway przez `spring-boot-starter-flyway`. Null safety: JSpecify.
   Retry listenerów: `max-retries` (SB 4.0 po cichu ignoruje `max-attempts`).
-- Każdy Dockerfile Java ustawia `JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders"` (budżet RAM 16 GB).
+- Każdy Dockerfile Java ustawia
+  `JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders -XX:MaxRAMPercentage=75"` (budżet RAM 16 GB).
 - **Detektory:** inferencja wyłącznie CPU (ONNX `CPUExecutionProvider`, torch `map_location='cpu'`).
   Audio używa `soundfile` zamiast `torchaudio.load` (ten wymaga `torchcodec`, którego nie instalujemy).
   Obrazy instalują tylko `[project.dependencies]` przez `uv pip install --system`.
