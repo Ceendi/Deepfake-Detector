@@ -63,13 +63,17 @@ covering connect, headers and body; no redirects or retries.
 A file deleted after acceptance does not cancel the analysis. File-service keeps soft-deleted
 objects for `FILE_CLEANUP_RETENTION_HOURS` (72 h); a task delayed past that fails normally.
 
-**2. Capacity** (`BackpressureGuard`). At most `backpressure.max-inflight` active analyses; one
-FULL analysis takes one place. The count of `PENDING`/`PROCESSING` rows is the capacity, so there
+**2. Capacity** (`BackpressureGuard`). At most `backpressure.max-inflight` active analyses globally
+and `backpressure.max-inflight-per-user` per authenticated user (defaults 20 and 3); one FULL
+analysis takes one place in both limits. Both counts include `PENDING`/`PROCESSING` rows, so there
 is no separate counter to leak. Admission runs in the create transaction at `READ_COMMITTED` and
 takes `pg_advisory_xact_lock(114545, 1)`, held until commit or rollback, so concurrent creates
 serialize and each sees the previous commit. A rolled-back create occupies nothing; a terminal
-update frees its place only when it commits. Over the limit → `429` with `Retry-After`. The
-`analyses_inflight` gauge uses the same query.
+update frees its place only when it commits. Both limits are checked under the same lock; reaching
+either → the existing `429` body with `Retry-After`. `queuePosition` remains the global active count
+plus the rejected request. The per-user query uses the partial `idx_analysis_active_user` index
+on `user_id` for active rows, avoiding scans of terminal history. The `analyses_inflight` gauge
+continues to report the global count.
 
 **3. Transactional dispatch** (`AnalysisService.createResolved`, `TaskOutboxPublisher`). The same
 transaction inserts the analysis and one `analysis_task_outbox` row per expected source (FULL has
@@ -89,6 +93,7 @@ makes that safe. A confirmed dispatch bumps the analysis `updated_at`.
 | `FILE_SERVICE_BASE_URL` | `http://file-service:8081` | Metadata lookup target |
 | `FILE_SERVICE_LOOKUP_TIMEOUT` | `2s` | Whole lookup deadline |
 | `BACKPRESSURE_MAX_INFLIGHT` | `20` | Active analyses limit |
+| `BACKPRESSURE_MAX_INFLIGHT_PER_USER` | `3` | Active analyses limit per authenticated user |
 | `BACKPRESSURE_RETRY_AFTER_SECONDS` | `5` | `Retry-After` on `429` |
 | `RELIABILITY_OUTBOX_ENABLED` | `true` | Run the publisher |
 | `RELIABILITY_OUTBOX_POLL_INTERVAL_MS` | `1000` | Publisher poll delay |

@@ -92,6 +92,118 @@ class AnalysisCapacityTransactionIntegrationTest {
     }
 
     @Test
+    void userLimitCountsFullAnalysesOnceAndRejectsBeforeCreatingOutboxTasks() {
+        for (int i = 0; i < 3; i++) {
+            service.createResolved(new CreateAnalysisRequest("file", "key", AnalysisType.FULL, null), "alice");
+        }
+        assertThat(active()).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isEqualTo(6);
+
+        assertThatThrownBy(this::create).isInstanceOfSatisfying(TooManyAnalysesException.class, error -> {
+            assertThat(error.queuePosition()).isEqualTo(4);
+            assertThat(error.retryAfterSeconds()).isEqualTo(5);
+        });
+        assertThat(active()).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isEqualTo(6);
+        service.createResolved(request("key"), "bob");
+        assertThat(active()).isEqualTo(4);
+        verifyNoInteractions(rabbit);
+    }
+
+    @Test
+    void userLimitIncludesProcessingButIgnoresTerminalRows() {
+        for (AnalysisStatus status : AnalysisStatus.values()) {
+            UUID id = repository.saveAndFlush(Analysis.builder().userId("alice").fileId("file").fileKey("key")
+                    .type(AnalysisType.VIDEO).build()).getId();
+            jdbc.update("UPDATE analysis SET status = ? WHERE id = ?", status.name(), id);
+        }
+        assertThat(active()).isEqualTo(2);
+        create();
+        assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
+        assertThat(active()).isEqualTo(3);
+    }
+
+    @Test
+    void concurrentAdmissionsForOneUserDoNotExceedUserCapacity() throws Exception {
+        create();
+        create();
+        CountDownLatch start = new CountDownLatch(1);
+        try (var pool = Executors.newFixedThreadPool(6)) {
+            var attempts = java.util.stream.IntStream.range(0, 6).mapToObj(i -> pool.submit(() -> {
+                await(start);
+                try {
+                    create();
+                    return true;
+                } catch (TooManyAnalysesException expected) {
+                    return false;
+                }
+            })).toList();
+            start.countDown();
+            int accepted = 0;
+            for (var attempt : attempts) {
+                if (attempt.get(20, TimeUnit.SECONDS)) {
+                    accepted++;
+                }
+            }
+            assertThat(accepted).isEqualTo(1);
+        }
+        assertThat(active()).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isEqualTo(3);
+    }
+
+    @Test
+    void userCapacityIsFreedOnlyByCommittedTerminalUpdate() {
+        UUID id = create();
+        create();
+        create();
+        transaction.executeWithoutResult(status -> {
+            service.failFromDlq(id, "video", "user capacity rollback");
+            status.setRollbackOnly();
+        });
+        assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
+        service.failFromDlq(id, "video", "user capacity commit");
+        service.failFromDlq(id, "video", "duplicate");
+        create();
+        assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
+        assertThat(active()).isEqualTo(3);
+    }
+
+    @Test
+    void userAdmissionCountsOwnPendingInsertsAndRollbackConsumesNoCapacity() {
+        transaction.executeWithoutResult(status -> {
+            create();
+            create();
+            status.setRollbackOnly();
+        });
+        assertThat(active()).isZero();
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> {
+            for (int i = 0; i < 4; i++) {
+                create();
+            }
+        })).isInstanceOf(TooManyAnalysesException.class);
+        assertThat(active()).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isZero();
+        assertThat(create()).isNotNull();
+    }
+
+    @Test
+    void customUserLimitUsesTheRequestedOwnerAndPreservesGlobalQueuePosition() {
+        create();
+        create();
+        service.createResolved(request("key"), "bob");
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status ->
+                new BackpressureGuard(jdbc, repository, 20, 2, 5).acquire("alice")))
+                .isInstanceOfSatisfying(TooManyAnalysesException.class, error -> {
+                    assertThat(error.queuePosition()).isEqualTo(4);
+                    assertThat(error.retryAfterSeconds()).isEqualTo(5);
+                });
+        transaction.executeWithoutResult(status ->
+                new BackpressureGuard(jdbc, repository, 20, 2, 5).acquire("bob"));
+        assertThat(repository.countActiveByUser("alice")).isEqualTo(2);
+        assertThat(repository.countActiveByUser("bob")).isEqualTo(1);
+    }
+
+    @Test
     void brokerUnavailableDoesNotPreventAtomicAdmission() {
         UUID id = create();
         assertThat(active()).isEqualTo(1);
@@ -164,7 +276,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         UUID id = seed(20);
         redis.opsForValue().set("analyses:inflight", "9999");
         assertThatThrownBy(() -> transaction.executeWithoutResult(status ->
-                new BackpressureGuard(jdbc, repository, 20, 5).acquire()))
+                new BackpressureGuard(jdbc, repository, 20, 3, 5).acquire("alice")))
                 .isInstanceOf(TooManyAnalysesException.class);
         service.failFromDlq(id, "video", "free one");
         create();
@@ -212,7 +324,7 @@ class AnalysisCapacityTransactionIntegrationTest {
                 await(start);
                 try {
                     transaction.executeWithoutResult(status ->
-                            new BackpressureGuard(jdbc, repository, 20, 5).acquire());
+                            new BackpressureGuard(jdbc, repository, 20, 3, 5).acquire("alice"));
                 } catch (TooManyAnalysesException expected) {
                     // A recreated admission gate can observe either side of the terminal commit.
                 }
@@ -299,7 +411,7 @@ class AnalysisCapacityTransactionIntegrationTest {
     void repeatedCreatesInOneTransactionCountTheirOwnPendingInserts() {
         transaction.executeWithoutResult(status -> {
             for (int i = 0; i < 20; i++) {
-                create();
+                service.createResolved(request("key"), "user-" + i);
             }
         });
         assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
@@ -307,9 +419,9 @@ class AnalysisCapacityTransactionIntegrationTest {
 
     @Test
     void admissionRequiresATransactionAndReadCommittedIsolation() {
-        assertThatThrownBy(guard::acquire).isInstanceOf(IllegalTransactionStateException.class);
+        assertThatThrownBy(() -> guard.acquire("alice")).isInstanceOf(IllegalTransactionStateException.class);
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
-        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> guard.acquire()))
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status -> guard.acquire("alice")))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("READ_COMMITTED");
     }
 
@@ -333,7 +445,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         return transaction.execute(status -> {
             UUID id = null;
             for (int i = 0; i < count; i++) {
-                id = repository.save(Analysis.builder().userId("alice")
+                id = repository.save(Analysis.builder().userId(i == count - 1 ? "alice" : "seed-user-" + i)
                         .fileId("file").fileKey("key").type(AnalysisType.VIDEO).build()).getId();
             }
             return id;

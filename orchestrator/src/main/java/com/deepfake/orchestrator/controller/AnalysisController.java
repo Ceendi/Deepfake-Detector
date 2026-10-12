@@ -46,7 +46,7 @@ public class AnalysisController {
     @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
     @ApiResponse(responseCode = "404", description = "File missing, deleted, or not owned")
     @ApiResponse(responseCode = "503", description = "File metadata dependency unavailable")
-    @ApiResponse(responseCode = "429", description = "Backpressure — in-flight analysis limit reached")
+    @ApiResponse(responseCode = "429", description = "Backpressure — global or per-user in-flight analysis limit reached")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AnalysisResponse create(@CurrentUser AuthenticatedUser user,

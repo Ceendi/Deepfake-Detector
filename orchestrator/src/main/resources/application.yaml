@@ -87,6 +87,7 @@ backpressure:
   # Max concurrent in-flight analyses before POST /api/analysis returns 429 (counts analyses, not
   # detector tasks). Env-overridable so load tests can trip it (e.g. =2 with dummy ML).
   max-inflight: ${BACKPRESSURE_MAX_INFLIGHT:20}
+  max-inflight-per-user: ${BACKPRESSURE_MAX_INFLIGHT_PER_USER:3}
   retry-after-seconds: ${BACKPRESSURE_RETRY_AFTER_SECONDS:5}
 reliability:
   amqp:

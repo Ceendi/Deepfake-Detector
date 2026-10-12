@@ -77,12 +77,12 @@ class AnalysisServiceBackpressureTest {
 
         service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO, null), "alice");
 
-        verify(backpressure).acquire();
+        verify(backpressure).acquire("alice");
     }
 
     @Test
     void rejectionPersistsAndPublishesNothing() {
-        doThrow(new TooManyAnalysesException(21, 5)).when(backpressure).acquire();
+        doThrow(new TooManyAnalysesException(21, 5)).when(backpressure).acquire("alice");
 
         assertThatThrownBy(() ->
                 service.createResolved(new CreateAnalysisRequest("f", "k", AnalysisType.VIDEO, null), "alice"))

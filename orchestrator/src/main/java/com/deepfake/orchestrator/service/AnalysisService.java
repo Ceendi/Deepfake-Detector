@@ -86,7 +86,7 @@ public class AnalysisService {
     /** Transactional writer: only the creation facade supplies a resolved canonical file key. */
     public AnalysisResponse createResolved(CreateAnalysisRequest req, String userId) {
         validateCreate(req, userId);
-        backpressure.acquire(); // 429 here -> nothing persisted or published
+        backpressure.acquire(userId); // 429 here -> nothing persisted or published
 
         Analysis analysis = Analysis.builder()
                 .userId(userId)

@@ -121,6 +121,9 @@ The complete HTTP response has a finite deadline (default 2 seconds, no retries)
 See [input resolution](../reliability.md#creating-an-analysis).
 
 Capacity is the number of committed `PENDING`/`PROCESSING` rows in PostgreSQL.
+Both a global limit (default 20) and a per-authenticated-user limit (default 3) apply;
+a FULL analysis occupies one place in each. Both are configurable with
+`BACKPRESSURE_MAX_INFLIGHT` and `BACKPRESSURE_MAX_INFLIGHT_PER_USER`.
 Admission is serialized by a transaction advisory lock until the create commits or
 rolls back. A failed create consumes no capacity, and a terminal update frees capacity
 only after commit. Redis availability does not affect this limit. See
@@ -128,9 +131,9 @@ only after commit. Redis availability does not affect this limit. See
 
 Three distinct `429 Too Many Requests` can occur:
 
-- **Orchestrator backpressure** (in-flight analysis limit): body
+- **Orchestrator backpressure** (global or per-user in-flight analysis limit): body
   `{ "queuePosition": <int>, "retryAfterSeconds": <int> }` plus a `Retry-After`
-  header. `queuePosition` is the active analysis count plus this rejected request,
+  header. `queuePosition` is the global active analysis count plus this rejected request,
   capped at the maximum signed integer.
 - **SSE connection admission**: normal error body (`TOO_MANY_REQUESTS`) and `Retry-After: 5`; configurable global/owner/analysis connection caps apply after ownership checks.
 - **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
