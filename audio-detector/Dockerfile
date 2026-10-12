@@ -24,9 +24,13 @@ FROM runtime-base AS runtime
 USER root
 
 COPY --chown=app:app pyproject.toml uv.lock ./
+COPY --from=detector_runtime /pyproject.toml /detector-runtime/pyproject.toml
 # Production image is CPU-only (ONNX CPUExecutionProvider). Pulling CPU wheels
 # instead of CUDA drops ~4.5 GB (nvidia/* libs + triton) from the image.
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --no-install-project --no-install-package deepfake-detector-runtime
+
+COPY --from=detector_runtime /detector_runtime /detector-runtime/detector_runtime
+RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
 
 COPY --chown=app:app src ./src
 COPY --chown=app:app training ./training

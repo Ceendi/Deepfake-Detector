@@ -76,9 +76,9 @@ class ControlledInput:
         destination.write_bytes(Path(local_path).read_bytes())
 
 
-consumer.s3_client = ControlledInput()
-real_handle = consumer._handle_message
-real_publish = consumer._publish
+consumer.runtime.s3_client = ControlledInput()
+real_handle = consumer.runtime.handle_message
+real_publish = consumer.runtime.publish
 
 
 def observed_handle(channel, method, properties, body):
@@ -105,6 +105,6 @@ def observed_publish(channel, routing_key, payload):
         event("confirmed", status=payload["status"], result=payload.get("result"))
 
 
-consumer._handle_message = observed_handle
-consumer._publish = observed_publish
+consumer.runtime.handle_message = observed_handle
+consumer.runtime.publish = observed_publish
 consumer.run_consumer({})

@@ -22,11 +22,11 @@ def test_shared_wire_fixture_and_producer(case, monkeypatch):
     inference = MagicMock()
     inference.analyze.return_value = result
     monkeypatch.setattr(consumer, "audio_inference", inference)
-    monkeypatch.setattr(consumer, "s3_client", MagicMock())
+    monkeypatch.setattr(consumer.runtime, "s3_client", MagicMock())
     redis = MagicMock()
     redis.exists.return_value = 0
     redis.set.return_value = True
-    monkeypatch.setattr(consumer, "redis_client", redis)
+    monkeypatch.setattr(consumer.runtime, "redis_client", redis)
     channel = MagicMock()
     task = {"analysis_id": case["payload"]["analysis_id"],
                 "correlation_id": case["payload"]["correlation_id"],

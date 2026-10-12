@@ -587,6 +587,7 @@ dependencies = [
     { name = "anyio" },
     { name = "audiomentations", extra = ["extras"] },
     { name = "boto3" },
+    { name = "deepfake-detector-runtime" },
     { name = "fastapi" },
     { name = "fsspec" },
     { name = "librosa" },
@@ -634,6 +635,7 @@ requires-dist = [
     { name = "anyio", specifier = ">=4.14.2" },
     { name = "audiomentations", extras = ["extras"], specifier = ">=0.37" },
     { name = "boto3", specifier = "==1.42.*" },
+    { name = "deepfake-detector-runtime", directory = "../detector-runtime" },
     { name = "fastapi", specifier = "==0.136.*" },
     { name = "fsspec", specifier = ">=2026.6.0" },
     { name = "librosa", specifier = ">=0.10" },
@@ -672,6 +674,33 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]
+
+[[package]]
+name = "deepfake-detector-runtime"
+version = "0.1.0"
+source = { directory = "../detector-runtime" }
+dependencies = [
+    { name = "boto3" },
+    { name = "opentelemetry-api" },
+    { name = "pika" },
+    { name = "redis" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = "==1.42.*" },
+    { name = "opentelemetry-api", specifier = ">=1.30" },
+    { name = "pika", specifier = "==1.4.*" },
+    { name = "redis" },
+    { name = "structlog", specifier = "==25.*" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "opentelemetry-sdk", specifier = ">=1.30" },
+    { name = "pytest", specifier = ">=8" },
+]
 
 [[package]]
 name = "fast-mp3-augment"

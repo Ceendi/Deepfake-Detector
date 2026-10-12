@@ -557,7 +557,10 @@ services:
     networks: [deepfake]
 
   video-detector:
-    build: ./video-detector
+    build:
+      context: ./video-detector
+      additional_contexts:
+        detector_runtime: ./detector-runtime
     profiles: ["ml"]
     restart: unless-stopped
     security_opt: *default-security
@@ -592,7 +595,10 @@ services:
     networks: [deepfake]
 
   audio-detector:
-    build: ./audio-detector
+    build:
+      context: ./audio-detector
+      additional_contexts:
+        detector_runtime: ./detector-runtime
     profiles: ["ml"]
     restart: unless-stopped
     security_opt: *default-security

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 import pika
 import pytest
+from detector_runtime import consumer as runtime_module
 
 _fake_inference = types.ModuleType("src.inference")
 _fake_inference.AudioInference = MagicMock()
@@ -61,13 +62,14 @@ model = MagicMock(side_effect=RuntimeError("required checkpoint is invalid"))
 module.AudioInference = model
 sys.modules["src.inference"] = module
 from src import consumer, main
+from detector_runtime import consumer as runtime_module
 
 connection = MagicMock()
 channel = connection.channel.return_value
-consumer.pika.BlockingConnection = MagicMock(return_value=connection)
-consumer.redis_client = MagicMock()
-consumer.redis_client.exists.return_value = 0
-consumer.s3_client = MagicMock()
+runtime_module.pika.BlockingConnection = MagicMock(return_value=connection)
+consumer.runtime.redis_client = MagicMock()
+consumer.runtime.redis_client.exists.return_value = 0
+consumer.runtime.s3_client = MagicMock()
 published = []
 def publish(**kwargs):
     channel.basic_ack.assert_not_called()
@@ -105,9 +107,9 @@ async def start():
 asyncio.run(start())
 model.assert_called_once_with()
 assert consumer.audio_inference is None
-consumer.pika.BlockingConnection.assert_called_once()
-consumer.s3_client.download_file.assert_not_called()
-consumer.s3_client.upload_file.assert_not_called()
+runtime_module.pika.BlockingConnection.assert_called_once()
+consumer.runtime.s3_client.download_file.assert_not_called()
+consumer.runtime.s3_client.upload_file.assert_not_called()
 channel.basic_ack.assert_called_once_with(delivery_tag=7)
 assert len(published) == 1
 assert published[0]["status"] == "FAILED"
@@ -133,7 +135,7 @@ def test_lifespan_retains_broker_recovery(monkeypatch, loaded_model):
     connection = MagicMock()
     channel = connection.channel.return_value
     connecting = MagicMock(side_effect=[pika.exceptions.AMQPConnectionError(), connection])
-    monkeypatch.setattr(consumer.pika, "BlockingConnection", connecting)
+    monkeypatch.setattr(runtime_module.pika, "BlockingConnection", connecting)
     disconnected = []
 
     def backoff(seconds):
@@ -141,7 +143,7 @@ def test_lifespan_retains_broker_recovery(monkeypatch, loaded_model):
         assert main._consumer_alive["ok"] is False
         assert seconds == 5
 
-    monkeypatch.setattr(consumer.time, "sleep", backoff)
+    monkeypatch.setattr(runtime_module.time, "sleep", backoff)
 
     def observe_ready(*args, **kwargs):
         if loaded_model:
@@ -183,10 +185,10 @@ def test_lifespan_retains_broker_recovery(monkeypatch, loaded_model):
 def test_missing_model_task_fails_before_io_and_retains_transport_guards(monkeypatch, failure):
     monkeypatch.setattr(consumer, "audio_inference", None)
     s3 = MagicMock()
-    monkeypatch.setattr(consumer, "s3_client", s3)
+    monkeypatch.setattr(consumer.runtime, "s3_client", s3)
     redis = MagicMock()
     redis.exists.return_value = int(failure == "cancelled")
-    monkeypatch.setattr(consumer, "redis_client", redis)
+    monkeypatch.setattr(consumer.runtime, "redis_client", redis)
     channel = MagicMock()
     payloads = []
 

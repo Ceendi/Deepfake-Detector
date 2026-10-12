@@ -30,7 +30,7 @@ structlog.configure(
 # jest jednowatkowe), wiec zbyt niski prog flapowalby healthcheckiem pod obciazeniem.
 HEALTH_MAX_SILENCE_SECONDS = int(os.getenv("HEALTH_MAX_SILENCE_SECONDS", "120"))
 
-_consumer_alive = {"ok": False, "last_beat": 0.0}
+_consumer_alive = consumer.runtime.health_state
 
 
 @asynccontextmanager

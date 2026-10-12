@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [video-detector, audio-detector]
+        service: [video-detector, audio-detector, detector-runtime]
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.2.0
@@ -64,7 +64,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [audio-detector, video-detector]
+        service: [audio-detector, video-detector, detector-runtime]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -188,7 +188,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build the complete detector image
-        run: docker build --tag "detector-security:$SERVICE" "$SERVICE"
+        run: docker build --build-context detector_runtime=detector-runtime --tag "detector-security:$SERVICE" "$SERVICE"
       - name: Test CPU imports, consumers, checkpoints and ONNX without network
         run: scripts/check-detector-image.sh "$SERVICE" "detector-security:$SERVICE"
       - name: Scan installed OS and Python packages
