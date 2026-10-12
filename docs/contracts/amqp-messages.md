@@ -205,18 +205,29 @@ Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no dec
 frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
 `PROCESSING_ERROR` (generic fallback, shared with audio). Audio publishes
 `MEDIA_TOO_LONG` when the input container or decoded waveform exceeds
-`MEDIA_MAX_DURATION_SECONDS` (default 1800 seconds), with the neutral message
-`Media duration exceeds the configured limit.` This fails both AUDIO and FULL;
-result confirmation still precedes task ACK. Audio also publishes
+`MEDIA_MAX_DURATION_SECONDS` (default 1800 seconds), with the localized message
+“Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.” This fails both
+AUDIO and FULL; result confirmation still precedes task ACK. Audio also publishes
 `NO_SPEECH` when no window reaches model inference through its existing energy
-threshold. Its localized message asks for clearly audible speech; it makes no
-claim about authenticity. AUDIO remains FAILED. For FULL, only exact audio
-`NO_SPEECH` may be accepted as a durable `details.audio` marker with `status:
-"NOT_APPLICABLE"`, `reason: "NO_SPEECH"` and localized `message`; no audio score or
+threshold, and `NO_AUDIO_TRACK` when a successful ffprobe audio-stream query
+returns an empty stream list. Failed, timed-out or invalid probes and failed audio
+extraction remain `PROCESSING_ERROR`; they must not be interpreted as missing audio.
+`NO_AUDIO_TRACK` carries the neutral localized message “Materiał nie zawiera ścieżki
+audio.” Generic processing failures use a neutral message without exception text or
+local file paths; full exceptions remain in internal logs. Existing domain codes
+retain their deliberate messages.
+
+AUDIO remains FAILED for either `NO_SPEECH` or `NO_AUDIO_TRACK`. For FULL, only these
+exact audio codes may be accepted as a durable `details.audio` marker with `status:
+"NOT_APPLICABLE"`, the matching `reason` and localized `message`; no audio score or
 verdict is fabricated. FULL then waits for successful video and completes using
 video alone, explicitly explained in the UI/PDF. A first accepted marker or audio
 score blocks later audio results/failures/DLQs, regardless of Redis markers. Other
 source failures retain the existing whole-analysis failure semantics.
+
+Deploy the orchestrator and frontend support before the audio detector starts
+publishing `NO_AUDIO_TRACK`; an older orchestrator treats that code as a fatal FULL
+failure. No queue declarations or message fields change.
 
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
 

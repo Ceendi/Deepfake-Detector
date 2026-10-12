@@ -43,6 +43,19 @@ describe('analysis failure explanation', () => {
     expect(screen.queryByText('FAKE')).not.toBeInTheDocument()
   })
 
+  it.each([
+    ['NO_AUDIO_TRACK', 'Materiał nie zawiera ścieżki audio'],
+    ['MEDIA_TOO_LONG', 'Materiał przekracza dopuszczalną długość'],
+  ])('explains %s without suggesting file damage', (code, message) => {
+    render(
+      <MemoryRouter>
+        <AnalysisStatusState analysis={failedAnalysis(`[${code}] ${message}.`)} />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByText(/Plik może być uszkodzony/)).not.toBeInTheDocument()
+    expect(screen.getAllByText(new RegExp(message))[0]).toBeInTheDocument()
+  })
+
   it('retains the existing generic failure explanation for other codes', () => {
     render(
       <MemoryRouter>

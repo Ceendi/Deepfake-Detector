@@ -1,0 +1,11 @@
+{
+  "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
+  "correlation_id": "corr-no-speech",
+  "source": "audio",
+  "status": "FAILED",
+  "result": null,
+  "error": {
+    "code": "NO_AUDIO_TRACK",
+    "message": "Materiał nie zawiera ścieżki audio."
+  }
+}

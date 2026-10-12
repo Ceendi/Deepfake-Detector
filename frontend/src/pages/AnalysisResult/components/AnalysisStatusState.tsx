@@ -6,10 +6,18 @@ import { Spinner } from '@/components/ui/Spinner/Spinner'
 
 import styles from '../AnalysisResult.module.css'
 
+const FAILURE_MESSAGES: Record<string, string> = {
+  NO_SPEECH:
+    'Brak wystarczająco wyraźnego sygnału audio do analizy. Wgraj nagranie z wyraźnie słyszalną mową.',
+  NO_AUDIO_TRACK: 'Materiał nie zawiera ścieżki audio. Wgraj nagranie z dźwiękiem.',
+  MEDIA_TOO_LONG: 'Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.',
+}
+
 // Stany inne niż COMPLETED — duży placeholder zamiast cienkiego alertu: wypełnia przestrzeń karty
 // i jasno komunikuje status. Podgląd postępu na żywo (SSE) dla „w toku" dojdzie osobno.
 export function AnalysisStatusState({ analysis }: { analysis: Analysis }) {
   if (analysis.status === 'FAILED') {
+    const code = analysis.errorMessage?.match(/^\[([A-Z_]+)\]/)?.[1] ?? ''
     return (
       <div className={styles.statusCard}>
         <span className={styles.statusIcon} data-tone="danger" aria-hidden="true">
@@ -17,9 +25,8 @@ export function AnalysisStatusState({ analysis }: { analysis: Analysis }) {
         </span>
         <h2 className={styles.statusTitle}>Analiza nie powiodła się</h2>
         <p className={styles.statusText}>
-          {analysis.errorMessage?.startsWith('[NO_SPEECH]')
-            ? 'Brak wystarczająco wyraźnego sygnału audio do analizy. Wgraj nagranie z wyraźnie słyszalną mową.'
-            : 'Nie udało się dokończyć przetwarzania tego materiału. Plik może być uszkodzony lub zapisany w nieobsługiwanym formacie. Spróbuj ponownie lub wgraj inny plik.'}
+          {FAILURE_MESSAGES[code] ??
+            'Nie udało się dokończyć przetwarzania tego materiału. Plik może być uszkodzony lub zapisany w nieobsługiwanym formacie. Spróbuj ponownie lub wgraj inny plik.'}
         </p>
         {analysis.errorMessage && <p className={styles.statusDetail}>{analysis.errorMessage}</p>}
         <div className={styles.statusActions}>

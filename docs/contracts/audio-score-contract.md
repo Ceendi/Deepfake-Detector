@@ -70,8 +70,9 @@ AUDIO aggregation and persistence.
   error code `NO_SPEECH` with localized guidance to upload clearly audible speech.
   Silence, quiet audio and empty inputs produce no authenticity verdict or score.
   This energy gate does not establish semantic speech detection. AUDIO fails.
-  For FULL only, an exact audio `NO_SPEECH` failure may instead persist
+  For FULL only, an exact audio `NO_SPEECH` or `NO_AUDIO_TRACK` failure may instead persist
   `details.audio = {status: "NOT_APPLICABLE", reason: "NO_SPEECH", message: "..."}`
+  (using the matching reason; `NO_AUDIO_TRACK` means a successful probe found no audio stream)
   with `audioProb: null`, no audio verdict, score, model or artifacts. FULL waits
   for successful video and then uses video alone for verdict and distance confidence;
   the completed UI and PDF explicitly identify that basis. The first accepted audio

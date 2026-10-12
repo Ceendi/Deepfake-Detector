@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
+import com.deepfake.orchestrator.entity.AudioApplicability;
 
 /**
  * Renders a one-page analysis report PDF from the API view. Semester 1: title + a field table over
@@ -69,9 +70,8 @@ public class ReportPdfService {
         if (a.type() == AnalysisType.FULL && a.status() == AnalysisStatus.COMPLETED
                 && a.audioProb() == null && a.details() != null
                 && a.details().get("audio") instanceof java.util.Map<?, ?> audio
-                && "NOT_APPLICABLE".equals(audio.get("status"))
-                && "NO_SPEECH".equals(audio.get("reason"))) {
-            row(table, "Audio applicability", "Not applicable (NO_SPEECH)");
+                && AudioApplicability.isNotApplicable(audio)) {
+            row(table, "Audio applicability", "Not applicable (" + audio.get("reason") + ")");
             row(table, "Result basis", "Video only (no audio score); confidence uses video only");
         }
         row(table, "Created at", String.valueOf(a.createdAt()));

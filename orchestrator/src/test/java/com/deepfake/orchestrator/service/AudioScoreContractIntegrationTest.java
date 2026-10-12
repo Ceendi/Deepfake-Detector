@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.amqp.core.Message;
@@ -61,7 +61,6 @@ import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.Analysis;
-import com.deepfake.orchestrator.entity.AudioApplicability;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.listener.AnalysisResultListener;
@@ -192,16 +191,12 @@ class AudioScoreContractIntegrationTest {
         }
     }
 
-    @ParameterizedTest(name = "NO_SPEECH / {0}")
-    @EnumSource(value = AnalysisType.class, names = {"AUDIO"})
-    void noSpeechWireFailureHasNoAuthenticityVerdict(AnalysisType type) throws Exception {
+    @ParameterizedTest(name = "{0} / AUDIO")
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void audioNotApplicableWireFailureHasNoAuthenticityVerdict(String reason) throws Exception {
         UUID id = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
-                .fileId("silent.wav").fileKey("silent.wav").type(type).build()).getId();
-        Map<String, Object> audio;
-        try (var input = getClass().getResourceAsStream("/contracts/audio-no-speech-result.json")) {
-            audio = JSON.readValue(input, new TypeReference<>() {});
-        }
-        audio.put("analysis_id", id.toString());
+                .fileId("silent.wav").fileKey("silent.wav").type(AnalysisType.AUDIO).build()).getId();
+        Map<String, Object> audio = notApplicable(id, reason);
         publish(audio);
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                 assertThat(repository.findById(id).orElseThrow().getStatus())
@@ -210,21 +205,21 @@ class AudioScoreContractIntegrationTest {
         Map<?, ?> error = (Map<?, ?>) audio.get("error");
         AnalysisResponse response = service.get(id, "audio-contract");
         assertThat(response.status()).isEqualTo(AnalysisStatus.FAILED);
-        assertThat(response.errorMessage()).isEqualTo("[NO_SPEECH] " + error.get("message"));
+        assertThat(response.errorMessage()).isEqualTo("[" + reason + "] " + error.get("message"));
         assertThat(response.audioProb()).isNull();
         assertThat(response.verdict()).isNull();
         assertThat(response.confidence()).isNull();
     }
 
-    @ParameterizedTest(name = "FULL NO_SPEECH audio first: {0}")
-    @ValueSource(booleans = {false, true})
-    void fullNoSpeechWireMarkerCompletesFromVideoInEitherOrder(boolean audioFirst) throws Exception {
+    @ParameterizedTest(name = "FULL {0} audio first: {1}")
+    @CsvSource({"NO_SPEECH,false", "NO_SPEECH,true", "NO_AUDIO_TRACK,false", "NO_AUDIO_TRACK,true"})
+    void fullAudioNotApplicableWireMarkerCompletesFromVideoInEitherOrder(String reason, boolean audioFirst) throws Exception {
         UUID id = newFull();
         if (audioFirst) {
-            publish(noSpeech(id));
+            publish(notApplicable(id, reason));
             await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
                 Analysis partial = repository.findById(id).orElseThrow();
-                assertThat(AudioApplicability.isNoSpeech(partial.getAudioDetails())).isTrue();
+                assertThat(partial.getAudioDetails()).containsEntry("reason", reason);
                 assertThat(partial.getStatus()).isEqualTo(AnalysisStatus.PENDING);
                 assertThat(partial.getVerdict()).isNull();
             });
@@ -234,17 +229,18 @@ class AudioScoreContractIntegrationTest {
             await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                     assertThat(repository.findById(id).orElseThrow().getVideoProb())
                             .isEqualByComparingTo("0.8"));
-            publish(noSpeech(id));
+            publish(notApplicable(id, reason));
         }
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                 assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.COMPLETED));
-        assertVideoOnly(id);
+        assertVideoOnly(id, reason);
     }
 
-    @Test
-    void durableMarkerRejectsLateAudioSuccessFailureAndDlqAfterRedisLoss() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void durableMarkerRejectsLateAudioSuccessFailureAndDlqAfterRedisLoss(String reason) throws Exception {
         UUID id = newFull();
-        service.handleResult(noSpeech(id));
+        service.handleResult(notApplicable(id, reason));
         assertThat(idempotency.alreadyProcessed(id, "audio")).isTrue();
         idempotency.clear(id); // Real Redis hints lost; the committed JSONB outcome remains authoritative.
         service.handleResult(success(id, "audio", "0.1"));
@@ -253,21 +249,22 @@ class AudioScoreContractIntegrationTest {
         Analysis pending = repository.findById(id).orElseThrow();
         assertThat(pending.getStatus()).isEqualTo(AnalysisStatus.PENDING);
         assertThat(pending.getAudioProb()).isNull();
-        assertThat(AudioApplicability.isNoSpeech(pending.getAudioDetails())).isTrue();
+        assertThat(pending.getAudioDetails()).containsEntry("reason", reason);
         service.handleResult(success(id, "video", "0.8"));
-        assertVideoOnly(id);
+        assertVideoOnly(id, reason);
         idempotency.clear(id);
         service.handleResult(success(id, "audio", "0.9"));
-        service.handleResult(noSpeech(id));
-        assertVideoOnly(id);
+        service.handleResult(notApplicable(id, reason));
+        assertVideoOnly(id, reason);
     }
 
-    @Test
-    void acceptedAudioScoreRejectsLateNoSpeechAndKeepsWeightedFull() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void acceptedAudioScoreRejectsLateAudioNotApplicableAndKeepsWeightedFull(String reason) throws Exception {
         UUID id = newFull();
         service.handleResult(success(id, "audio", "0.1"));
         idempotency.clear(id);
-        service.handleResult(noSpeech(id));
+        service.handleResult(notApplicable(id, reason));
         service.handleResult(success(id, "video", "0.8"));
         AnalysisResponse response = service.get(id, "audio-contract");
         assertThat(response.status()).isEqualTo(AnalysisStatus.COMPLETED);
@@ -277,37 +274,39 @@ class AudioScoreContractIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"MODEL_UNAVAILABLE", "PROCESSING_ERROR", "VIDEO_DECODE_FAILED", "NO_FACE_DETECTED"})
+    @ValueSource(strings = {"MODEL_UNAVAILABLE", "PROCESSING_ERROR", "VIDEO_DECODE_FAILED", "NO_FACE_DETECTED", "MEDIA_TOO_LONG"})
     void otherAudioFailuresRemainFatalForFull(String code) {
         UUID id = newFull();
         service.handleResult(failure(id, "audio", code));
         assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.FAILED);
     }
 
-    @Test
-    void videoNoSpeechOrFailureAfterAudioMarkerStillFailsFull() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void videoFailureAfterAudioMarkerStillFailsFull(String reason) throws Exception {
         UUID id = newFull();
-        service.handleResult(noSpeech(id));
-        service.handleResult(failure(id, "video", "NO_SPEECH"));
+        service.handleResult(notApplicable(id, reason));
+        service.handleResult(failure(id, "video", reason));
         assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.FAILED);
     }
 
     @ParameterizedTest
-    @EnumSource(value = AnalysisStatus.class, names = {"CANCELLED", "FAILED", "COMPLETED"})
-    void terminalAnalysisRejectsNoSpeechMarker(AnalysisStatus status) throws Exception {
+    @MethodSource("terminalMarkers")
+    void terminalAnalysisRejectsAudioNotApplicableMarker(String reason, AnalysisStatus status) throws Exception {
         Analysis analysis = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
                 .fileId("f").fileKey("k").type(AnalysisType.FULL).build());
         jdbc.update("UPDATE analysis SET status = ? WHERE id = ?", status.name(), analysis.getId());
-        service.handleResult(noSpeech(analysis.getId()));
+        service.handleResult(notApplicable(analysis.getId(), reason));
         Analysis stored = repository.findById(analysis.getId()).orElseThrow();
         assertThat(stored.getStatus()).isEqualTo(status);
         assertThat(stored.getAudioDetails()).isNull();
     }
 
-    @Test
-    void rolledBackMarkerLeavesNoDatabaseOrRedisAcceptanceAndCanReplay() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void rolledBackMarkerLeavesNoDatabaseOrRedisAcceptanceAndCanReplay(String reason) throws Exception {
         UUID id = newFull();
-        Map<String, Object> payload = noSpeech(id);
+        Map<String, Object> payload = notApplicable(id, reason);
         assertThatThrownBy(() -> new TransactionTemplate(transactions).executeWithoutResult(status -> {
             service.handleResult(payload);
             throw new IllegalStateException("controlled rollback");
@@ -318,38 +317,40 @@ class AudioScoreContractIntegrationTest {
         publish(payload);
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                 assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.COMPLETED));
-        assertVideoOnly(id);
+        assertVideoOnly(id, reason);
     }
 
-    @Test
-    void concurrentVideoAndNoSpeechCompleteExactlyOnce() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void concurrentVideoAndAudioNotApplicableCompleteExactlyOnce(String reason) throws Exception {
         try (var pool = Executors.newFixedThreadPool(2)) {
             for (int i = 0; i < 10; i++) {
                 UUID id = newFull();
                 CountDownLatch start = new CountDownLatch(1);
-                Map<String, Object> audio = noSpeech(id);
+                Map<String, Object> audio = notApplicable(id, reason);
                 var videoTask = pool.submit(() -> { start.await(); service.handleResult(success(id, "video", "0.8")); return null; });
                 var audioTask = pool.submit(() -> { start.await(); service.handleResult(audio); return null; });
                 start.countDown();
                 videoTask.get(15, TimeUnit.SECONDS);
                 audioTask.get(15, TimeUnit.SECONDS);
-                assertVideoOnly(id);
+                assertVideoOnly(id, reason);
                 verify(streams, times(1)).sendResult(eq(id), any());
             }
         }
     }
 
-    static Stream<Arguments> competingNoSpeechOutcomes() {
+    static Stream<Arguments> competingAudioNotApplicableOutcomes() {
         return Stream.of(false, true).flatMap(failure -> Stream.of(false, true)
-                .map(rollback -> Arguments.of(failure, rollback)));
+                .flatMap(rollback -> Stream.of("NO_SPEECH", "NO_AUDIO_TRACK")
+                        .map(reason -> Arguments.of(failure, rollback, reason))));
     }
 
-    @ParameterizedTest(name = "held marker: competing failure={0}, rollback={1}")
-    @MethodSource("competingNoSpeechOutcomes")
+    @ParameterizedTest(name = "held {2} marker: competing failure={0}, rollback={1}")
+    @MethodSource("competingAudioNotApplicableOutcomes")
     void heldMarkerTransactionProtectsAcceptanceUntilCommitOrRollback(boolean failure,
-                                                                      boolean rollback) throws Exception {
+                                                                      boolean rollback, String reason) throws Exception {
         UUID id = newFull();
-        Map<String, Object> marker = noSpeech(id);
+        Map<String, Object> marker = notApplicable(id, reason);
         CountDownLatch written = new CountDownLatch(1);
         CountDownLatch finish = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {
@@ -389,7 +390,7 @@ class AudioScoreContractIntegrationTest {
             assertThat(accepted.getAudioProb()).isNull();
         } else {
             assertThat(accepted.getStatus()).isEqualTo(AnalysisStatus.PENDING);
-            assertThat(AudioApplicability.isNoSpeech(accepted.getAudioDetails())).isEqualTo(!rollback);
+            assertThat(accepted.getAudioDetails() != null && reason.equals(accepted.getAudioDetails().get("reason"))).isEqualTo(!rollback);
             assertThat(accepted.getAudioProb() == null).isEqualTo(!rollback);
             service.handleResult(success(id, "video", "0.8"));
             if (rollback) {
@@ -398,17 +399,18 @@ class AudioScoreContractIntegrationTest {
                 assertThat(response.audioProb()).isEqualByComparingTo("0.1");
                 assertThat(response.confidence()).isEqualByComparingTo("0.04");
             } else {
-                assertVideoOnly(id);
+                assertVideoOnly(id, reason);
             }
         }
         assertThat(idempotency.alreadyProcessed(id, "audio")).isTrue();
     }
 
-    @Test
-    void videoAnalysisIgnoresUnexpectedAudioNoSpeech() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void videoAnalysisIgnoresUnexpectedAudioNotApplicable(String reason) throws Exception {
         Analysis analysis = repository.saveAndFlush(Analysis.builder().userId("audio-contract")
                 .fileId("f").fileKey("k").type(AnalysisType.VIDEO).build());
-        service.handleResult(noSpeech(analysis.getId()));
+        service.handleResult(notApplicable(analysis.getId(), reason));
         Analysis stored = repository.findById(analysis.getId()).orElseThrow();
         assertThat(stored.getStatus()).isEqualTo(AnalysisStatus.PENDING);
         assertThat(stored.getAudioDetails()).isNull();
@@ -425,13 +427,20 @@ class AudioScoreContractIntegrationTest {
                 .isEqualTo(AnalysisStatus.PENDING);
     }
 
+    static Stream<Arguments> terminalMarkers() {
+        return Stream.of("NO_SPEECH", "NO_AUDIO_TRACK").flatMap(reason ->
+                Stream.of(AnalysisStatus.CANCELLED, AnalysisStatus.FAILED, AnalysisStatus.COMPLETED)
+                        .map(status -> Arguments.of(reason, status)));
+    }
+
     private UUID newFull() {
         return repository.saveAndFlush(Analysis.builder().userId("audio-contract")
                 .fileId("f").fileKey("k").type(AnalysisType.FULL).build()).getId();
     }
 
-    private Map<String, Object> noSpeech(UUID id) throws Exception {
-        try (var input = getClass().getResourceAsStream("/contracts/audio-no-speech-result.json")) {
+    private Map<String, Object> notApplicable(UUID id, String reason) throws Exception {
+        try (var input = getClass().getResourceAsStream("/contracts/" + ("NO_SPEECH".equals(reason) ? "audio-no-speech-result.json"
+                            : "audio-no-track-result.json"))) {
             Map<String, Object> payload = JSON.readValue(input, new TypeReference<>() {});
             payload.put("analysis_id", id.toString());
             return payload;
@@ -448,7 +457,7 @@ class AudioScoreContractIntegrationTest {
                 "error", Map.of("code", code, "message", "controlled failure"));
     }
 
-    private void assertVideoOnly(UUID id) {
+    private void assertVideoOnly(UUID id, String reason) {
         AnalysisResponse response = service.get(id, "audio-contract");
         assertThat(response.status()).isEqualTo(AnalysisStatus.COMPLETED);
         assertThat(response.videoProb()).isEqualByComparingTo("0.8");
@@ -458,7 +467,7 @@ class AudioScoreContractIntegrationTest {
         assertThat(response.errorMessage()).isNull();
         Map<?, ?> marker = (Map<?, ?>) response.details().get("audio");
         assertThat(marker.get("status")).isEqualTo("NOT_APPLICABLE");
-        assertThat(marker.get("reason")).isEqualTo("NO_SPEECH");
+        assertThat(marker.get("reason")).isEqualTo(reason);
         assertThat(marker.get("message")).isInstanceOf(String.class);
         assertThat(marker).hasSize(3); // No fake audio verdict/model/metadata/artifacts.
     }

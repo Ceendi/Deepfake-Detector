@@ -47,34 +47,41 @@ describe('audio score contract', () => {
     expect(parseAudioSegments(result.metadata)[0].prob_fake).toBe(result.prob_fake)
   })
 
-  it('renders explicit completed FULL no-audio basis without an audio verdict or timeline', () => {
-    const omitted: Analysis = {
-      ...analysis(0, { status: 'NOT_APPLICABLE', reason: 'NO_SPEECH', message: 'Brak sygnału.' }),
-      type: 'FULL',
-      audioProb: null,
-      videoProb: 0.2,
-      confidence: 0.6,
-      verdict: 'REAL',
-    }
-    expect(isAudioNotApplicable(omitted)).toBe(true)
-    expect(isAudioNotApplicable({ ...omitted, type: 'AUDIO' })).toBe(false)
-    expect(isAudioNotApplicable({ ...omitted, status: 'FAILED' })).toBe(false)
-    expect(isAudioNotApplicable({ ...omitted, audioProb: 0.5 })).toBe(false)
-    render(
-      <>
-        <ModalitySection analysis={omitted} />
-        <SummarySection analysis={omitted} />
-        <AudioTimeline metadata={omitted.details?.audio?.metadata} />
-      </>,
-    )
-    expect(screen.getByText(/Audio pominięte:/)).toBeInTheDocument()
-    expect(screen.getByText(/Werdykt i pewność dotyczą wyłącznie wideo/)).toBeInTheDocument()
-    expect(screen.getByText('Ścieżka wideo')).toBeInTheDocument()
-    expect(screen.queryByText('Ścieżka audio')).not.toBeInTheDocument()
-    expect(screen.queryByText(/Dźwięk: głos/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Model audio:/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('img', { name: /Oś czasu ryzyka audio/ })).not.toBeInTheDocument()
-  })
+  it.each(['NO_SPEECH', 'NO_AUDIO_TRACK'] as const)(
+    'renders completed FULL %s without an audio verdict or timeline',
+    (reason) => {
+      const omitted: Analysis = {
+        ...analysis(0, { status: 'NOT_APPLICABLE', reason, message: 'Brak sygnału.' }),
+        type: 'FULL',
+        audioProb: null,
+        videoProb: 0.2,
+        confidence: 0.6,
+        verdict: 'REAL',
+      }
+      expect(isAudioNotApplicable(omitted)).toBe(true)
+      expect(isAudioNotApplicable({ ...omitted, type: 'AUDIO' })).toBe(false)
+      expect(isAudioNotApplicable({ ...omitted, status: 'FAILED' })).toBe(false)
+      expect(isAudioNotApplicable({ ...omitted, audioProb: 0.5 })).toBe(false)
+      render(
+        <>
+          <ModalitySection analysis={omitted} />
+          <SummarySection analysis={omitted} />
+          <AudioTimeline metadata={omitted.details?.audio?.metadata} />
+        </>,
+      )
+      expect(screen.getByText(/Audio pominięte:/)).toBeInTheDocument()
+      if (reason === 'NO_AUDIO_TRACK') {
+        expect(screen.getByText(/materiał nie zawiera ścieżki audio/)).toBeInTheDocument()
+        expect(screen.queryByText(/brak wystarczająco wyraźnego/)).not.toBeInTheDocument()
+      }
+      expect(screen.getByText(/Werdykt i pewność dotyczą wyłącznie wideo/)).toBeInTheDocument()
+      expect(screen.getByText('Ścieżka wideo')).toBeInTheDocument()
+      expect(screen.queryByText('Ścieżka audio')).not.toBeInTheDocument()
+      expect(screen.queryByText(/Dźwięk: głos/)).not.toBeInTheDocument()
+      expect(screen.queryByText(/Model audio:/)).not.toBeInTheDocument()
+      expect(screen.queryByRole('img', { name: /Oś czasu ryzyka audio/ })).not.toBeInTheDocument()
+    },
+  )
 
   it('uses REAL at equality and distance confidence', () => {
     expect(sourceOutcome(0.5)).toEqual({ verdict: 'REAL', confidence: 0 })

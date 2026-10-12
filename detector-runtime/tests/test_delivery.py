@@ -267,3 +267,16 @@ def test_progress_and_result_confirm_before_ack_with_context(runtime):
     runtime.record_outcome.assert_called_once_with("completed", events[1][1]["result"])
     assert structlog.contextvars.get_contextvars() == {}
 
+
+
+@pytest.mark.parametrize("source", ["audio", "video"])
+def test_generic_failure_does_not_publish_private_paths(runtime, source):
+    runtime.source = source
+    runtime.process_task.side_effect = OSError("Cannot read /tmp/private/input.wav")
+    channel = MagicMock()
+    runtime.handle_message(channel, MagicMock(delivery_tag=7), MagicMock(headers={}),
+                           json.dumps(_task_msg()).encode())
+    payload = json.loads(channel.basic_publish.call_args.kwargs["body"])
+    assert payload["error"] == {"code": "PROCESSING_ERROR",
+                                "message": "Nie udało się przetworzyć materiału."}
+    channel.basic_ack.assert_called_once_with(delivery_tag=7)

@@ -7,6 +7,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
@@ -28,6 +30,9 @@ public record AnalysisResponse(
         BigDecimal confidence,
         BigDecimal videoProb,
         BigDecimal audioProb,
+        @Schema(description = "Per-source results. FULL audio may be a NOT_APPLICABLE marker with reason "
+                + "NO_SPEECH or NO_AUDIO_TRACK and a localized message, without an audio score. "
+                + "FULL then completes from successful video alone; verdict and confidence use video only.")
         Map<String, Object> details,
         String errorMessage,
         Instant createdAt,

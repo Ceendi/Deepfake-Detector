@@ -43,7 +43,7 @@ export interface SourceDetails {
   verdict?: Verdict
   confidence?: number // Distance from the decision boundary for the versioned audio contract.
   status?: 'NOT_APPLICABLE'
-  reason?: 'NO_SPEECH'
+  reason?: 'NO_SPEECH' | 'NO_AUDIO_TRACK'
   message?: string
   modelVersion?: string
   gradcamKeys?: string[]

@@ -313,10 +313,11 @@ public class AnalysisService {
 
         if ("FAILED".equals(status)) {
             if ("audio".equals(source) && payload.get("error") instanceof Map<?, ?> error
-                    && "NO_SPEECH".equals(error.get("code"))) {
+                    && AudioApplicability.isSupportedReason(error.get("code"))) {
+                String reason = (String) error.get("code");
                 String message = error.get("message") instanceof String value ? value
-                        : "Brak wystarczająco wyraźnego sygnału audio do analizy.";
-                if (repository.writeAudioNotApplicable(id, AudioApplicability.noSpeech(message),
+                        : AudioApplicability.defaultMessage(reason);
+                if (repository.writeAudioNotApplicable(id, AudioApplicability.notApplicable(reason, message),
                         ACTIVE, Instant.now()) == 1) {
                     markProcessedAfterCommit(id, source);
                     finishIfReady(id);
@@ -357,14 +358,14 @@ public class AnalysisService {
         boolean needV = a.getType() == AnalysisType.VIDEO || a.getType() == AnalysisType.FULL;
         boolean needA = a.getType() == AnalysisType.AUDIO || a.getType() == AnalysisType.FULL;
         boolean audioNotApplicable = a.getType() == AnalysisType.FULL
-                && AudioApplicability.isNoSpeech(a.getAudioDetails());
+                && AudioApplicability.isNotApplicable(a.getAudioDetails());
         if ((needV && a.getVideoProb() == null)
                 || (needA && a.getAudioProb() == null && !audioNotApplicable)) {
             cache.evictById(id);
             return; // wait for the other source
         }
 
-        // Only explicit FULL no-speech may complete without audio; aggregate then uses video alone.
+        // Only explicit FULL audio inapplicability may complete without audio; aggregate then uses video alone.
         BigDecimal finalProb = aggregate(a.getVideoProb(), a.getAudioProb());
         String verdict = finalProb.compareTo(THRESHOLD) > 0 ? "FAKE" : "REAL";
         BigDecimal confidence = finalProb.subtract(THRESHOLD).abs().multiply(TWO);

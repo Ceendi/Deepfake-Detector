@@ -38,7 +38,7 @@ def test_waveform_header_is_checked_before_read(inference_module, monkeypatch):
 
 
 def test_extraction_is_bounded_and_disables_video(inference_module, monkeypatch):
-    run = MagicMock(return_value=SimpleNamespace(returncode=0, stderr=b""))
+    run = MagicMock(return_value=SimpleNamespace(returncode=0, stderr=b"", stdout=b'{"streams":[{"index":0}]}'))
     monkeypatch.setattr(inference_module.subprocess, "run", run)
     instance(inference_module)._extract_audio("input", 16000, "out.wav")
     command = run.call_args.args[0]
@@ -181,7 +181,7 @@ def test_overlong_input_publishes_confirmed_failure_before_ack(
     assert results[0]["status"] == "FAILED"
     assert results[0]["result"] is None
     assert results[0]["error"] == {"code": "MEDIA_TOO_LONG",
-                                   "message": "Media duration exceeds the configured limit."}
+                                   "message": "Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie."}
     s3.upload_file.assert_not_called()
     path = s3.download_file.call_args.args[2]
     from pathlib import Path

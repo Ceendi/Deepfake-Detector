@@ -62,7 +62,10 @@ export function SummarySection({ analysis }: { analysis: Analysis }) {
   if (isAudioNotApplicable(analysis)) {
     findings.push({
       tone: 'muted',
-      text: 'Audio pominięte: brak wystarczająco wyraźnego sygnału audio. Werdykt i pewność dotyczą wyłącznie wideo.',
+      text:
+        analysis.details?.audio?.reason === 'NO_AUDIO_TRACK'
+          ? 'Audio pominięte: materiał nie zawiera ścieżki audio. Werdykt i pewność dotyczą wyłącznie wideo.'
+          : 'Audio pominięte: brak wystarczająco wyraźnego sygnału audio. Werdykt i pewność dotyczą wyłącznie wideo.',
     })
   }
   findings.push(RECOMMENDATION[verdict])
