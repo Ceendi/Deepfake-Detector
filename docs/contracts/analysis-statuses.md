@@ -12,10 +12,10 @@
 
 `COMPLETED`, `FAILED`, and `CANCELLED` are terminal.
 
-FULL has one explicit source exception: audio `NO_SPEECH` can be durably accepted
-as `details.audio.status: "NOT_APPLICABLE"` with reason `NO_SPEECH` and no audio
+FULL has one explicit source exception: audio `NO_SPEECH` or `NO_AUDIO_TRACK` can be durably accepted
+as `details.audio.status: "NOT_APPLICABLE"` with the matching reason and no audio
 score. It still waits for successful video, then completes using video alone.
-AUDIO `NO_SPEECH` and all other unaccepted required-source errors remain failures.
+AUDIO `NO_SPEECH` / `NO_AUDIO_TRACK` and all other unaccepted required-source errors remain failures.
 The first accepted audio score or explicit marker owns that source even after Redis
 hint loss; later audio successes, failures and DLQs cannot replace it.
 

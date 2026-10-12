@@ -195,7 +195,9 @@ class DetectorRuntime:
                     payload = {
                         "analysis_id": analysis_id, "correlation_id": correlation_id,
                         "source": self.source, "status": "FAILED", "result": None,
-                        "error": {"code": getattr(e, "code", "PROCESSING_ERROR"), "message": str(e)},
+                        "error": {"code": getattr(e, "code", "PROCESSING_ERROR"),
+                                  "message": str(e) if hasattr(e, "code")
+                                  else "Nie udało się przetworzyć materiału."},
                     }
 
                 # The blocking publish awaits confirm; publish and ACK failures must escape.

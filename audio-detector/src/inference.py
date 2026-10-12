@@ -40,7 +40,15 @@ class MediaTooLongError(RuntimeError):
     code = "MEDIA_TOO_LONG"
 
     def __init__(self):
-        super().__init__("Media duration exceeds the configured limit.")
+        super().__init__("Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.")
+
+
+class NoAudioTrackError(RuntimeError):
+    code = "NO_AUDIO_TRACK"
+
+    def __init__(self):
+        super().__init__("Materiał nie zawiera ścieżki audio.")
+
 
 INFERENCE_TIME = Histogram(
     "audio_inference_duration_seconds",
@@ -63,16 +71,29 @@ class AudioInference:
         MODEL_LOAD_TIME.set(time.time() - start_load)
 
     def _extract_audio(self, input_path, sr, out_path):
-        # Surface ffmpeg failures here: with stderr discarded a bad input only blew up later
-        # as a cryptic sf.read error on the missing/empty wav.
-        proc = subprocess.run([
-            "ffmpeg", "-y", "-i", input_path,
-            "-vn", "-t", str(MEDIA_MAX_DURATION_SECONDS + 1 / sr),
-            "-ar", str(sr), "-ac", "1", out_path
-        ], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=False)
+        # Only a successful stream probe can distinguish absent audio from corrupt media.
+        try:
+            probe = subprocess.run([
+                "ffprobe", "-v", "error", "-select_streams", "a",
+                "-show_entries", "stream=index", "-of", "json", input_path,
+            ], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=10)
+            streams = json.loads(probe.stdout)["streams"] if probe.returncode == 0 else None
+            if not isinstance(streams, list):
+                raise TypeError("Invalid stream probe")
+        except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, KeyError):
+            raise RuntimeError("Nie udało się sprawdzić ścieżki audio w materiale.") from None
+        if not streams:
+            raise NoAudioTrackError()
+        try:
+            proc = subprocess.run([
+                "ffmpeg", "-y", "-i", input_path,
+                "-vn", "-t", str(MEDIA_MAX_DURATION_SECONDS + 1 / sr),
+                "-ar", str(sr), "-ac", "1", out_path
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        except OSError:
+            raise RuntimeError("Nie udało się wyodrębnić ścieżki audio z materiału.") from None
         if proc.returncode != 0:
-            tail = proc.stderr.decode(errors="replace").strip()[-500:]
-            raise RuntimeError(f"ffmpeg extraction failed (rc={proc.returncode}): {tail}")
+            raise RuntimeError("Nie udało się wyodrębnić ścieżki audio z materiału.")
 
     def _check_duration(self, path):
         try:

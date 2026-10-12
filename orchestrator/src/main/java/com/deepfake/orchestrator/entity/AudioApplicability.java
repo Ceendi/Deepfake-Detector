@@ -6,12 +6,22 @@ import java.util.Map;
 public final class AudioApplicability {
     private AudioApplicability() {}
 
-    public static Map<String, Object> noSpeech(String message) {
-        return Map.of("status", "NOT_APPLICABLE", "reason", "NO_SPEECH", "message", message);
+    public static boolean isSupportedReason(Object reason) {
+        return "NO_SPEECH".equals(reason) || "NO_AUDIO_TRACK".equals(reason);
     }
 
-    public static boolean isNoSpeech(Map<String, Object> details) {
+    public static Map<String, Object> notApplicable(String reason, String message) {
+        if (!isSupportedReason(reason)) throw new IllegalArgumentException("Unknown audio applicability reason");
+        return Map.of("status", "NOT_APPLICABLE", "reason", reason, "message", message);
+    }
+
+    public static String defaultMessage(String reason) {
+        return "NO_AUDIO_TRACK".equals(reason) ? "Materiał nie zawiera ścieżki audio."
+                : "Brak wystarczająco wyraźnego sygnału audio do analizy.";
+    }
+
+    public static boolean isNotApplicable(Map<?, ?> details) {
         return details != null && "NOT_APPLICABLE".equals(details.get("status"))
-                && "NO_SPEECH".equals(details.get("reason"));
+                && isSupportedReason(details.get("reason"));
     }
 }

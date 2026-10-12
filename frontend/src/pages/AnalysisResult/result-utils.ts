@@ -68,7 +68,7 @@ export function isAudioNotApplicable(analysis: Analysis): boolean {
     analysis.status === 'COMPLETED' &&
     analysis.audioProb == null &&
     audio?.status === 'NOT_APPLICABLE' &&
-    audio.reason === 'NO_SPEECH'
+    (audio.reason === 'NO_SPEECH' || audio.reason === 'NO_AUDIO_TRACK')
   )
 }
 

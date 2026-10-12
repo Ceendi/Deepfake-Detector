@@ -285,17 +285,18 @@ touch and may be shared by other analyses — its lifecycle is the file service'
 | `details`      | `object` \| `null`                                             | no detector has reported yet                   |
 | `errorMessage` | `string` \| `null`                                             | `status != FAILED`                             |
 
-For completed FULL analyses whose audio returned `NO_SPEECH`, `audioProb` remains
+For completed FULL analyses whose audio returned `NO_SPEECH` or `NO_AUDIO_TRACK`, `audioProb` remains
 null and `details.audio` records an explicit source outcome:
 
 ```json
 {"status": "NOT_APPLICABLE", "reason": "NO_SPEECH", "message": "..."}
 ```
 
+`reason` is `NO_SPEECH` or `NO_AUDIO_TRACK`, matching the accepted audio error code.
 This marker has no audio verdict, confidence, model version, metadata or artifact
 arrays. FULL waits for successful video and then uses the video score alone for its
 verdict and distance confidence; completed UI/PDF explain that basis. A successful
-two-source FULL retains its existing 0.6/0.4 aggregation. AUDIO `NO_SPEECH` remains
+two-source FULL retains its existing 0.6/0.4 aggregation. AUDIO `NO_SPEECH` and `NO_AUDIO_TRACK` remain
 FAILED; all other unaccepted required-source failures remain fatal for FULL.
 
 `details` groups per-source detector results under `video` / `audio` keys (only the

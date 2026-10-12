@@ -218,7 +218,25 @@ Code: `AnalysisService.handleResult`, `AnalysisRepository`.
 - Redis `dedup:{id}:{source}` (TTL `RELIABILITY_IDEMPOTENCY_TTL_SECONDS`, 900 s) is set after commit
   and only short-circuits obvious duplicates. Missing or lost markers fall back to PostgreSQL.
 
-Tests: `AnalysisResultAcceptanceIntegrationTest`.
+For FULL only, audio `NO_SPEECH` or `NO_AUDIO_TRACK` may commit an explicit
+`NOT_APPLICABLE` marker in audio JSONB details, without an audio score or verdict.
+The source CAS accepts only the first score or marker; later audio results and DLQs
+cannot replace it even after Redis hint loss. A rollback leaves both PostgreSQL and
+Redis acceptance unset. FULL still requires successful video and uses its score
+alone for verdict and confidence. AUDIO and video-source errors remain fatal.
+The UI and PDF distinguish an absent audio track from audio with no model evidence.
+
+Audio checks streams with ffprobe before extraction. Only successful JSON output
+with an empty audio-stream list produces `NO_AUDIO_TRACK`; corrupt input, invalid
+output, timeout and extraction failure remain generic processing errors. Shared
+runtime failures without a domain code publish a neutral message rather than raw
+exception text containing private paths; internal logs retain the exception.
+Deploy orchestrator/frontend support before enabling the new detector code.
+
+Tests: `AnalysisResultAcceptanceIntegrationTest`, `AudioScoreContractIntegrationTest`,
+`ReportPdfServiceTest`, `audio-detector/tests/test_inference_extract.py` (including
+generated temporary media with real ffmpeg/ffprobe), `detector-runtime/tests/test_delivery.py`
+and frontend result/failure regressions.
 
 ## Listener retries, DLQs and quarantine
 

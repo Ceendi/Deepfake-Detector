@@ -11,6 +11,8 @@ import org.openpdf.text.pdf.PdfReader;
 import org.openpdf.text.pdf.parser.PdfTextExtractor;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
@@ -37,16 +39,17 @@ class ReportPdfServiceTest {
         assertThat(new String(pdf, 0, 5)).startsWith("%PDF-");
     }
 
-    @Test
-    void renderedReportExplainsNoSpeechVideoOnlyBasisWithoutAudioScore() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"NO_SPEECH", "NO_AUDIO_TRACK"})
+    void renderedReportExplainsVideoOnlyBasisWithoutAudioScore(String reason) throws Exception {
         Instant now = Instant.parse("2026-10-11T10:00:00Z");
         AnalysisResponse analysis = new AnalysisResponse(UUID.randomUUID(), "alice", "f", "k",
                 AnalysisType.FULL, AnalysisStatus.COMPLETED, "FAKE", new BigDecimal("0.6"),
                 new BigDecimal("0.8"), null, Map.of("audio", Map.of("status", "NOT_APPLICABLE",
-                    "reason", "NO_SPEECH", "message", "No model evidence")), null, now, now);
+                    "reason", reason, "message", "No model evidence")), null, now, now);
         try (PdfReader reader = new PdfReader(service.render(analysis))) {
             String text = new PdfTextExtractor(reader).getTextFromPage(1).replaceAll("\\s+", " ");
-            assertThat(text).contains("Not applicable (NO_SPEECH)", "Video only (no audio score)",
+            assertThat(text).contains("Not applicable (" + reason + ")", "Video only (no audio score)",
                     "confidence uses video only", "Audio probability—");
             assertThat(text).contains("0.8", "0.6");
         }
