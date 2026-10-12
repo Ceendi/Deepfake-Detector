@@ -66,6 +66,7 @@ def declare(channel):
     for source in ["video", "audio"]:
         queue = f"analysis.{source}"
         channel.queue_declare(queue=queue, durable=True, arguments={
+            "x-queue-type": "quorum", "x-delivery-limit": 5,
             "x-dead-letter-exchange": "analysis.dlx", "x-dead-letter-routing-key": queue + ".dlq"})
         channel.queue_bind(queue=queue, exchange="analysis.exchange", routing_key=queue)
     for queue in ["analysis.results", "analysis.progress"]:

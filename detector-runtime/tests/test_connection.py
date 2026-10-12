@@ -19,6 +19,8 @@ def test_topology_matches_the_existing_contract(runtime):
     ]
     assert ch.queue_declare.call_args_list == [
         call(queue=runtime.queue, durable=True, arguments={
+            "x-queue-type": "quorum",
+            "x-delivery-limit": 5,
             "x-dead-letter-exchange": "analysis.dlx",
             "x-dead-letter-routing-key": f"{runtime.queue}.dlq",
         }),

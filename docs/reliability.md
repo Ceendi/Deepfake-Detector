@@ -110,6 +110,13 @@ connection loop and a single inference thread per process.
 
 - **Delivery:** manual ACK, prefetch 1, AMQP heartbeat 30 s. Every valid, non-cancelled delivery
   is computed, including redeliveries and concurrent copies; there are no Redis processing claims.
+  Task queues are quorum with `x-delivery-limit=5`. As documented in
+  [RabbitMQ poison message handling](https://www.rabbitmq.com/docs/quorum-queues#poison-message-handling),
+  on RabbitMQ 4.3 process crashes and
+  lost connections with unacked work increment `x-delivery-count`; `basic.nack` returns do not.
+  Count 0 is the initial attempt, counts 1–5 are retries. Exceeding the limit routes the task
+  through the existing DLX to its source DLQ, where the source guard transitions it to FAILED.
+  A crash loop therefore frees the queue, even when every attempt sends a fresh start ping.
 - **Thread ownership:** one worker thread handles the attempt, including input download, model
   inference and artifact upload. The connection thread services pika I/O at one-second intervals
   and refreshes the consumer health heartbeat even while these operations block. Progress,
@@ -141,6 +148,33 @@ stuck-job idle budget below.
 Tests: `detector-runtime/tests/` (shared delivery guards), `tests/worker_redelivery/`
 (real worker processes with RabbitMQ and Redis; inference is
 stubbed), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
+
+## Task queue upgrade
+
+`analysis.video` and `analysis.audio` change from classic to quorum. RabbitMQ cannot change
+an existing queue's type in place; starting new application code against old queues causes
+`PRECONDITION_FAILED`. Keep the broker hostname and volume unchanged. This procedure touches
+only these two task queues; it does not purge DLQs, results, progress or broker storage.
+
+1. Block new analysis creation at ingress. Keep the old orchestrator, outbox publisher and
+   workers running until all accepted analyses have drained.
+   Cancel stuck/crashing analyses through the existing owner cancel API so queued tasks can
+   be ACKed without computation. If the backlog cannot be drained, postpone the upgrade;
+   deleting a non-empty queue loses tasks and must not be used as migration.
+2. Verify no active analyses or unsent outbox tasks for active analyses remain and both task
+   queues have zero ready and unacknowledged messages. Disable the outbox publisher and stop
+   the orchestrator and both detectors to prevent redeclaration
+   and concurrent publication. Check the queue counts again.
+3. On the existing broker, delete only the two empty, unused queues:
+   `rabbitmqctl delete_queue analysis.video --if-empty --if-unused` and
+   `rabbitmqctl delete_queue analysis.audio --if-empty --if-unused` (use the deployment vhost).
+   A failed guard means the upgrade must wait; never purge the queue or delete the volume.
+4. Deploy the matching orchestrator and shared detector runtime together. Their declarations
+   recreate quorum queues and existing bindings. Verify `x-queue-type=quorum`,
+   `x-delivery-limit=5` and both DLX arguments, then re-enable dispatch/admission.
+
+Rollback also requires draining and recreating these two empty queues before deploying the old
+classic declarations. This PR does not perform queue deletion automatically.
 
 ## Result acceptance and idempotence
 
@@ -195,20 +229,38 @@ Tests: `DeadLetterListenerIntegrationTest`, `AmqpRecoveryControlTest`.
 
 Code: `StuckJobRecoveryService`, `AnalysisRepository.failIfExpired`.
 
-Every `RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS` (300 s) an active analysis is failed when either:
+Every `RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS` (300 s) an active analysis is failed when any
+of these conditions holds:
 
 - it still has an unsent outbox task and was created more than
   `RELIABILITY_OUTBOX_DISPATCH_TIMEOUT_SECONDS` (120 s) ago, regardless of sibling progress; or
-- all its tasks are sent (or it has no outbox rows) and `updated_at` is older than
-  `RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS` (600 s). Each progress event renews `updated_at`.
+- all its tasks are sent (or it has no outbox rows), it is still `PENDING`, and `updated_at`
+  is older than `RELIABILITY_STUCK_JOB_QUEUE_TIMEOUT_SECONDS` (1800 s); or
+- all its tasks are sent (or it has no outbox rows), it is `PROCESSING`, and `updated_at`
+  is older than `RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS` (600 s); or
+- `created_at` is older than `RELIABILITY_STUCK_JOB_MAX_AGE_SECONDS` (7200 s), regardless
+  of dispatch state or recent progress/start pings.
 
-The scan is only a candidate list: the final transaction locks the row and rechecks both
-conditions. These are eligibility deadlines; the actual failure happens on the next scan.
+The first start ping switches PENDING to PROCESSING; subsequent progress renews only the idle
+clock, never the absolute age. The queue allowance starts at the last confirmed dispatch
+(`updated_at`); legacy rows without an outbox use the same allowance.
+
+The scan is only a candidate list: the final transaction locks the row and rechecks all
+conditions with a fresh timestamp. These are eligibility deadlines; the actual failure happens
+on the next scan. All terminal states remain protected by the status CAS.
+
+Tests: `TaskDeliveryLimitIntegrationTest` proves actual connection loss increments the counter
+on RabbitMQ 4.3.6 before testing production queue arguments. `WorkerRedeliveryIntegrationTest`
+kills each source's worker six times, verifies DLQ → FAILED, skips queued sibling work and
+completes a subsequent healthy task. `TransactionalDispatchIntegrationTest` verifies queue,
+idle and absolute deadlines plus rollback/commit ordering of all FAILED stop hints.
 
 ## Cancellation
 
-`DELETE /api/analysis/{id}` (cancel) CASes the status to `CANCELLED` and, after commit, sets Redis
-`cancel:{id}` (TTL 2 h). Detectors check the flag when they take a task, on each progress tick and
+Every successful status CAS to `FAILED` or `CANCELLED` sets Redis `cancel:{id}` (TTL 2 h) after
+commit through the shared terminal path. This covers stuck recovery, DLQs, source errors and
+`DELETE /api/analysis/{id}` (user cancel). Rollbacks and losing CAS attempts set no stop flag;
+COMPLETED sets none. Detectors check the flag when they take a task, on each progress tick and
 before publishing a successful result; on a hit they ACK without a result. Cancellation is not an
 AMQP message. If Redis is down the worker finishes and its late result is rejected by the status
 guard. Publication, cancel, results and recovery all serialize on the analysis row, so a cancel

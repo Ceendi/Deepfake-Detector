@@ -197,6 +197,8 @@ class DetectorRuntime:
         ch.exchange_declare(exchange=EXCHANGE, exchange_type="topic", durable=True)
         ch.exchange_declare(exchange=DLX, exchange_type="direct", durable=True)
         ch.queue_declare(queue=self.queue, durable=True, arguments={
+            "x-queue-type": "quorum",
+            "x-delivery-limit": 5,
             "x-dead-letter-exchange": DLX,
             "x-dead-letter-routing-key": f"{self.queue}.dlq",
         })

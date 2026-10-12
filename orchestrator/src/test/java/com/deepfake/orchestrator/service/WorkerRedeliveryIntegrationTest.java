@@ -63,7 +63,8 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration({FlywayAutoConfiguration.class, RabbitAutoConfiguration.class})
 @Import({AnalysisService.class, BackpressureGuard.class, IdempotencyGuard.class,
-        RabbitConfig.class, TaskOutboxPublisher.class, AnalysisResultListener.class, WorkerRedeliveryIntegrationTest.RedisConfig.class})
+        RabbitConfig.class, TaskOutboxPublisher.class, AnalysisResultListener.class,
+        com.deepfake.orchestrator.listener.DeadLetterListener.class, WorkerRedeliveryIntegrationTest.RedisConfig.class})
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
@@ -74,7 +75,7 @@ class WorkerRedeliveryIntegrationTest {
     static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
             .withExposedPorts(6379);
     @Container
-    static final GenericContainer<?> rabbitContainer = new GenericContainer<>("rabbitmq:4.3.1-alpine")
+    static final GenericContainer<?> rabbitContainer = new GenericContainer<>("rabbitmq:4.3.6-alpine")
             .withEnv("RABBITMQ_DEFAULT_USER", "test").withEnv("RABBITMQ_DEFAULT_PASS", "test")
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
 
@@ -174,6 +175,7 @@ class WorkerRedeliveryIntegrationTest {
         barrier("sibling", "acked");
         await().atMost(Duration.ofSeconds(20)).until(() -> "COMPLETED".equals(stored(id).get("status")));
         Map<String, Object> terminal = stored(id);
+        assertThat(redis.hasKey("cancel:" + id)).isFalse();
         assertThat((BigDecimal) terminal.get("video_prob")).isEqualByComparingTo("0.8");
         assertThat((BigDecimal) terminal.get("audio_prob")).isEqualByComparingTo("0.4");
         assertThat(terminal.get("verdict")).isEqualTo("FAKE");
@@ -192,6 +194,32 @@ class WorkerRedeliveryIntegrationTest {
         assertThat(stored(id)).isEqualTo(terminal);
         assertCapacityOccupied(); // A terminal duplicate cannot free the newly occupied place.
         assertThat(redis.opsForValue().get("processing:" + id + ":" + source)).isEqualTo("1");
+    }
+
+    @ParameterizedTest(name = "repeated {0} crashes reach FAILED and free the queue")
+    @ValueSource(strings = {"video", "audio"})
+    void repeatedProcessCrashesReachDlqAndStopSiblingWork(String source) throws Exception {
+        UUID id = create(AnalysisType.FULL);
+        for (int attempt = 0; attempt <= 5; attempt++) {
+            String name = "crash-" + attempt;
+            Process worker = start(source, name, "inference", "0.8", false);
+            barrier(name, "inference");
+            kill(worker);
+        }
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(stored(id).get("status")).isEqualTo("FAILED"));
+        assertThat(stored(id).get("error_message").toString()).startsWith("dead-letter:");
+        assertThat(redis.opsForValue().get("cancel:" + id)).isEqualTo("1");
+        String sibling = source.equals("video") ? "audio" : "video";
+        Process skipped = start(sibling, "skipped-sibling", "unused", "0.8", false);
+        barrier("skipped-sibling", "acked");
+        assertThat(Files.exists(directory.resolve("skipped-sibling/inference"))).isFalse();
+        kill(skipped);
+        UUID next = create(source.equals("video") ? AnalysisType.VIDEO : AnalysisType.AUDIO);
+        start(source, "healthy", "unused", "0.8", false);
+        barrier("healthy", "acked");
+        await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
+                assertThat(stored(next).get("status")).isEqualTo("COMPLETED"));
     }
 
     private UUID create(AnalysisType type) {

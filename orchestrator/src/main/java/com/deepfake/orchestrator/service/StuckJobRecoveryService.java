@@ -26,24 +26,32 @@ public class StuckJobRecoveryService {
     private final AnalysisService analysisService;
     private final long thresholdSeconds;
     private final long dispatchTimeoutSeconds;
+    private final long queueTimeoutSeconds;
+    private final long maxAgeSeconds;
 
     public StuckJobRecoveryService(AnalysisRepository repository, AnalysisService analysisService,
             @Value("${reliability.stuck-job.threshold-seconds:600}") long thresholdSeconds,
-            @Value("${reliability.outbox.dispatch-timeout-seconds:120}") long dispatchTimeoutSeconds) {
+            @Value("${reliability.outbox.dispatch-timeout-seconds:120}") long dispatchTimeoutSeconds,
+            @Value("${reliability.stuck-job.queue-timeout-seconds:1800}") long queueTimeoutSeconds,
+            @Value("${reliability.stuck-job.max-age-seconds:7200}") long maxAgeSeconds) {
         this.repository = repository;
         this.analysisService = analysisService;
         this.thresholdSeconds = thresholdSeconds;
         this.dispatchTimeoutSeconds = dispatchTimeoutSeconds;
+        this.queueTimeoutSeconds = queueTimeoutSeconds;
+        this.maxAgeSeconds = maxAgeSeconds;
     }
 
     @Scheduled(fixedDelayString = "${reliability.stuck-job.scan-interval-ms:300000}")
     public void reclaimStuck() {
-        List<UUID> stuck = repository.findExpiredIds(Instant.now().minusSeconds(thresholdSeconds),
-                Instant.now().minusSeconds(dispatchTimeoutSeconds));
+        Instant now = Instant.now();
+        List<UUID> stuck = repository.findExpiredIds(now.minusSeconds(thresholdSeconds),
+                now.minusSeconds(dispatchTimeoutSeconds), now.minusSeconds(queueTimeoutSeconds),
+                now.minusSeconds(maxAgeSeconds));
         if (stuck.isEmpty()) {
             return;
         }
-        log.warn("stuck-job recovery: reclaiming {} analyses idle > {}s", stuck.size(), thresholdSeconds);
+        log.warn("stuck-job recovery: reclaiming {} analyses past dispatch, queue, idle or absolute deadline", stuck.size());
         for (UUID id : stuck) {
             try {
                 analysisService.failStuck(id, thresholdSeconds);
