@@ -12,6 +12,7 @@ import com.deepfake.orchestrator.dto.response.UserStatsResponse;
 import com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent;
 import com.deepfake.orchestrator.dto.sse.AnalysisResultEvent;
 import com.deepfake.orchestrator.entity.Analysis;
+import com.deepfake.orchestrator.entity.AudioApplicability;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
@@ -308,7 +309,18 @@ public class AnalysisService {
         }
 
         if ("FAILED".equals(status)) {
-            // Preserve fail-whole-analysis semantics for an unaccepted expected source.
+            if ("audio".equals(source) && payload.get("error") instanceof Map<?, ?> error
+                    && "NO_SPEECH".equals(error.get("code"))) {
+                String message = error.get("message") instanceof String value ? value
+                        : "Brak wystarczająco wyraźnego sygnału audio do analizy.";
+                if (repository.writeAudioNotApplicable(id, AudioApplicability.noSpeech(message),
+                        ACTIVE, Instant.now()) == 1) {
+                    markProcessedAfterCommit(id, source);
+                    finishIfReady(id);
+                    return;
+                }
+            }
+            // All other unaccepted expected-source failures retain whole-analysis failure.
             if (repository.failSourceIfUnaccepted(id, source, AnalysisStatus.FAILED,
                     extractError(payload), ACTIVE, Instant.now()) == 1) {
                 markProcessedAfterCommit(id, source);
@@ -333,17 +345,24 @@ public class AnalysisService {
         }
 
         markProcessedAfterCommit(id, source);
+        finishIfReady(id);
+    }
 
+    private void finishIfReady(UUID id) {
         // Fresh read (the @Modifying above cleared the PC): sees BOTH probs when the other source committed.
         Analysis a = repository.findById(id).orElseThrow();
         boolean needV = a.getType() == AnalysisType.VIDEO || a.getType() == AnalysisType.FULL;
         boolean needA = a.getType() == AnalysisType.AUDIO || a.getType() == AnalysisType.FULL;
-        if ((needV && a.getVideoProb() == null) || (needA && a.getAudioProb() == null)) {
+        boolean audioNotApplicable = a.getType() == AnalysisType.FULL
+                && AudioApplicability.isNoSpeech(a.getAudioDetails());
+        if ((needV && a.getVideoProb() == null)
+                || (needA && a.getAudioProb() == null && !audioNotApplicable)) {
             cache.evictById(id);
             return; // wait for the other source
         }
 
-        BigDecimal finalProb = aggregate(a.getVideoProb(), a.getAudioProb()); // 0.6V + 0.4A
+        // Only explicit FULL no-speech may complete without audio; aggregate then uses video alone.
+        BigDecimal finalProb = aggregate(a.getVideoProb(), a.getAudioProb());
         String verdict = finalProb.compareTo(THRESHOLD) > 0 ? "FAKE" : "REAL";
         BigDecimal confidence = finalProb.subtract(THRESHOLD).abs().multiply(TWO);
 

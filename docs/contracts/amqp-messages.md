@@ -192,7 +192,16 @@ by the other detector.
 
 Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no decodable
 frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
-`PROCESSING_ERROR` (generic fallback, shared with audio).
+`PROCESSING_ERROR` (generic fallback, shared with audio). Audio also publishes
+`NO_SPEECH` when no window reaches model inference through its existing energy
+threshold. Its localized message asks for clearly audible speech; it makes no
+claim about authenticity. AUDIO remains FAILED. For FULL, only exact audio
+`NO_SPEECH` may be accepted as a durable `details.audio` marker with `status:
+"NOT_APPLICABLE"`, `reason: "NO_SPEECH"` and localized `message`; no audio score or
+verdict is fabricated. FULL then waits for successful video and completes using
+video alone, explicitly explained in the UI/PDF. A first accepted marker or audio
+score blocks later audio results/failures/DLQs, regardless of Redis markers. Other
+source failures retain the existing whole-analysis failure semantics.
 
 Failure: `status: "FAILED"`, `result: null`, `error: { "code": "...", "message": "..." }`.
 
