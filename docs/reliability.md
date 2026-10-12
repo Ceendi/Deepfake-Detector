@@ -102,7 +102,11 @@ Tests: `AnalysisFileResolutionIntegrationTest`, `AnalysisCapacityTransactionInte
 
 ## Detector workers
 
-Code: `audio-detector/src/consumer.py`, `video-detector/src/consumer.py`.
+Code: `detector-runtime/detector_runtime/consumer.py`; detector-specific model, artifact,
+metric and tracing hooks live in `audio-detector/src/consumer.py` and
+`video-detector/src/consumer.py`. The runtime owns delivery, publication, topology,
+cancellation, temporary directories and consumer health state. Processing remains synchronous;
+audio retains its consume iterator and video its `process_data_events` loop.
 
 - **Delivery:** manual ACK, prefetch 1, AMQP heartbeat 30 s. Every valid, non-cancelled delivery
   is computed, including redeliveries and concurrent copies; there are no Redis processing claims.
@@ -127,7 +131,8 @@ confirm but before ACK → the result may be published twice. A network loss is 
 the 30 s heartbeat (allow about a minute) plus the 5 s reconnect delay; this must fit inside the
 stuck-job idle budget below.
 
-Tests: `tests/worker_redelivery/` (real worker processes with RabbitMQ and Redis; inference is
+Tests: `detector-runtime/tests/` (shared delivery guards), `tests/worker_redelivery/`
+(real worker processes with RabbitMQ and Redis; inference is
 stubbed), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
 
 ## Result acceptance and idempotence

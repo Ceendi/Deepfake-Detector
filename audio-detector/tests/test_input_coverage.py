@@ -148,10 +148,10 @@ def test_actual_analyze_no_speech_publishes_confirmed_failed_before_ack(
     monkeypatch.setattr(consumer, "audio_inference", instance)
     redis = MagicMock()
     redis.exists.return_value = 0
-    monkeypatch.setattr(consumer, "redis_client", redis)
+    monkeypatch.setattr(consumer.runtime, "redis_client", redis)
     s3 = MagicMock()
     s3.download_file.side_effect = lambda bucket, key, path: Path(path).write_bytes(b"input")
-    monkeypatch.setattr(consumer, "s3_client", s3)
+    monkeypatch.setattr(consumer.runtime, "s3_client", s3)
     channel = MagicMock()
     if failed_transport == "ack":
         channel.basic_ack.side_effect = pika.exceptions.StreamLostError("lost before ack")

@@ -25,12 +25,13 @@ FROM runtime-base AS runtime
 USER root
 
 COPY --chown=app:app pyproject.toml uv.lock ./
+COPY --from=detector_runtime /pyproject.toml /detector-runtime/pyproject.toml
 # Production image is CPU-only (ONNX CPUExecutionProvider). Pulling CPU wheels
 # instead of CUDA drops ~4.5 GB (nvidia/* libs + triton) from the image.
 # insightface nie publikuje wheeli (sdist z Cython) — build-essential tylko na czas
 # instalacji, purge w tej samej warstwie zeby nie tuczyc obrazu.
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential python3-dev \
-    && uv sync --frozen --no-dev --no-install-project \
+    && uv sync --frozen --no-dev --no-install-project --no-install-package deepfake-detector-runtime \
     && apt-get purge -y build-essential python3-dev && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
@@ -39,6 +40,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 RUN python -c "from insightface.app import FaceAnalysis; \
     FaceAnalysis(name='buffalo_l', root='/app/.insightface', allowed_modules=['detection'])" \
     && chown -R app:app /app/.insightface
+
+COPY --from=detector_runtime /detector_runtime /detector-runtime/detector_runtime
+RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
 
 COPY --chown=app:app src ./src
 # training/ wnosi defy modelu (training/model.py) + checkpointy effnet_lstm

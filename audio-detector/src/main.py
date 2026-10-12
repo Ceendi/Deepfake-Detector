@@ -21,7 +21,7 @@ structlog.configure(
     wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
     cache_logger_on_first_use=True,
 )
-_consumer_alive = {"ok": False}
+_consumer_alive = consumer.runtime.health_state
 # Consumer loop bumps last_beat at least every ~5s (consume inactivity ticks); a flag stuck
 # on ok=True with no beats means a wedged thread, not a healthy consumer.
 HEALTH_MAX_SILENCE_SECONDS = 60

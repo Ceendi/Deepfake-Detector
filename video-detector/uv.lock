@@ -362,6 +362,33 @@ wheels = [
 ]
 
 [[package]]
+name = "deepfake-detector-runtime"
+version = "0.1.0"
+source = { directory = "../detector-runtime" }
+dependencies = [
+    { name = "boto3" },
+    { name = "opentelemetry-api" },
+    { name = "pika" },
+    { name = "redis" },
+    { name = "structlog" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", specifier = "==1.42.*" },
+    { name = "opentelemetry-api", specifier = ">=1.30" },
+    { name = "pika", specifier = "==1.4.*" },
+    { name = "redis" },
+    { name = "structlog", specifier = "==25.*" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "opentelemetry-sdk", specifier = ">=1.30" },
+    { name = "pytest", specifier = ">=8" },
+]
+
+[[package]]
 name = "deepfake-video-detector"
 version = "0.1.0"
 source = { editable = "." }
@@ -369,6 +396,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "anyio" },
     { name = "boto3" },
+    { name = "deepfake-detector-runtime" },
     { name = "fastapi" },
     { name = "insightface" },
     { name = "lightning" },
@@ -406,6 +434,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.14.3" },
     { name = "anyio", specifier = ">=4.14.2" },
     { name = "boto3", specifier = "==1.42.*" },
+    { name = "deepfake-detector-runtime", directory = "../detector-runtime" },
     { name = "fastapi", specifier = "==0.136.*" },
     { name = "insightface", specifier = ">=0.7.3" },
     { name = "lightning", specifier = "==2.6.6" },
