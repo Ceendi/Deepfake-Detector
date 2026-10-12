@@ -26,8 +26,19 @@ have it on the broker can delete it.)
 Required arguments for `analysis.video` and `analysis.audio`:
 
 - `durable: true`
+- `x-queue-type: quorum`
+- `x-delivery-limit: 5`
 - `x-dead-letter-exchange: analysis.dlx`
 - `x-dead-letter-routing-key: analysis.<source>.dlq`
+
+The limit counts failed deliveries, including process crashes and connection loss with an
+unacknowledged task. On RabbitMQ 4.3 it does not count an explicit `basic.nack` return.
+The initial delivery has count 0; counts 1–5 are retries, and the next connection failure
+routes the task to its DLQ with `x-first-death-reason: delivery_limit`. The existing
+source-specific `DeadLetterListener` fails an active, unaccepted source; an already
+accepted source cannot fail a FULL analysis. Queue arguments are fixed on both sides;
+changing them requires coordinated deployment. See
+[upgrade procedure](../reliability.md#task-queue-upgrade).
 
 DLQ queues (`analysis.video.dlq`, `analysis.audio.dlq`) are bound to
 `analysis.dlx` with a routing key equal to the queue name.
@@ -215,15 +226,16 @@ in the queue, with no in-memory state to lose on restart.
 
 Contract:
 
-- On a committed cancel (`DELETE /api/analysis/{id}`) the Orchestrator sets the
+- On any committed transition to `FAILED` or `CANCELLED` (including stuck recovery,
+  DLQ, source failure and user cancel) the Orchestrator sets the
   Redis key **`cancel:{analysis_id}`** = `"1"` with a 2 h TTL (after commit, so a
-  rolled-back cancel can never abort a live analysis). One flag covers both
+  rolled-back failure/cancel can never abort a live analysis). One flag covers both
   sources of a FULL analysis.
 - Detectors check the flag (`EXISTS`) at **task pickup** — cancelled-while-queued,
   the common case behind a long job with `prefetch=1` — and on **every progress
   tick**, so an in-flight inference aborts within one chunk/frame batch.
 - On a hit the detector acks and drops the task, publishing **no** result and no
-  further progress (the analysis is already terminal `CANCELLED` upstream; a
+  further progress (the analysis is already terminal `FAILED` or `CANCELLED` upstream; a
   `FAILED` result would be ignored anyway).
 - Both sides fail open: Redis down ⇒ the flag is skipped / reads as absent, the
   detector simply finishes and the late result bounces off the Orchestrator's

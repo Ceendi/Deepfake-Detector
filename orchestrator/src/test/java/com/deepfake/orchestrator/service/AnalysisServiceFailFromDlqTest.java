@@ -3,6 +3,7 @@ package com.deepfake.orchestrator.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -23,6 +24,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.RedisConnectionFailureException;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.entity.Analysis;
@@ -39,6 +42,7 @@ class AnalysisServiceFailFromDlqTest {
     @Mock AnalysisRepository repository;
     @Mock RabbitTemplate rabbitTemplate;
     @Mock StringRedisTemplate redis;
+    @Mock ValueOperations<String, String> values;
     @Mock AnalysisCache cache;
     @Mock AnalysisStreamRegistry streams;
     @Mock BackpressureGuard backpressure;
@@ -55,6 +59,7 @@ class AnalysisServiceFailFromDlqTest {
 
     @Test
     void activeAnalysisFailsAndPublishesTerminalState() {
+        when(redis.opsForValue()).thenReturn(values);
         when(repository.failSourceIfUnaccepted(eq(id), eq("video"), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
         when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
 
@@ -65,19 +70,34 @@ class AnalysisServiceFailFromDlqTest {
         assertThat(msg.getValue()).isEqualTo("dead-letter: boom");
         verifyNoInteractions(backpressure);
         verify(streams).sendResult(eq(id), any());
+        verify(values).set("cancel:" + id, "1", Duration.ofHours(2));
         verify(metrics).dlqFailure();
         verify(metrics, never()).stuckRecovery();
     }
 
     @Test
     void failStuckRechecksTheDeadlineAfterLocking() {
+        when(redis.opsForValue()).thenReturn(values);
         when(repository.lockForRecovery(id)).thenReturn(Optional.of(id));
-        when(repository.failIfExpired(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.failIfExpired(eq(id), any(), any(), any(), any(), any())).thenReturn(1);
         when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
         service.failStuck(id, 600);
-        verify(repository).failIfExpired(eq(id), any(), any(), any());
+        verify(repository).failIfExpired(eq(id), any(), any(), any(), any(), any());
+        verify(values).set("cancel:" + id, "1", Duration.ofHours(2));
         verify(metrics).stuckRecovery();
         verify(metrics, never()).dlqFailure();
+    }
+
+    @Test
+    void redisOutageDoesNotFailTheCommittedFailure() {
+        when(redis.opsForValue()).thenReturn(values);
+        doThrow(new RedisConnectionFailureException("down"))
+                .when(values).set("cancel:" + id, "1", Duration.ofHours(2));
+        when(repository.failSourceIfUnaccepted(eq(id), eq("video"), eq(AnalysisStatus.FAILED), any(), any(), any())).thenReturn(1);
+        when(repository.findById(id)).thenReturn(Optional.of(analysis(AnalysisStatus.FAILED)));
+        service.failFromDlq(id, "video", "delivery_limit");
+        verify(streams).sendResult(eq(id), any());
+        verify(metrics).dlqFailure();
     }
 
     // CAS returns 0 for both already-terminal and unknown ids (the mock default), so the transition

@@ -243,3 +243,28 @@ def test_long_blocking_work_keeps_heartbeat_health_and_single_delivery(
     assert payload["analysis_id"] == analysis_id
     assert payload["status"] == "COMPLETED"
     assert broker.basic_get("analysis.results", auto_ack=True)[0] is None
+
+
+def test_repeated_worker_crashes_reach_dlq_and_release_the_queue(source, broker, rds, workers):
+    analysis_id = str(uuid.uuid4())
+    publish(broker, source, analysis_id)
+    for failures in range(6):
+        worker = workers(source, BLOCK_AT="inference")
+        claimed = worker.wait("claimed")
+        assert claimed["delivery_count"] == failures
+        worker.wait("inference")
+        worker.kill()
+
+    def dead_letter():
+        method, properties, body = broker.basic_get(f"analysis.{source}.dlq", auto_ack=True)
+        return (properties, json.loads(body)) if method else None
+
+    properties, payload = wait_for(dead_letter)
+    assert payload["analysis_id"] == analysis_id
+    assert properties.headers["x-first-death-reason"] == "delivery_limit"
+    assert broker.queue_declare(queue=f"analysis.{source}", passive=True).method.message_count == 0
+    healthy_id = str(uuid.uuid4())
+    healthy = workers(source)
+    publish(broker, source, healthy_id)
+    healthy.wait("acked")
+    assert result(broker)["analysis_id"] == healthy_id

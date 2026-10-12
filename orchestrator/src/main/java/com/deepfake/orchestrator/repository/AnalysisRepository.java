@@ -149,20 +149,24 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
 
     String EXPIRED = """
         status IN ('PENDING', 'PROCESSING') AND (
-            (EXISTS (SELECT 1 FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.sent_at IS NULL)
+            created_at < :ageCutoff
+            OR (EXISTS (SELECT 1 FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.sent_at IS NULL)
                 AND created_at < :dispatchCutoff)
             OR (NOT EXISTS (SELECT 1 FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.sent_at IS NULL)
-                AND updated_at < :cutoff))
+                AND ((status = 'PENDING' AND updated_at < :queueCutoff)
+                    OR (status = 'PROCESSING' AND updated_at < :cutoff))))
         """;
 
     @Query(value = "SELECT id FROM analysis WHERE " + EXPIRED, nativeQuery = true)
-    List<UUID> findExpiredIds(@Param("cutoff") Instant cutoff, @Param("dispatchCutoff") Instant dispatchCutoff);
+    List<UUID> findExpiredIds(@Param("cutoff") Instant cutoff, @Param("dispatchCutoff") Instant dispatchCutoff,
+            @Param("queueCutoff") Instant queueCutoff, @Param("ageCutoff") Instant ageCutoff);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query(value = "UPDATE analysis SET status = 'FAILED', error_message = 'dispatch or progress deadline exceeded, auto-failed by recovery', updated_at = :now WHERE id = :id AND " + EXPIRED,
+    @Query(value = "UPDATE analysis SET status = 'FAILED', error_message = 'dispatch, queue, progress or absolute deadline exceeded, auto-failed by recovery', updated_at = :now WHERE id = :id AND " + EXPIRED,
             nativeQuery = true)
     int failIfExpired(@Param("id") UUID id, @Param("cutoff") Instant cutoff,
-            @Param("dispatchCutoff") Instant dispatchCutoff, @Param("now") Instant now);
+            @Param("dispatchCutoff") Instant dispatchCutoff, @Param("queueCutoff") Instant queueCutoff,
+            @Param("ageCutoff") Instant ageCutoff, @Param("now") Instant now);
 
     // Native + literal statuses so the planner can use the partial index idx_analysis_active
     // (WHERE status IN ('PENDING','PROCESSING')); a bound IN list wouldn't match the index predicate.

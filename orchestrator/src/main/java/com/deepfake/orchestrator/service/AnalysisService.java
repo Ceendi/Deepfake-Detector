@@ -68,6 +68,10 @@ public class AnalysisService {
     private final AnalysisTaskOutboxRepository outbox;
     @Value("${reliability.outbox.dispatch-timeout-seconds:120}")
     private long dispatchTimeoutSeconds = 120;
+    @Value("${reliability.stuck-job.queue-timeout-seconds:1800}")
+    private long queueTimeoutSeconds = 1800;
+    @Value("${reliability.stuck-job.max-age-seconds:7200}")
+    private long maxAgeSeconds = 7200;
     private final StringRedisTemplate redis;
     private final OptionalRedisOperations optionalRedis;
     private final AnalysisCache cache;
@@ -233,7 +237,6 @@ public class AnalysisService {
         }
 
         Analysis fresh = onTerminal(id); // evict + metric + SSE {status: CANCELLED} after commit
-        flagCancelAfterCommit(id);
         return AnalysisResponse.from(fresh);
     }
 
@@ -394,7 +397,8 @@ public class AnalysisService {
         }
         Instant now = Instant.now();
         if (repository.failIfExpired(id, now.minusSeconds(thresholdSeconds),
-                now.minusSeconds(dispatchTimeoutSeconds), now) == 1) {
+                now.minusSeconds(dispatchTimeoutSeconds), now.minusSeconds(queueTimeoutSeconds),
+                now.minusSeconds(maxAgeSeconds), now) == 1) {
             onTerminal(id);
             metrics.stuckRecovery();
         }
@@ -409,6 +413,9 @@ public class AnalysisService {
         metrics.terminal(a.getStatus(), a.getType());
         if (a.getStatus() == AnalysisStatus.COMPLETED) {
             metrics.duration(a.getType(), Duration.between(a.getCreatedAt(), Instant.now()));
+        }
+        if (a.getStatus() == AnalysisStatus.FAILED || a.getStatus() == AnalysisStatus.CANCELLED) {
+            flagCancelAfterCommit(id);
         }
         pushTerminalAfterCommit(id, a);
         return a;
@@ -460,11 +467,7 @@ public class AnalysisService {
         }
     }
 
-    // Set after commit so a rolled-back cancel can't leave a flag that aborts a live analysis
-    // (same reasoning as markProcessedAfterCommit). Fail-open: Redis down degrades to today's
-    // behavior — detectors finish and the late result bounces off the DB terminal-state guard.
-    // TTL covers queue wait + processing of the longest accepted file; an expired flag has the
-    // same benign degradation.
+    // A rolled-back failure/cancel must not abort live work. Redis remains an optional compute hint.
     private void flagCancelAfterCommit(UUID id) {
         Runnable setFlag = () -> optionalRedis.run("cancel hint", () ->
                 redis.opsForValue().set("cancel:" + id, "1", Duration.ofHours(2)));

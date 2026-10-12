@@ -44,12 +44,14 @@ public class RabbitConfig {
     @Bean
     Queue videoQueue() {
         return QueueBuilder.durable(Q_VIDEO)
+                .quorum().withArgument("x-delivery-limit", 5)
                 .withArgument("x-dead-letter-exchange", DLX)
                 .withArgument("x-dead-letter-routing-key", Q_VIDEO_DLQ)
                 .build();
     }
     @Bean Queue audioQueue() {
         return QueueBuilder.durable(Q_AUDIO)
+                .quorum().withArgument("x-delivery-limit", 5)
                 .withArgument("x-dead-letter-exchange", DLX)
                 .withArgument("x-dead-letter-routing-key", Q_AUDIO_DLQ)
                 .build();

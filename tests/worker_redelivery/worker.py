@@ -106,7 +106,8 @@ real_publish = consumer.runtime.publish
 
 
 def observed_handle(channel, method, properties, body):
-    event("claimed", redelivered=method.redelivered, delivery_tag=method.delivery_tag)
+    event("claimed", redelivered=method.redelivered, delivery_tag=method.delivery_tag,
+          delivery_count=(properties.headers or {}).get("x-delivery-count", 0))
     real_ack = channel.basic_ack
 
     def observed_ack(**kwargs):

@@ -91,9 +91,10 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
     to tylko podpowiedź ustawiana po commicie.
   - Przejścia terminalne (COMPLETED/FAILED/CANCELLED) tylko przez CAS na statusie; efekty uboczne raz, po commicie.
   - Backpressure: limit aktywnych analiz liczony w PostgreSQL pod advisory lockiem, bez osobnego licznika.
-  - Stuck recovery: aktywne analizy po przekroczeniu terminu dispatchu (120 s) lub bezczynności (600 s) → FAILED.
-  - Anulowanie: flaga Redis `cancel:{id}` ustawiana po commicie; detektor sprawdza ją przy podjęciu, na każdym
-    ticku i przed publikacją wyniku. Anulowanie nie jest komunikatem AMQP.
+  - Stuck recovery: dispatch > 120 s, wysłane PENDING bez start-pingu > 1800 s, PROCESSING bezczynne > 600 s
+    lub aktywna analiza starsza niż 7200 s od utworzenia → FAILED; progress nie odnawia wieku absolutnego.
+  - Zatrzymanie FAILED/CANCELLED: flaga Redis `cancel:{id}` ustawiana po commicie; detektor sprawdza ją
+    przy podjęciu, na każdym ticku i przed publikacją wyniku. Anulowanie nie jest komunikatem AMQP.
   - Redis wszędzie fail-open (cache → DB, dedup → guard DB, snapshot progresu → pomiń, cancel → licz do końca).
 
 ## Bezpieczeństwo
