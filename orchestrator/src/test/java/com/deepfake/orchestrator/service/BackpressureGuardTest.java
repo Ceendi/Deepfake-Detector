@@ -14,9 +14,13 @@ class BackpressureGuardTest {
     void invalidLimitsAreRejectedAtStartup() {
         var jdbc = mock(JdbcTemplate.class);
         var repository = mock(AnalysisRepository.class);
-        assertThatThrownBy(() -> new BackpressureGuard(jdbc, repository, 0, 5))
+        assertThatThrownBy(() -> new BackpressureGuard(jdbc, repository, 0, 3, 5))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new BackpressureGuard(jdbc, repository, 20, 0))
+        assertThatThrownBy(() -> new BackpressureGuard(jdbc, repository, 20, 0, 5))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new BackpressureGuard(jdbc, repository, 20, -1, 5))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new BackpressureGuard(jdbc, repository, 20, 3, 0))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

@@ -125,7 +125,7 @@ class AnalysisFileResolutionIntegrationTest {
         doAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
             return invocation.callRealMethod();
-        }).when(gate).acquire();
+        }).when(gate).acquire("alice");
     }
 
     @Test void canonicalKeyReachesCommittedRowAndBothTasksWhileLegacyKeyIsIgnored() {
@@ -189,7 +189,7 @@ class AnalysisFileResolutionIntegrationTest {
                 facade.create(request(null), "alice", "verified-token")))
                 .isInstanceOf(IllegalTransactionStateException.class);
         verifyNoInteractions(files, rabbit);
-        verify(gate, never()).acquire();
+        verify(gate, never()).acquire("alice");
         assertThat(repository.count()).isZero();
     }
 
@@ -198,7 +198,7 @@ class AnalysisFileResolutionIntegrationTest {
                 .isInstanceOf(ResponseStatusException.class).hasFieldOrPropertyWithValue("statusCode", expected);
         assertThat(repository.count()).isZero();
         verifyNoInteractions(rabbit);
-        verify(gate, never()).acquire();
+        verify(gate, never()).acquire("alice");
     }
     private CreateAnalysisRequest request(String legacyKey) {
         return new CreateAnalysisRequest(FILE.toString(), legacyKey, AnalysisType.FULL, null);

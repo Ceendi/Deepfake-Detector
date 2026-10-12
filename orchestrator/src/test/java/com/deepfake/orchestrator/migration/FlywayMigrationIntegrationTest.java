@@ -46,6 +46,43 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    void activeUserCountUsesPartialIndexOnRealisticHistory() throws Exception {
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                Statement statement = connection.createStatement()) {
+            connection.setAutoCommit(false);
+            try {
+                statement.execute("""
+                        INSERT INTO analysis (id, user_id, file_id, file_key, type, status)
+                        SELECT gen_random_uuid(), 'history-' || n, 'file', 'key', 'VIDEO', 'COMPLETED'
+                        FROM generate_series(1, 10000) n
+                        """);
+                statement.execute("""
+                        INSERT INTO analysis (id, user_id, file_id, file_key, type, status)
+                        SELECT gen_random_uuid(), CASE WHEN n <= 3 THEN 'alice' ELSE 'user-' || n END,
+                            'file', 'key', 'VIDEO', CASE WHEN n <= 2 THEN 'PROCESSING' ELSE 'PENDING' END
+                        FROM generate_series(1, 20) n
+                        """);
+                statement.execute("ANALYZE analysis");
+                List<String> plan = new ArrayList<>();
+                try (ResultSet result = statement.executeQuery("""
+                        EXPLAIN (ANALYZE, BUFFERS)
+                        SELECT COUNT(*) FROM analysis
+                        WHERE user_id = 'alice' AND status IN ('PENDING', 'PROCESSING')
+                        """)) {
+                    while (result.next()) {
+                        plan.add(result.getString(1));
+                    }
+                }
+                assertThat(String.join("\n", plan)).contains("idx_analysis_active_user")
+                        .doesNotContain("Seq Scan on analysis");
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    @Test
     void perSourceDetailsColumnsAreJsonbAndLegacySingleColumnIsGone() throws Exception {
         List<String> types = query("SELECT data_type FROM information_schema.columns "
                 + "WHERE table_name = 'analysis' AND column_name IN ('video_details', 'audio_details')");

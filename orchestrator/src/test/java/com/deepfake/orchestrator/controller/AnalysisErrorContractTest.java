@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -40,6 +41,7 @@ import com.deepfake.orchestrator.security.JwtRoleConverter;
 import com.deepfake.orchestrator.service.AnalysisService;
 import com.deepfake.orchestrator.service.AnalysisCreationService;
 import com.deepfake.orchestrator.service.ArtifactService;
+import com.deepfake.orchestrator.exception.TooManyAnalysesException;
 
 /**
  * List endpoint + uniform error contract (GlobalExceptionHandler, auto-included as
@@ -81,6 +83,23 @@ class AnalysisErrorContractTest {
             public Instant getCreatedAt() { return Instant.now(); }
             public Instant getUpdatedAt() { return Instant.now(); }
         };
+    }
+
+    @Test
+    void capacityRejectionPreservesBodyAndRetryAfterHeader() throws Exception {
+        when(creationService.create(any(), eq("user-a"), any()))
+                .thenThrow(new TooManyAnalysesException(4, 5));
+        mvc.perform(post("/api/analysis")
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fileId":"file","type":"FULL"}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.queuePosition").value(4))
+                .andExpect(jsonPath("$.retryAfterSeconds").value(5));
+        verifyNoInteractions(service);
     }
 
     @Test

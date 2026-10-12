@@ -26,23 +26,26 @@ public class BackpressureGuard {
     private final JdbcTemplate jdbc;
     private final AnalysisRepository repository;
     private final int maxInflight;
+    private final int maxInflightPerUser;
     private final int retryAfterSeconds;
 
     public BackpressureGuard(JdbcTemplate jdbc, AnalysisRepository repository,
             @Value("${backpressure.max-inflight:20}") int maxInflight,
+            @Value("${backpressure.max-inflight-per-user:3}") int maxInflightPerUser,
             @Value("${backpressure.retry-after-seconds:5}") int retryAfterSeconds) {
-        if (maxInflight < 1 || retryAfterSeconds < 1) {
+        if (maxInflight < 1 || maxInflightPerUser < 1 || retryAfterSeconds < 1) {
             throw new IllegalArgumentException("Backpressure limits must be positive");
         }
         this.jdbc = jdbc;
         this.repository = repository;
         this.maxInflight = maxInflight;
+        this.maxInflightPerUser = maxInflightPerUser;
         this.retryAfterSeconds = retryAfterSeconds;
     }
 
     /** Must share the writer's transaction and connection; an autocommit lock offers no protection. */
     @Transactional(propagation = Propagation.MANDATORY)
-    public void acquire() {
+    public void acquire(String userId) {
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             // The count after waiting for the lock must see the preceding admission's commit.
             if (connection.getTransactionIsolation() != Connection.TRANSACTION_READ_COMMITTED) {
@@ -56,7 +59,7 @@ public class BackpressureGuard {
         // Also count creates already made by a caller in the same enclosing transaction.
         repository.flush();
         long active = repository.countActive();
-        if (active >= maxInflight) {
+        if (active >= maxInflight || repository.countActiveByUser(userId) >= maxInflightPerUser) {
             int queuePosition = (int) Math.min(active + 1, Integer.MAX_VALUE);
             throw new TooManyAnalysesException(queuePosition, retryAfterSeconds);
         }

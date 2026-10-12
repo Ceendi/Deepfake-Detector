@@ -44,6 +44,12 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     @Query(value = "SELECT COUNT(*) FROM analysis WHERE status IN ('PENDING', 'PROCESSING')", nativeQuery = true)
     long countActive();
 
+    @Query(value = """
+            SELECT COUNT(*) FROM analysis
+            WHERE user_id = :userId AND status IN ('PENDING', 'PROCESSING')
+            """, nativeQuery = true)
+    long countActiveByUser(@Param("userId") String userId);
+
     Page<AnalysisSummary> findByUserId(String userId, Pageable pageable);
 
     // Atomic aggregation + terminal transitions. clearAutomatically so the caller
