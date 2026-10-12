@@ -22,8 +22,7 @@ structlog.configure(
     cache_logger_on_first_use=True,
 )
 _consumer_alive = consumer.runtime.health_state
-# Consumer loop bumps last_beat at least every ~5s (consume inactivity ticks); a flag stuck
-# on ok=True with no beats means a wedged thread, not a healthy consumer.
+# The I/O loop keeps beating during inference; silence means the connection thread is stuck.
 HEALTH_MAX_SILENCE_SECONDS = 60
 @asynccontextmanager
 async def lifespan(_: FastAPI):

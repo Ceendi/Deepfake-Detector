@@ -105,11 +105,18 @@ Tests: `AnalysisFileResolutionIntegrationTest`, `AnalysisCapacityTransactionInte
 Code: `detector-runtime/detector_runtime/consumer.py`; detector-specific model, artifact,
 metric and tracing hooks live in `audio-detector/src/consumer.py` and
 `video-detector/src/consumer.py`. The runtime owns delivery, publication, topology,
-cancellation, temporary directories and consumer health state. Processing remains synchronous;
-audio retains its consume iterator and video its `process_data_events` loop.
+cancellation, temporary directories and consumer health state. Both detectors share the same
+connection loop and a single inference thread per process.
 
 - **Delivery:** manual ACK, prefetch 1, AMQP heartbeat 30 s. Every valid, non-cancelled delivery
   is computed, including redeliveries and concurrent copies; there are no Redis processing claims.
+- **Thread ownership:** one worker thread handles the attempt, including input download, model
+  inference and artifact upload. The connection thread services pika I/O at one-second intervals
+  and refreshes the consumer health heartbeat even while these operations block. Progress,
+  results and ACK/NACK calls run on the connection thread through `add_callback_threadsafe`;
+  the worker waits for each call and receives its exception. The task's trace and log context
+  follow these callbacks. A lost connection releases pending calls and rejects all later calls
+  from the abandoned attempt. Its cleanup completes before reconnecting and reusing the model.
 - **Result before ACK:** the terminal result (COMPLETED or inference FAILED) is published
   persistent and `mandatory=True` on a confirm channel; the task is ACKed only after the confirm.
   A return, nack, lost connection or failed ACK escapes to the reconnect loop: the connection is

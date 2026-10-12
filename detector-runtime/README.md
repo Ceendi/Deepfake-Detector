@@ -1,10 +1,14 @@
 # Detector runtime
 
-Shared synchronous consumer for audio and video. Detector adapters supply models,
+Shared AMQP consumer for audio and video. Detector adapters supply models,
 artifact names, existing metrics and their `src.consumer` logger/tracer. The runtime
 owns AMQP topology, confirms before ACK, reconnect, Redis cancellation, private
-attempt directories and consumer health state. It introduces no worker thread or
-new AMQP contract.
+attempt directories and consumer health state. A single inference thread handles
+downloads, model calls and artifact uploads while the connection thread services
+pika I/O and updates health. Channel calls use `add_callback_threadsafe` and wait
+for completion, so a confirmed result still precedes the task ACK. If the connection
+fails, pending calls are released and late calls from that attempt are rejected.
+The old attempt is drained before reconnecting to avoid concurrent model calls.
 
 From the repository root, install the lightweight test environment:
 
@@ -27,5 +31,5 @@ docker build --build-context detector_runtime=detector-runtime -t detector-video
 
 Docker installs external dependencies before copying runtime source and installing
 the local package with `--no-deps`; changing runtime or detector code preserves the
-external dependency layer. Each detector keeps its existing consume loop and
-heartbeat timing until the separate worker-thread change.
+external dependency layer. Both detectors use the same I/O loop, with the existing
+30 s AMQP heartbeat, prefetch 1 and 5 s reconnect backoff.

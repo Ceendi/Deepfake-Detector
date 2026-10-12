@@ -101,7 +101,7 @@ main.threading.Thread = InlineThread
 async def start():
     async with main.lifespan(main.app):
         assert main.health().status_code == 503
-        assert main._consumer_alive["ok"] is True
+        assert main._consumer_alive["ok"] is False
         assert main._consumer_alive["last_beat"] > 0
 
 asyncio.run(start())
@@ -169,10 +169,7 @@ def test_lifespan_retains_broker_recovery(monkeypatch, loaded_model):
 
     async def start():
         async with main.lifespan(main.app):
-            if loaded_model:
-                assert main.health() == {"status": "UP"}
-            else:
-                assert main.health().status_code == 503
+            assert main.health().status_code == 503
 
     asyncio.run(start())
     assert disconnected == [503]

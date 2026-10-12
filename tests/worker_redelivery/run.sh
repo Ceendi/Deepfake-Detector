@@ -12,4 +12,4 @@ export REDIS_HOST=127.0.0.1 AWS_EC2_METADATA_DISABLED=true
 RABBITMQ_PORT=$("${compose[@]}" port rabbit 5672 | sed 's/.*://')
 REDIS_PORT=$("${compose[@]}" port redis 6379 | sed 's/.*://')
 export RABBITMQ_PORT REDIS_PORT
-"${DETECTOR_TEST_PYTHON:-python3}" -m pytest -q "$root/tests/worker_redelivery/test_redelivery.py"
+"${DETECTOR_TEST_PYTHON:-python3}" -m pytest -q "$root/tests/worker_redelivery/test_redelivery.py" "$@"

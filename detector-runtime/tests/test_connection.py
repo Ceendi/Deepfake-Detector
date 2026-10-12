@@ -42,10 +42,7 @@ def test_publication_failure_closes_connection_before_reconnect(runtime, monkeyp
     monkeypatch.setattr(runtime_module.pika, "BlockingConnection", MagicMock(return_value=conn))
     if close_fails:
         conn.close.side_effect = pika.exceptions.StreamLostError("lost during close")
-    if runtime.consume_iterator:
-        ch.consume.side_effect = pika.exceptions.UnroutableError([])
-    else:
-        conn.process_data_events.side_effect = pika.exceptions.UnroutableError([])
+    conn.process_data_events.side_effect = pika.exceptions.UnroutableError([])
 
     def backoff(seconds):
         assert seconds == 5
@@ -71,12 +68,6 @@ def test_idle_consumer_updates_shared_health_state(runtime, monkeypatch):
     monkeypatch.setattr(runtime_module.pika, "BlockingConnection", MagicMock(return_value=conn))
     monkeypatch.setattr(runtime_module.time, "time", MagicMock(side_effect=[10.0, 15.0]))
 
-    def idle_messages(*args, **kwargs):
-        assert runtime.health_state == {"ok": True, "last_beat": 10.0}
-        yield None, None, None
-        assert runtime.health_state == {"ok": True, "last_beat": 15.0}
-        raise StopConsumer()
-
     def idle_events(*args, **kwargs):
         if conn.process_data_events.call_count == 1:
             assert runtime.health_state == {"ok": True, "last_beat": 10.0}
@@ -84,14 +75,10 @@ def test_idle_consumer_updates_shared_health_state(runtime, monkeypatch):
             assert runtime.health_state == {"ok": True, "last_beat": 15.0}
             raise StopConsumer()
 
-    ch.consume.side_effect = idle_messages
     conn.process_data_events.side_effect = idle_events
     with pytest.raises(StopConsumer):
         runtime.run_consumer()
-    if runtime.consume_iterator:
-        ch.consume.assert_called_once_with(runtime.queue, inactivity_timeout=5)
-    else:
-        ch.basic_consume.assert_called_once_with(queue=runtime.queue,
-                                                on_message_callback=runtime.handle_message,
-                                                auto_ack=False)
-        conn.process_data_events.assert_called_with(time_limit=5)
+    assert ch.basic_consume.call_args.kwargs["queue"] == runtime.queue
+    assert ch.basic_consume.call_args.kwargs["auto_ack"] is False
+    conn.process_data_events.assert_called_with(time_limit=1)
+    assert runtime.health_state["ok"] is False

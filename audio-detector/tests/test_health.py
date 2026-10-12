@@ -87,7 +87,7 @@ def deliver(*args, **kwargs):
                     "file_bucket": "test", "file_key": "input"}).encode())
     raise StopConsumer()
 
-channel.consume.side_effect = deliver
+connection.process_data_events.side_effect = deliver
 class InlineThread:
     def __init__(self, target, args, daemon):
         self.target, self.args = target, args
@@ -101,7 +101,7 @@ main.threading.Thread = InlineThread
 async def start():
     async with main.lifespan(main.app):
         assert main.health().status_code == 503
-        assert main._consumer_alive["ok"] is True
+        assert main._consumer_alive["ok"] is False
         assert main._consumer_alive["last_beat"] > 0
 
 asyncio.run(start())
@@ -153,7 +153,7 @@ def test_lifespan_retains_broker_recovery(monkeypatch, loaded_model):
         assert main._consumer_alive["last_beat"] > 0
         raise StopConsumer()
 
-    channel.consume.side_effect = observe_ready
+    connection.process_data_events.side_effect = observe_ready
 
     class InlineThread:
         def __init__(self, target, args, daemon):
@@ -169,10 +169,7 @@ def test_lifespan_retains_broker_recovery(monkeypatch, loaded_model):
 
     async def start():
         async with main.lifespan(main.app):
-            if loaded_model:
-                assert main.health() == {"status": "UP"}
-            else:
-                assert main.health().status_code == 503
+            assert main.health().status_code == 503
 
     asyncio.run(start())
     assert disconnected == [503]
