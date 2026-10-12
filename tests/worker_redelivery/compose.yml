@@ -1,6 +1,6 @@
 services:
   rabbit:
-    image: rabbitmq:4.3.1-alpine
+    image: rabbitmq:4.3.6-alpine
     environment:
       RABBITMQ_DEFAULT_USER: test
       RABBITMQ_DEFAULT_PASS: test
@@ -12,7 +12,7 @@ services:
       timeout: 5s
       retries: 60
   redis:
-    image: redis:8.8.0-alpine
+    image: redis:8.10.2-alpine
     ports:
       - '127.0.0.1::6379'
     healthcheck:
