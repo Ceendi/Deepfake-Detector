@@ -169,7 +169,8 @@ jobs:
       - name: Install native dependency build and runtime libraries
         run: sudo apt-get update && sudo apt-get install -y build-essential libgl1 libglib2.0-0 libxcb1 ffmpeg
       - name: Install the frozen CPU dependency graph
-        run: uv sync --frozen
+        # training/tests needs the audio "training" extra; video-detector has no extras.
+        run: uv sync --frozen --all-extras
       - name: Run consumer and extraction regressions
         run: uv run --frozen python -m pytest -q tests
       - name: Exercise offline model checkpoints and gradients

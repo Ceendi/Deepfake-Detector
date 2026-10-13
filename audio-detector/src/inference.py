@@ -11,19 +11,16 @@ import torch
 from detector_runtime import MediaTooLongError
 
 matplotlib.use('Agg')
-import sys
 import time
 
 import matplotlib.pyplot as plt
 from prometheus_client import Gauge, Histogram
 
+from .models.mel_cnn import load_mel_cnn
+from .score_contract import build_audio_result
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
-sys.path.append(PROJECT_ROOT)
-
-from training.train_mel import MelCNNLightningModule
-
-from .score_contract import build_audio_result
 
 W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
 MEL_CKPT_PATH = os.path.join(
@@ -59,8 +56,7 @@ class AudioInference:
         start_load = time.time()
         self.w2v2_session = ort.InferenceSession(W2V2_ONNX_PATH, providers=['CPUExecutionProvider'])
         
-        self.mel_module = MelCNNLightningModule.load_from_checkpoint(MEL_CKPT_PATH, map_location=torch.device('cpu'))
-        self.mel_module.eval()
+        self.mel_module = load_mel_cnn(MEL_CKPT_PATH)
         
         MODEL_LOAD_TIME.set(time.time() - start_load)
 

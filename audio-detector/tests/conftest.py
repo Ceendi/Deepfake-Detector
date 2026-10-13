@@ -8,7 +8,7 @@ import pytest
 _HEAVY = [
     "torch", "soundfile", "onnxruntime",
     "matplotlib", "matplotlib.pyplot",
-    "training", "training.train_mel",
+    "src.models.mel_cnn",  # imports torchaudio/torchvision at module load
 ]
 
 
