@@ -34,7 +34,7 @@ public class ArtifactCleanupWorker {
     public ArtifactCleanupWorker(ArtifactCleanupStore store, S3Client s3,
             @Value("${storage.artifacts-bucket}") String bucket,
             @Value("${reliability.artifact-cleanup.batch-size:10}") int batchSize,
-            @Value("${reliability.artifact-cleanup.page-size:100}") int pageSize,
+            @Value("${reliability.artifact-cleanup.page-size:1000}") int pageSize,
             @Value("${reliability.artifact-cleanup.orphan-age:24h}") Duration orphanAge) {
         if (!"analysis-artifacts".equals(bucket) || batchSize < 1 || batchSize > 100 || pageSize < 1
                 || pageSize > 1000 || orphanAge.isZero() || orphanAge.isNegative()) {

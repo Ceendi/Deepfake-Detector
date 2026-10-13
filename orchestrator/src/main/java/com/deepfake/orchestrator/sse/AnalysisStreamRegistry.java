@@ -3,6 +3,7 @@ package com.deepfake.orchestrator.sse;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.*;
+import lombok.extern.slf4j.Slf4j;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,7 @@ import com.deepfake.orchestrator.exception.TooManyStreamsException;
 
 /** Single-instance routing; each admitted HTTP connection owns one bounded mailbox and writer. */
 @Component
+@Slf4j
 public class AnalysisStreamRegistry {
     private final Object admission = new Object();
     private final Map<UUID, Set<Session>> byId = new HashMap<>();
@@ -27,8 +29,15 @@ public class AnalysisStreamRegistry {
     public AnalysisStreamRegistry() { this(SseLimits.defaults()); }
     @Autowired public AnalysisStreamRegistry(SseLimits limits) { this.limits = limits; }
     @PostConstruct public void start() {
-        clock.scheduleAtFixedRate(this::heartbeat, limits.heartbeat().toMillis(), limits.heartbeat().toMillis(), TimeUnit.MILLISECONDS);
-        clock.scheduleAtFixedRate(this::observe, 1, 1, TimeUnit.SECONDS);
+        clock.scheduleAtFixedRate(() -> watchdogTick("heartbeat", this::heartbeat), limits.heartbeat().toMillis(), limits.heartbeat().toMillis(), TimeUnit.MILLISECONDS);
+        clock.scheduleAtFixedRate(() -> watchdogTick("observe", this::observe), 1, 1, TimeUnit.SECONDS);
+    }
+    private void watchdogTick(String name, Runnable task) {
+        try { task.run(); }
+        catch (Exception failure) {
+            // An escaped exception permanently cancels a fixed-rate task.
+            log.warn("SSE watchdog {} failed; subsequent ticks remain scheduled", name, failure);
+        }
     }
     @PreDestroy public void shutdown() {
         clock.shutdownNow();
