@@ -82,7 +82,7 @@ jobs:
 
 
 
-      - name: Build infrastructure image when needed
+      - name: Build Compose image when needed
         if: matrix.build
         env:
           SERVICE: ${{ matrix.service }}

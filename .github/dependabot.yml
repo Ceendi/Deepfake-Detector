@@ -35,3 +35,47 @@ updates:
     labels:
       - "dependencies"
       - "infra"
+
+  - package-ecosystem: docker
+    directory: /gateway
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(gateway)"
+    labels:
+      - "dependencies"
+      - "infra"
+
+  - package-ecosystem: docker
+    directory: /eureka-server
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(eureka-server)"
+    labels:
+      - "dependencies"
+      - "infra"
+
+  - package-ecosystem: docker
+    directory: /orchestrator
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(orchestrator)"
+    labels:
+      - "dependencies"
+      - "infra"
+
+  - package-ecosystem: docker
+    directory: /file-service
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(file-service)"
+    labels:
+      - "dependencies"
+      - "infra"

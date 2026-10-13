@@ -8,6 +8,9 @@ on:
       - file-service/**
       - orchestrator/**
       - docker-compose.yml
+      - .github/dependabot.yml
+      - .github/workflows/build-push.yml
+      - .github/workflows/security-scan.yml
       - .env.example
       - infra/seaweedfs/**
       - infra/tempo/**
@@ -25,6 +28,9 @@ on:
       - file-service/**
       - orchestrator/**
       - docker-compose.yml
+      - .github/dependabot.yml
+      - .github/workflows/build-push.yml
+      - .github/workflows/security-scan.yml
       - .env.example
       - infra/seaweedfs/**
       - infra/tempo/**
@@ -64,6 +70,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: python3 infra/tests/test_keycloak.py
       - run: python3 infra/tests/test_security_report.py
+      - run: python3 infra/tests/test_security_configuration.py
 
   discovery:
     name: Discovery isolation and gateway routing

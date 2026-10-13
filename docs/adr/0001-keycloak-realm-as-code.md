@@ -42,7 +42,7 @@ container in the `auth` compose profile, after Keycloak reports healthy.
 
 Key configuration:
 
-- `IMPORT_MANAGED_USER=no-delete` — file-declared users (`alice`, `bob`) are
+- `IMPORT_MANAGED_USER=no-delete` — file-declared users (development-only `alice`, `bob`) are
   reconciled (password reset on every sync, deliberate for known-state dev
   tests); users created manually in the Admin UI are preserved.
 - All other managed types (`role`, `client`, `authenticationFlow`, `group`,
@@ -168,3 +168,11 @@ kc-config-cli badly.
 - [Managed resources documentation](https://github.com/adorsys/keycloak-config-cli/blob/main/docs/MANAGED.md)
 - [Keycloak `--import-realm` behavior](https://www.keycloak.org/server/importExport)
 - This project's AGENTS.md (§"Granice", §"Wersje i pułapki stosu")
+
+## Deployment defaults update (2026-10-13)
+
+The default `realm-export.json` now declares no test users or load-test client.
+Local development explicitly selects `dev/realm-export.json` via
+`KEYCLOAK_REALM_CONFIG`. The `no-delete` ownership decision is unchanged: removing
+the dev selection does not remove already imported fixture users. See
+[the migration guidance](../../infra/keycloak/README.md#local-smoke-tests-and-load-tests).
