@@ -21,6 +21,7 @@ import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.deepfake.orchestrator.dto.response.ErrorResponse;
+import com.deepfake.orchestrator.dto.response.BackpressureResponse;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -63,14 +64,12 @@ public class GlobalExceptionHandler {
         return body(HttpStatus.FORBIDDEN, "FORBIDDEN", "Access denied", null);
     }
 
-    // Backpressure 429 has its own body shape per docs/contracts/rest-api.md (queuePosition +
-    // retryAfterSeconds + Retry-After header), not the uniform ErrorResponse.
+    // Backpressure keeps a separate body so existing clients retain queue and retry information.
     @ExceptionHandler(TooManyAnalysesException.class)
-    public ResponseEntity<Map<String, Object>> handleBackpressure(TooManyAnalysesException ex) {
+    public ResponseEntity<BackpressureResponse> handleBackpressure(TooManyAnalysesException ex) {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                 .header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.retryAfterSeconds()))
-                .body(Map.of("queuePosition", ex.queuePosition(),
-                        "retryAfterSeconds", ex.retryAfterSeconds()));
+                .body(new BackpressureResponse(ex.reason(), ex.limit(), ex.queuePosition(), ex.retryAfterSeconds()));
     }
 
     @ExceptionHandler(TooManyStreamsException.class)

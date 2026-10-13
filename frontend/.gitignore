@@ -33,3 +33,6 @@ dist-ssr
 # Wszystkie pliki .md (lokalne notatki, plany) — nie śledzone, poza README.md
 *.md
 !README.md
+
+# Optional local OpenAPI codegen output; the app uses hand-written src/api/types.ts.
+src/api/generated/

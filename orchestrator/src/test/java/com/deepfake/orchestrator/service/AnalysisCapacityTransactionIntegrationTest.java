@@ -45,6 +45,8 @@ import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.exception.TooManyAnalysesException;
+import com.deepfake.orchestrator.exception.GlobalExceptionHandler;
+import tools.jackson.databind.json.JsonMapper;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
@@ -102,6 +104,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         assertThatThrownBy(this::create).isInstanceOfSatisfying(TooManyAnalysesException.class, error -> {
             assertThat(error.queuePosition()).isEqualTo(4);
             assertThat(error.retryAfterSeconds()).isEqualTo(5);
+            assertRejection(error, "USER_LIMIT", 3);
         });
         assertThat(active()).isEqualTo(3);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isEqualTo(6);
@@ -196,11 +199,45 @@ class AnalysisCapacityTransactionIntegrationTest {
                 .isInstanceOfSatisfying(TooManyAnalysesException.class, error -> {
                     assertThat(error.queuePosition()).isEqualTo(4);
                     assertThat(error.retryAfterSeconds()).isEqualTo(5);
+                    assertRejection(error, "USER_LIMIT", 2);
                 });
         transaction.executeWithoutResult(status ->
                 new BackpressureGuard(jdbc, repository, 20, 2, 5).acquire("bob"));
         assertThat(repository.countActiveByUser("alice")).isEqualTo(2);
         assertThat(repository.countActiveByUser("bob")).isEqualTo(1);
+    }
+
+    @Test
+    void globalLimitReportsItsConfiguredValue() {
+        create();
+        service.createResolved(request("key"), "bob");
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status ->
+                new BackpressureGuard(jdbc, repository, 2, 3, 5).acquire("alice")))
+                .isInstanceOfSatisfying(TooManyAnalysesException.class, error ->
+                        assertRejection(error, "GLOBAL_LIMIT", 2));
+    }
+
+    @Test
+    void userLimitTakesPrecedenceWhenBothLimitsAreReached() {
+        create();
+        create();
+        service.createResolved(request("key"), "bob");
+        assertThatThrownBy(() -> transaction.executeWithoutResult(status ->
+                new BackpressureGuard(jdbc, repository, 3, 2, 5).acquire("alice")))
+                .isInstanceOfSatisfying(TooManyAnalysesException.class, error -> {
+                    assertThat(error.queuePosition()).isEqualTo(4);
+                    assertRejection(error, "USER_LIMIT", 2);
+                });
+    }
+
+    private static void assertRejection(TooManyAnalysesException error, String reason, int limit) {
+        var response = new GlobalExceptionHandler().handleBackpressure(error);
+        assertThat(response.getStatusCode().value()).isEqualTo(429);
+        assertThat(response.getHeaders().getFirst("Retry-After")).isEqualTo("5");
+        var body = new JsonMapper().valueToTree(response.getBody());
+        assertThat(body.path("reason").asText()).isEqualTo(reason);
+        assertThat(body.path("limit").asInt()).isEqualTo(limit);
+        assertThat(body.path("retryAfterSeconds").asInt()).isEqualTo(5);
     }
 
     @Test

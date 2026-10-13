@@ -94,8 +94,11 @@ is no separate counter to leak. Admission runs in the create transaction at `REA
 takes `pg_advisory_xact_lock(114545, 1)`, held until commit or rollback, so concurrent creates
 serialize and each sees the previous commit. A rolled-back create occupies nothing; a terminal
 update frees its place only when it commits. Both limits are checked under the same lock; reaching
-either → the existing `429` body with `Retry-After`. `queuePosition` remains the global active count
-plus the rejected request. The per-user query uses the partial `idx_analysis_active_user` index
+either → `429` with `Retry-After`, the matching `retryAfterSeconds`, a `reason`
+(`USER_LIMIT` or `GLOBAL_LIMIT`) and the configured `limit` that rejected admission.
+The user limit takes precedence when both limits are reached. The frontend explains the
+per-user limit separately; older bodies without `reason` retain the global queue message.
+`queuePosition` remains the global active count plus the rejected request. The per-user query uses the partial `idx_analysis_active_user` index
 on `user_id` for active rows, avoiding scans of terminal history. The `analyses_inflight` gauge
 continues to report the global count.
 

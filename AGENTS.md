@@ -51,7 +51,6 @@ docker compose --profile core --profile monitoring up -d    # + Grafana/Promethe
 cd orchestrator && ./mvnw verify          # test + integracja (Testcontainers, wymaga Dockera); Windows: mvnw.cmd
 cd audio-detector && uv sync --dev && uv run pytest tests && uvx ruff check .   # tak samo video-detector
 cd frontend && npm ci && npm run lint && npm run test:run && npm run build        # jak w CI
-cd frontend && npm run gen:api            # typy z OpenAPI (wymaga działającego gatewaya)
 ```
 
 ## Wersje i pułapki stosu
@@ -116,7 +115,8 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 - Przed zmianą zachowania napisz test, który bez poprawki nie przechodzi (Java: JUnit + Testcontainers,
   Python: pytest, przepływ broker/worker: `tests/worker_redelivery`).
 - Nowa migracja jako kolejny `V{N}__opis.sql`.
-- Nowy lub zmieniony endpoint → zaktualizowany OpenAPI i `npm run gen:api` na froncie.
+- Nowy lub zmieniony endpoint → zaktualizowane adnotacje OpenAPI i ręcznie zsynchronizowany
+  `frontend/src/api/types.ts` (świadomie bez codegenu; nie commituj `src/api/generated/`).
 - Komentarze w kodzie po angielsku, krótkie, tylko „dlaczego”; przyszła praca jako `TODO(...)`.
 
 **Najpierw zapytaj**

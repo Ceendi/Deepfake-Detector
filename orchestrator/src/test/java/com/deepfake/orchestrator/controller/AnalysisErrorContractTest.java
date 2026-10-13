@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -85,10 +87,12 @@ class AnalysisErrorContractTest {
         };
     }
 
-    @Test
-    void capacityRejectionPreservesBodyAndRetryAfterHeader() throws Exception {
+    @ParameterizedTest
+    @CsvSource({"GLOBAL_LIMIT,20", "USER_LIMIT,3"})
+    void capacityRejectionPreservesBodyAndRetryAfterHeader(TooManyAnalysesException.Reason reason, int limit)
+            throws Exception {
         when(creationService.create(any(), eq("user-a"), any()))
-                .thenThrow(new TooManyAnalysesException(4, 5));
+                .thenThrow(new TooManyAnalysesException(reason, limit, 4, 5));
         mvc.perform(post("/api/analysis")
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole()))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -98,7 +102,9 @@ class AnalysisErrorContractTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string("Retry-After", "5"))
                 .andExpect(jsonPath("$.queuePosition").value(4))
-                .andExpect(jsonPath("$.retryAfterSeconds").value(5));
+                .andExpect(jsonPath("$.retryAfterSeconds").value(5))
+                .andExpect(jsonPath("$.reason").value(reason.name()))
+                .andExpect(jsonPath("$.limit").value(limit));
         verifyNoInteractions(service);
     }
 

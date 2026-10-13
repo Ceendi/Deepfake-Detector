@@ -1,6 +1,14 @@
 package com.deepfake.orchestrator;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.test.web.servlet.MockMvc;
+import tools.jackson.databind.json.JsonMapper;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -22,6 +30,7 @@ import org.testcontainers.utility.DockerImageName;
         "spring.data.redis.password="
 })
 @Testcontainers
+@AutoConfigureMockMvc
 class OrchestratorApplicationTests {
 
     @Container
@@ -55,6 +64,25 @@ class OrchestratorApplicationTests {
     // Replaces the issuer-uri JwtDecoder so the context doesn't fetch Keycloak's OIDC metadata at startup.
     @MockitoBean
     JwtDecoder jwtDecoder;
+
+    @Autowired
+    MockMvc mvc;
+
+    @Test
+    void openApiDocumentsBackpressureBodyAndRetryAfter() throws Exception {
+        var json = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var document = new JsonMapper().readTree(json);
+        var response = document.at("/paths/~1api~1analysis/post/responses/429");
+        assertThat(response.at("/content/application~1json/schema/$ref").asText())
+                .isEqualTo("#/components/schemas/BackpressureResponse");
+        assertThat(response.at("/headers/Retry-After/schema/type").asText()).isEqualTo("integer");
+        var schema = document.at("/components/schemas/BackpressureResponse");
+        assertThat(schema.path("required").toString())
+                .contains("reason", "limit", "queuePosition", "retryAfterSeconds");
+        assertThat(schema.at("/properties/reason/enum").toString()).contains("GLOBAL_LIMIT", "USER_LIMIT");
+        assertThat(schema.at("/properties/limit/type").asText()).isEqualTo("integer");
+    }
 
     @Test
     void contextLoads() {

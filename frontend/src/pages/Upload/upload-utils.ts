@@ -64,6 +64,9 @@ export function messageForError(err: unknown): string {
       return 'Nieobsługiwany format pliku. Dozwolone: MP4, MOV, WEBM, WAV, MP3, FLAC.'
     if (err.status === 429) {
       if (err.backpressure) {
+        if (err.backpressure.reason === 'USER_LIMIT' && err.backpressure.limit !== undefined) {
+          return `Masz już ${err.backpressure.limit} aktywne analizy — poczekaj, aż któraś się zakończy.`
+        }
         return `Kolejka analiz jest pełna (pozycja ${err.backpressure.queuePosition}). Spróbuj ponownie za ${err.backpressure.retryAfterSeconds} s.`
       }
       return 'Zbyt wiele żądań. Odczekaj chwilę i spróbuj ponownie.'
