@@ -81,7 +81,16 @@ def test_missing_or_invalid_fps_has_bounded_frame_budget(module, monkeypatch, fp
     with pytest.raises(RuntimeError) as error:
         analyzer(module)._read_frames("input")
     assert getattr(error.value, "code", None) == "MEDIA_TOO_LONG"
-    assert cap.grab.call_count <= 3
+    assert cap.grab.call_count == module.FALLBACK_FPS + 1
+    cap.release.assert_called_once()
+
+
+def test_missing_fps_accepts_ordinary_clip_within_limit(module, monkeypatch):
+    # 61 s at 30 fps without FPS metadata: well under 1800 s, so it must not be rejected.
+    cap = capture(module, monkeypatch, total=1, fps=0, actual=61 * 30)
+    frames, duration, fps = analyzer(module)._read_frames("input")
+    assert frames and (duration, fps) == (0, 0)
+    assert cap.grab.call_count == 61 * 30 + 1
     cap.release.assert_called_once()
 
 
