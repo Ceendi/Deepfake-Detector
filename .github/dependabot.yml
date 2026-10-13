@@ -99,6 +99,12 @@ updates:
       infra-images:
         patterns:
           - "*"
+    # keycloak-config-cli builds and runs on Java 21; a JDK move must change both stages together.
+    # The maven builder tag encodes the JDK as a suffix that update-types cannot classify.
+    ignore:
+      - dependency-name: "maven"
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "infra"
     labels:
