@@ -95,7 +95,8 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
     lub aktywna analiza starsza niż 7200 s od utworzenia → FAILED; progress nie odnawia wieku absolutnego.
   - Zatrzymanie FAILED/CANCELLED: flaga Redis `cancel:{id}` ustawiana po commicie; detektor sprawdza ją
     przy podjęciu, na każdym ticku i przed publikacją wyniku. Anulowanie nie jest komunikatem AMQP.
-  - Redis wszędzie fail-open (cache → DB, dedup → guard DB, snapshot progresu → pomiń, cancel → licz do końca).
+  - Redis fail-open (cache → DB, dedup → guard DB, snapshot progresu → pomiń, cancel → licz do końca).
+    Wyjątek: limiter uploadu w gatewayu jest świadomie fail-closed (503); pozostałe trasy są fail-open.
 
 ## Bezpieczeństwo
 

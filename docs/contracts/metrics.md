@@ -27,6 +27,16 @@ plugin in PR4, not from app code.
 | `files_purged_total`            | counter | —      | Soft-deleted files purged from S3 + DB by the cleanup sweep after the retention window (`storage.cleanup.retention-hours`). Counts only the replica that won the row hard-delete CAS, so D4 replication doesn't double-count. |
 | `files_orphans_reclaimed_total` | counter | —      | Orphaned `deepfake-uploads` objects (no metadata row — the upload's S3 put succeeded but the row commit didn't) reclaimed once older than `storage.cleanup.orphan-min-age-hours`. |
 
+## Gateway (`/actuator/prometheus`)
+
+| Prometheus name | Type | Labels | Meaning |
+|-----------------|------|--------|---------|
+| `gateway_ratelimiter_degraded_total` | counter | `route` (`file-service`, `orchestrator`) | Requests forwarded without Redis rate limiting on error, timeout or `remaining=-1`, including the shared degraded bypass window. Uploads fail closed and do not increment this counter. |
+
+Java name: `gateway.ratelimiter.degraded`. Route labels come from static gateway
+configuration, never user IDs or URLs. The Business dashboard shows the request
+rate by route. `GatewayRateLimitIntegrationTest` checks the actual Prometheus name.
+
 ## Tracing
 
 OTLP trace export is gated by `OTEL_TRACING_EXPORT_ENABLED` (default `false`; PR4 flips it on under

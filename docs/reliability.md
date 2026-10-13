@@ -8,7 +8,8 @@ Ground rules:
 - **PostgreSQL is the authority** for admission, source acceptance and terminal state.
 - **RabbitMQ delivery is at least once** everywhere. Every consumer tolerates duplicates.
 - **Redis only carries hints** (cache, dedup, progress snapshot, cancel flag). Every Redis call
-  fails open; correctness never depends on it.
+  in the orchestrator and detectors fails open; correctness never depends on these hints.
+  Gateway upload quotas deliberately fail closed (`503`); other gateway routes fail open.
 - **Side effects run after commit** (cache eviction, SSE, Redis markers), so a rollback leaves none.
 
 ## Container recovery and broker storage
@@ -375,7 +376,8 @@ the service, then releases the stale reader against real Redis and checks the ne
 
 ## Redis failure budgets
 
-Code: `OptionalRedisOperations` (orchestrator), `ProtectiveRedisRateLimiter` (gateway).
+Code: `OptionalRedisOperations` (orchestrator), `ProtectiveRedisRateLimiter` and
+`RedisLimiterDegradation` (gateway).
 
 - **Orchestrator:** after an actual Redis failure, optional operations return their fallback
   without calling Redis for `REDIS_DEGRADED_BYPASS`; then Redis is tried again. Fallbacks: cache →
@@ -383,10 +385,19 @@ Code: `OptionalRedisOperations` (orchestrator), `ProtectiveRedisRateLimiter` (ga
   Each process start and each failure switches to a new cache namespace, so a cache entry that
   missed its eviction is never served again (old entries expire with their 60 s TTL). This assumes
   the single orchestrator instance.
-- **Gateway rate limiter is protective:** Redis failure returns `503` before forwarding; an
-  exhausted bucket returns `429`. The limiter converts Spring Cloud Gateway's `remaining=-1`
-  fallback sentinel into `503`; rerun `GatewayRateLimitIntegrationTest` after upgrading Spring
-  Cloud Gateway.
+- **Gateway hybrid rate limiter:** `file-service-upload` deliberately fails closed: a Redis
+  error, whole-call timeout or Spring Cloud Gateway's `remaining=-1` fallback sentinel returns
+  `503` before forwarding. `file-service` and `orchestrator` fail open on these failures, so file
+  metadata, analysis reads/listing, SSE and analysis creation remain available (PostgreSQL still
+  enforces admission limits). A healthy Redis bucket that is exhausted still returns `429` on
+  every route.
+  Both limiter beans share one per-process outage window. After a failure, neither calls Redis
+  for `GATEWAY_REDIS_DEGRADED_BYPASS`: upload immediately gets `503`, and other routes immediately
+  forward without `X-RateLimit-*` headers. The next request after expiry tries Redis again; a
+  failure opens another window. Concurrent failures do not extend an existing window. A WARN
+  is emitted at most once per window, without a user identifier. Each fail-open request, including
+  those in the window, increments `gateway_ratelimiter_degraded_total{route}` (uploads do not).
+  Rerun `GatewayRateLimitIntegrationTest` after upgrading Spring Cloud Gateway.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -394,8 +405,12 @@ Code: `OptionalRedisOperations` (orchestrator), `ProtectiveRedisRateLimiter` (ga
 | `REDIS_COMMAND_TIMEOUT` | `250ms` | Gateway/orchestrator command timeout |
 | `REDIS_DEGRADED_BYPASS` | `2s` | Orchestrator bypass after a failure |
 | `GATEWAY_REDIS_LIMITER_BUDGET` | `750ms` | Whole gateway limiter call |
+| `GATEWAY_REDIS_DEGRADED_BYPASS` | `2s` | Shared gateway Redis bypass after a failure (positive duration) |
 
-Tests: `RedisDownDegradationIntegrationTest`, `GatewayRateLimitIntegrationTest`.
+Tests: `RedisDownDegradationIntegrationTest`, `GatewayRateLimitIntegrationTest`,
+`ProtectiveRedisRateLimiterTest`. The gateway integration test stops/starts real Redis, checks
+forwarding to a stub backend, immediate bypass responses and the Prometheus counter, then verifies
+`429` returns after recovery. Unit tests cover the sentinel, timeouts and shared window expiry.
 
 ## SSE delivery
 

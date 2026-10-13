@@ -139,6 +139,15 @@ Three distinct `429 Too Many Requests` can occur:
 - **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
   carried in `X-RateLimit-*` headers (Spring Cloud Gateway default).
 
+Gateway Redis failures affect only upload availability: `POST /api/files/upload`
+(`file-service-upload`) returns `503` before forwarding, without `X-RateLimit-*`
+headers. Other file-service and orchestrator routes (including analysis creation,
+reads, listing and SSE) are forwarded on Redis error, timeout or `remaining=-1`
+fallback, without rate-limit headers. They still enforce authentication, ownership
+and backend admission rules. Both policies share a short Redis bypass window
+(default 2 s), so subsequent requests avoid the Redis wait. `429` remains unchanged
+when Redis is healthy. Other backend causes of `503` remain unchanged.
+
 ### `GET /api/analysis/{id}`
 
 Returns `200 OK` with the full `Analysis` (see below). Returns `404 Not Found`
