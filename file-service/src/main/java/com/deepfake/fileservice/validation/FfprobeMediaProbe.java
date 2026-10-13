@@ -29,6 +29,7 @@ import java.util.concurrent.TimeoutException;
 @Component
 public class FfprobeMediaProbe implements MediaProbe {
 
+    private static final Duration CLEANUP_TIMEOUT = Duration.ofSeconds(5);
     private final JsonMapper json = JsonMapper.builder().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build();
     private final int maxOutputBytes;
     private final List<String> commandPrefix;
@@ -55,8 +56,8 @@ public class FfprobeMediaProbe implements MediaProbe {
         cmd.addAll(List.of("-v", "quiet", "-print_format", "json", "-show_entries",
                 "format=format_name,duration:stream=index", file.toAbsolutePath().toString()));
         Process process = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.DISCARD).start();
-        ExecutorService reader = Executors.newSingleThreadExecutor(runnable ->
-                new Thread(runnable, "ffprobe-output-" + process.pid()));
+        ExecutorService reader = Executors.newSingleThreadExecutor(
+                Thread.ofPlatform().daemon().name("ffprobe-output-" + process.pid()).factory());
         Future<byte[]> stdout = reader.submit(() -> readBounded(process.getInputStream()));
         long deadline = System.nanoTime() + timeout.toNanos();
         try {
@@ -77,41 +78,60 @@ public class FfprobeMediaProbe implements MediaProbe {
                 log.warn("ffprobe output exceeded {} bytes for {}", maxOutputBytes, file.getFileName());
                 return Optional.empty();
             }
-            if (e.getCause() instanceof IOException io) {
-                throw io;
+            if (e.getCause() instanceof IOException) {
+                log.warn("Could not read ffprobe output for {}", file.getFileName(), e.getCause());
+                return Optional.empty();
             }
             throw new IOException("Could not read ffprobe output", e.getCause());
         } finally {
-            // Kill before closing pipes: close can otherwise wait for a blocked read to finish.
-            process.destroyForcibly();
-            boolean interrupted = Thread.interrupted();
-            for (;;) {
+            cleanup(process, stdout, reader, file);
+        }
+    }
+
+    private void cleanup(Process process, Future<byte[]> stdout, ExecutorService reader, Path file) {
+        // Kill before closing pipes: close can otherwise wait for a blocked read to finish.
+        process.destroyForcibly();
+        boolean interrupted = Thread.interrupted();
+        long deadline = System.nanoTime() + CLEANUP_TIMEOUT.toNanos();
+        boolean exited = false;
+        try {
+            while (System.nanoTime() < deadline) {
                 try {
-                    process.waitFor();
+                    exited = process.waitFor(remaining(deadline), TimeUnit.NANOSECONDS);
                     break;
                 } catch (InterruptedException e) {
                     interrupted = true;
+                } catch (TimeoutException e) {
+                    break;
                 }
             }
-            try (InputStream ignored = process.getInputStream()) {
-                process.getOutputStream().close();
-                process.getErrorStream().close();
-            } finally {
-                stdout.cancel(true);
-                reader.shutdownNow();
-                for (;;) {
-                    try {
-                        if (reader.awaitTermination(1, TimeUnit.SECONDS)) {
-                            break;
-                        }
-                    } catch (InterruptedException e) {
-                        interrupted = true;
-                    }
+            if (exited) {
+                try (InputStream ignored = process.getInputStream()) {
+                    process.getOutputStream().close();
+                    process.getErrorStream().close();
+                } catch (IOException e) {
+                    log.warn("Could not close ffprobe pipes for {}", file.getFileName(), e);
                 }
-                if (interrupted) {
-                    Thread.currentThread().interrupt();
+            } else {
+                // A pipe close may block while a live process still owns stdout.
+                log.warn("ffprobe did not exit within cleanup budget for {}", file.getFileName());
+            }
+        } finally {
+            stdout.cancel(true);
+            reader.shutdownNow();
+            boolean stopped = reader.isTerminated();
+            while (!stopped && System.nanoTime() < deadline) {
+                try {
+                    stopped = reader.awaitTermination(remaining(deadline), TimeUnit.NANOSECONDS);
+                    break;
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                } catch (TimeoutException e) {
+                    break;
                 }
             }
+            if (!stopped) log.warn("ffprobe output reader did not stop within cleanup budget for {}", file.getFileName());
+            if (interrupted) Thread.currentThread().interrupt();
         }
     }
 

@@ -3,6 +3,10 @@ server:
 spring:
   application:
     name: orchestrator
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULER_POOL_SIZE:2}
   security:
     oauth2:
       resourceserver:
@@ -99,7 +103,7 @@ reliability:
     poll-interval-ms: ${ARTIFACT_CLEANUP_POLL_INTERVAL_MS:1000}
     scan-interval-ms: ${ARTIFACT_CLEANUP_SCAN_INTERVAL_MS:60000}
     batch-size: ${ARTIFACT_CLEANUP_BATCH_SIZE:10}
-    page-size: ${ARTIFACT_CLEANUP_PAGE_SIZE:100}
+    page-size: ${ARTIFACT_CLEANUP_PAGE_SIZE:1000}
     orphan-age: ${ARTIFACT_CLEANUP_ORPHAN_AGE:24h}
     lease: ${ARTIFACT_CLEANUP_LEASE:30s}
     retry: ${ARTIFACT_CLEANUP_RETRY:5s}

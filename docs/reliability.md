@@ -104,6 +104,10 @@ transaction inserts the analysis and one `analysis_task_outbox` row per expected
 two). The row holds the full task payload and a `task_id`; never a JWT. Creation returns after
 commit without touching RabbitMQ, so a broker outage does not reject admitted work.
 
+Outbox dispatch and stuck-job recovery share Boot's scheduler pool, with two threads by default
+(`SCHEDULER_POOL_SIZE`), so a blocked recovery scan does not delay dispatch. Artifact cleanup
+keeps its dedicated scheduler.
+
 The scheduled publisher reads committed, unsent, due rows. Per task it locks the analysis row
 (`FOR UPDATE SKIP LOCKED`), rechecks active status and the dispatch deadline, then publishes a
 persistent, mandatory message (`message_id` = `task_id`) and waits for a correlated confirm.
@@ -119,6 +123,7 @@ makes that safe. A confirmed dispatch bumps the analysis `updated_at`.
 | `BACKPRESSURE_MAX_INFLIGHT` | `20` | Active analyses limit |
 | `BACKPRESSURE_MAX_INFLIGHT_PER_USER` | `3` | Active analyses limit per authenticated user |
 | `BACKPRESSURE_RETRY_AFTER_SECONDS` | `5` | `Retry-After` on `429` |
+| `SCHEDULER_POOL_SIZE` | `2` | Orchestrator scheduler threads shared by outbox and recovery |
 | `RELIABILITY_OUTBOX_ENABLED` | `true` | Run the publisher |
 | `RELIABILITY_OUTBOX_POLL_INTERVAL_MS` | `1000` | Publisher poll delay |
 | `RELIABILITY_OUTBOX_BATCH_SIZE` | `20` | Tasks per poll |
@@ -127,7 +132,8 @@ makes that safe. A confirmed dispatch bumps the analysis `updated_at`.
 | `RELIABILITY_OUTBOX_DISPATCH_TIMEOUT_SECONDS` | `120` | Dispatch deadline from creation |
 
 Tests: `AnalysisFileResolutionIntegrationTest`, `AnalysisCapacityTransactionIntegrationTest`,
-`TransactionalDispatchIntegrationTest`, `infra/tests/test_analysis_file_ownership.py`.
+`TransactionalDispatchIntegrationTest`, `OutboxRecoverySchedulingTest`,
+`infra/tests/test_analysis_file_ownership.py`.
 
 ## Detector workers
 
@@ -424,6 +430,10 @@ The terminal event takes priority and clears pending progress. Stage/status stri
 512/32 characters are dropped. A write slower than `SSE_SLOW_WRITE` stops further routing to that
 connection.
 
+The dedicated `sse-watchdog` runs heartbeat and observation tasks with independent exception
+guards. A failed tick logs WARN and later ticks continue instead of being cancelled by
+`scheduleAtFixedRate`.
+
 Quotas count physical connections; over quota → `429` with `Retry-After: 5`. A slot is released
 only after the servlet request completes and the writer exits, so a client that stalls a write
 keeps its slot until the peer disconnects. Size the quotas accordingly. The frontend reconciles
@@ -438,7 +448,7 @@ with `GET` after a result, EOF, error or `429`; the database is authoritative.
 | `SSE_HEARTBEAT` | `15s` | Heartbeat comment interval |
 | `SSE_SLOW_WRITE` | `5s` | Write duration that detaches a connection |
 
-Tests: `SseHttpIsolationTest`, `SseBackendAcceptanceIntegrationTest`.
+Tests: `SseHttpIsolationTest`, `SseBackendAcceptanceIntegrationTest`, `AnalysisStreamWatchdogTest`.
 
 ## Grad-CAM artifacts
 
@@ -456,7 +466,8 @@ S3 call runs on the request. A worker on its own scheduler claims due keys
 the row. Failures retry with exponential backoff and no limit; missing objects count as deleted.
 
 Orphan discovery lists only `analysis-artifacts`, one page per run, with the cursor stored in
-`artifact_cleanup_scan`. An object is queued only if it is older than
+`artifact_cleanup_scan`. The default page holds up to 1000 objects (one full `ListObjectsV2`
+page) per 60 s scan. An object is queued only if it is older than
 `ARTIFACT_CLEANUP_ORPHAN_AGE`, matches the current attempt-key format exactly, and is neither
 under an active analysis nor referenced by any analysis (checked again before deletion). Uploads in
 `deepfake-uploads` belong to file-service and are never touched.
@@ -471,14 +482,14 @@ under an active analysis nor referenced by any analysis (checked again before de
 | `ARTIFACT_CLEANUP_POLL_INTERVAL_MS` | `1000` | Delay between deletion batches |
 | `ARTIFACT_CLEANUP_SCAN_INTERVAL_MS` | `60000` | Delay between listing pages |
 | `ARTIFACT_CLEANUP_BATCH_SIZE` | `10` | Deletions per batch (1–100) |
-| `ARTIFACT_CLEANUP_PAGE_SIZE` | `100` | Objects per listing page (1–1000) |
+| `ARTIFACT_CLEANUP_PAGE_SIZE` | `1000` | Objects per listing page (1–1000) |
 | `ARTIFACT_CLEANUP_ORPHAN_AGE` | `24h` | Minimum orphan age |
 | `ARTIFACT_CLEANUP_LEASE` | `30s` | Claim lease; must exceed the S3 call timeout + 1 s |
 | `ARTIFACT_CLEANUP_RETRY` | `5s` | First retry delay |
 | `ARTIFACT_CLEANUP_MAX_RETRY` | `1h` | Retry delay cap |
 
 Tests: `ArtifactDownloadIntegrationTest`, `ArtifactCleanupIntegrationTest`,
-`ArtifactCleanupSeaweedIntegrationTest`.
+`ArtifactCleanupSeaweedIntegrationTest`, `ArtifactCleanupDefaultsTest`.
 
 ## Upload media probing
 
@@ -486,5 +497,12 @@ Code: file-service `FileValidator`, `FfprobeMediaProbe`. The MIME detected by Ti
 bytes must be whitelisted, then ffprobe must report an allowed container. ffprobe is asked only
 for stream indexes and the container format name and duration (no tags). Its output is capped at
 `MEDIA_PROBE_MAX_OUTPUT_BYTES` (default 65536), and stdout reading plus process exit share a 10 s
-deadline. Overflow, timeout, non-zero exit or missing stream data → `422 INVALID_FILE`. The upload
-limit is 500 MB. Tests need `ffmpeg` and `ffprobe` installed (`FfprobeMediaProbeIntegrationTest`).
+deadline. Overflow, timeout, stdout I/O failure, non-zero exit or missing stream data → `422 INVALID_FILE`.
+Cleanup kills the child and waits at most 5 s in total for process exit and reader termination,
+restoring the caller's interrupt flag. Failure to exit or stop the reader logs WARN; a still-live
+child's pipes are not closed synchronously because a blocked read can hold their lock. The reader
+is a daemon so a stuck subprocess cannot keep the JVM alive. Process startup I/O failures
+retain their existing error behavior. The upload limit is 500 MB.
+
+Tests need `ffmpeg` and `ffprobe` installed: `FfprobeMediaProbeIntegrationTest`,
+`FfprobeMediaProbeProcessTest`, `FfprobeMediaProbeFailureTest`.
