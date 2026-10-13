@@ -8,6 +8,7 @@ import numpy as np
 import onnxruntime as ort
 import soundfile as sf
 import torch
+from detector_runtime import MediaTooLongError
 
 matplotlib.use('Agg')
 import sys
@@ -34,13 +35,6 @@ W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.3000"))
 MEDIA_MAX_DURATION_SECONDS = float(os.getenv("MEDIA_MAX_DURATION_SECONDS", "1800"))
 if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <= 0:
     raise ValueError("Media duration limit must be finite and positive")
-
-
-class MediaTooLongError(RuntimeError):
-    code = "MEDIA_TOO_LONG"
-
-    def __init__(self):
-        super().__init__("Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.")
 
 
 class NoAudioTrackError(RuntimeError):

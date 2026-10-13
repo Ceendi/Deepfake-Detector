@@ -188,11 +188,24 @@ stubbed), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
 ## Media duration and audio progress
 
 `MEDIA_MAX_DURATION_SECONDS` (positive finite seconds, default 1800) is shared by
-file-service and audio-detector in Compose. Upload validation rejects a known
+file-service and both detectors in Compose. Upload validation rejects a known
 duration above this limit before writing S3 or PostgreSQL, using `422 INVALID_FILE`.
 Audio checks container duration before extraction and decoded WAV frame count before
 allocating samples; an overlong input returns confirmed `FAILED/MEDIA_TOO_LONG` before ACK.
 This also protects old uploads or tasks created outside the upload endpoint.
+
+Video checks finite frame-count/FPS duration before reading any frames, then checks
+decoded frame count against the same limit on every `grab()`. Reading continues to EOF
+instead of trusting the advertised frame count, so understated metadata cannot bypass
+the guard. Missing, non-positive or non-finite FPS uses a conservative 1 fps frame budget
+only for the guard (default 1800 frames); valid clips with missing FPS may therefore be
+rejected earlier. Reported timestamps/FPS keep their existing zero fallback. An overlong
+video returns the same confirmed `FAILED/MEDIA_TOO_LONG` before ACK, and the capture is
+released on success and all failures. Both detectors use the shared runtime error class.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MEDIA_MAX_DURATION_SECONDS` | `1800` | Positive finite duration limit for uploads, audio and video |
 
 Unknown container duration remains accepted. Extraction disables video and stops
 after at most the limit plus one output sample, so even missing or misleading
@@ -207,7 +220,8 @@ completion ticks bypass throttling. The gate runs in the shared runtime and is e
 only by the audio adapter; video keeps its existing publication behavior.
 
 Tests: `FileValidatorTest`, `FfprobeMediaProbeIntegrationTest`,
-`audio-detector/tests/test_media_limits.py` and shared runtime delivery tests.
+`audio-detector/tests/test_media_limits.py`, `video-detector/tests/test_media_limits.py`
+and shared runtime delivery tests.
 
 ## Task queue upgrade
 

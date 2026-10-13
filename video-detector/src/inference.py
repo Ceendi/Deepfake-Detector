@@ -22,6 +22,7 @@ training/gradcam.py bez zaleznosci od datasets.py (albumentations/pandas
 nie wchodza do obrazu produkcyjnego).
 """
 
+import math
 import os
 import sys
 import time
@@ -31,6 +32,7 @@ import numpy as np
 import onnxruntime as ort
 import structlog
 import torch
+from detector_runtime import MediaTooLongError
 from prometheus_client import Gauge, Histogram
 
 from .utils import (
@@ -56,6 +58,9 @@ BACKBONE_ONNX_PATH = os.path.join(MODEL_DIR, "backbone.onnx")
 TEMPORAL_ONNX_PATH = os.path.join(MODEL_DIR, "temporal.onnx")
 CKPT_PATH = os.path.join(MODEL_DIR, "last.ckpt")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "effnetb4-bilstm-v1.0.0")
+MEDIA_MAX_DURATION_SECONDS = float(os.getenv("MEDIA_MAX_DURATION_SECONDS", "1800"))
+if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <= 0:
+    raise ValueError("Media duration limit must be finite and positive")
 
 # Prog decyzyjny z ewaluacji (training/eval.py); 0.5 = brak przesuniecia.
 # Wkalibrowany w prob_fake, zeby Orchestrator (sztywne 0.5) mowil tym samym jezykiem.
@@ -118,24 +123,33 @@ class VideoInference:
         """-> ([(timestamp_s, frame_bgr)], duration_s, fps). Sekwencyjny grab()
         zamiast seekowania — szybsze i odporne na zepsute indeksy (jak prep_cache)."""
         cap = cv2.VideoCapture(video_path)
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
-        if total <= 0:
+        try:
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+            fps = fps if math.isfinite(fps) and fps > 0 else 0.0
+            duration = total / fps if fps > 0 else 0.0
+            if math.isfinite(duration) and duration > MEDIA_MAX_DURATION_SECONDS:
+                raise MediaTooLongError()
+            if total <= 0:
+                raise VideoDecodeError(f"no decodable frames in {os.path.basename(video_path)}")
+            # Missing FPS uses a conservative 1 fps budget, without inventing result timestamps.
+            budget_fps = fps or 1.0
+            wanted = set(sample_indices(total, fps, FRAME_STRATEGY).tolist())
+            frames = []
+            i = 0
+            # Read to EOF: an understated frame count must not bypass the duration guard.
+            while cap.grab():
+                if (i + 1) / budget_fps > MEDIA_MAX_DURATION_SECONDS:
+                    raise MediaTooLongError()
+                if i in wanted:
+                    ok, frame = cap.retrieve()
+                    if ok:
+                        frames.append((i / fps if fps > 0 else 0.0, frame))
+                i += 1
+        finally:
             cap.release()
-            raise VideoDecodeError(f"no decodable frames in {os.path.basename(video_path)}")
-        wanted = set(sample_indices(total, fps, FRAME_STRATEGY).tolist())
-        frames = []
-        for i in range(total):
-            if not cap.grab():
-                break
-            if i in wanted:
-                ok, frame = cap.retrieve()
-                if ok:
-                    frames.append((i / fps if fps > 0 else 0.0, frame))
-        cap.release()
         if not frames:
             raise VideoDecodeError(f"failed to decode sampled frames from {os.path.basename(video_path)}")
-        duration = total / fps if fps > 0 else 0.0
         return frames, duration, fps
 
     def _crop_faces(self, frames, progress_callback=None):
