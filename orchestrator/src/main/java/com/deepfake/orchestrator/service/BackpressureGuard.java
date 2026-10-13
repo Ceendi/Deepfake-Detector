@@ -59,9 +59,13 @@ public class BackpressureGuard {
         // Also count creates already made by a caller in the same enclosing transaction.
         repository.flush();
         long active = repository.countActive();
-        if (active >= maxInflight || repository.countActiveByUser(userId) >= maxInflightPerUser) {
+        boolean userLimitReached = repository.countActiveByUser(userId) >= maxInflightPerUser;
+        if (userLimitReached || active >= maxInflight) {
             int queuePosition = (int) Math.min(active + 1, Integer.MAX_VALUE);
-            throw new TooManyAnalysesException(queuePosition, retryAfterSeconds);
+            var reason = userLimitReached ? TooManyAnalysesException.Reason.USER_LIMIT
+                    : TooManyAnalysesException.Reason.GLOBAL_LIMIT;
+            int limit = userLimitReached ? maxInflightPerUser : maxInflight;
+            throw new TooManyAnalysesException(reason, limit, queuePosition, retryAfterSeconds);
         }
     }
 }

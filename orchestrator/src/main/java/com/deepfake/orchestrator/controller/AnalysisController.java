@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.controller;
 
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
+import com.deepfake.orchestrator.dto.response.BackpressureResponse;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
 import com.deepfake.orchestrator.dto.response.UserStatsResponse;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
@@ -15,6 +16,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import com.deepfake.orchestrator.service.ArtifactService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.headers.Header;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -46,7 +50,11 @@ public class AnalysisController {
     @ApiResponse(responseCode = "201", description = "Analysis created (PENDING)")
     @ApiResponse(responseCode = "404", description = "File missing, deleted, or not owned")
     @ApiResponse(responseCode = "503", description = "File metadata dependency unavailable")
-    @ApiResponse(responseCode = "429", description = "Backpressure — global or per-user in-flight analysis limit reached")
+    @ApiResponse(responseCode = "429", description = "Backpressure — USER_LIMIT takes precedence over GLOBAL_LIMIT",
+            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                    schema = @Schema(implementation = BackpressureResponse.class)),
+            headers = @Header(name = "Retry-After", description = "Seconds until retry",
+                    schema = @Schema(type = "integer", minimum = "1")))
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public AnalysisResponse create(@CurrentUser AuthenticatedUser user,

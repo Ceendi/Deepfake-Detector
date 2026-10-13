@@ -134,6 +134,8 @@ export interface Paged<T> {
 
 // Body 429 przy backpressure Orchestratora (rate-limit z Gateway nie ma body — stan w nagłówkach).
 export interface BackpressureInfo {
+  reason?: 'GLOBAL_LIMIT' | 'USER_LIMIT'
+  limit?: number
   queuePosition: number
   retryAfterSeconds: number
 }

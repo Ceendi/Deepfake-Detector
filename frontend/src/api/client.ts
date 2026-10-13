@@ -88,7 +88,14 @@ export function apiErrorFrom(status: number, body: unknown, correlationId?: stri
     if (typeof obj.code === 'string') code = obj.code
     if (typeof obj.message === 'string') message = obj.message
     if (typeof obj.queuePosition === 'number' && typeof obj.retryAfterSeconds === 'number') {
-      backpressure = { queuePosition: obj.queuePosition, retryAfterSeconds: obj.retryAfterSeconds }
+      backpressure = {
+        queuePosition: obj.queuePosition,
+        retryAfterSeconds: obj.retryAfterSeconds,
+        reason: obj.reason === 'USER_LIMIT' ? 'USER_LIMIT' : 'GLOBAL_LIMIT',
+      }
+      if (typeof obj.limit === 'number' && Number.isInteger(obj.limit) && obj.limit > 0) {
+        backpressure.limit = obj.limit
+      }
     }
   }
 

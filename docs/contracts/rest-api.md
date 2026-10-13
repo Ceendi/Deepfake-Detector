@@ -132,9 +132,13 @@ only after commit. Redis availability does not affect this limit. See
 Three distinct `429 Too Many Requests` can occur:
 
 - **Orchestrator backpressure** (global or per-user in-flight analysis limit): body
-  `{ "queuePosition": <int>, "retryAfterSeconds": <int> }` plus a `Retry-After`
-  header. `queuePosition` is the global active analysis count plus this rejected request,
-  capped at the maximum signed integer.
+  `{ "reason": "GLOBAL_LIMIT" | "USER_LIMIT", "limit": <int>, "queuePosition": <int>, "retryAfterSeconds": <int> }`
+  plus a `Retry-After` header matching `retryAfterSeconds`. `limit` is the configured
+  limit that rejected admission. If both limits are reached, `USER_LIMIT` takes precedence.
+  These fields are additive: older bodies without `reason` are treated as global backpressure
+  by the frontend. `USER_LIMIT` displays the user's active-analysis limit; global backpressure
+  keeps the queue message. `queuePosition` is the global active analysis count plus this
+  rejected request, capped at the maximum signed integer.
 - **SSE connection admission**: normal error body (`TOO_MANY_REQUESTS`) and `Retry-After: 5`; configurable global/owner/analysis connection caps apply after ownership checks.
 - **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
   carried in `X-RateLimit-*` headers (Spring Cloud Gateway default).

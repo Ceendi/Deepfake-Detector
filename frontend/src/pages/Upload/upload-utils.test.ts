@@ -135,6 +135,33 @@ describe('isAbortError', () => {
 })
 
 describe('messageForError', () => {
+  it.each([2, 3, 7])('429 USER_LIMIT podaje limit %s zamiast pozycji w kolejce', (limit) => {
+    const msg = messageForError(
+      new ApiError({
+        status: 429,
+        message: 'x',
+        backpressure: { queuePosition: 21, retryAfterSeconds: 5, reason: 'USER_LIMIT', limit },
+      }),
+    )
+    expect(msg).toBe(`Masz już ${limit} aktywne analizy — poczekaj, aż któraś się zakończy.`)
+  })
+
+  it('429 GLOBAL_LIMIT zachowuje komunikat o kolejce', () => {
+    const msg = messageForError(
+      new ApiError({
+        status: 429,
+        message: 'x',
+        backpressure: {
+          queuePosition: 21,
+          retryAfterSeconds: 5,
+          reason: 'GLOBAL_LIMIT',
+          limit: 20,
+        },
+      }),
+    )
+    expect(msg).toBe('Kolejka analiz jest pełna (pozycja 21). Spróbuj ponownie za 5 s.')
+  })
+
   it('413 → komunikat o rozmiarze', () => {
     const msg = messageForError(new ApiError({ status: 413, message: 'x' }))
     expect(msg).toContain('za duży')
