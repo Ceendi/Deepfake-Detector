@@ -67,6 +67,8 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 - **Detektory:** inferencja wyłącznie CPU (ONNX `CPUExecutionProvider`, torch `map_location='cpu'`).
   Audio używa `soundfile` zamiast `torchaudio.load` (ten wymaga `torchcodec`, którego nie instalujemy).
   Obrazy instalują tylko `[project.dependencies]` przez `uv pip install --system`.
+  Audio: pakiety treningowe (Lightning, transformers, pandas…) są w extra `training`
+  (`uv sync --extra training`); runtime (`src/`) nie importuje `training/`, MelCNN jest w `src/models/mel_cnn.py`.
 - **Frontend:** npm (jest `package-lock.json`), własne komponenty na CSS Modules — bez MUI/Ant/Shadcn/Tailwind.
   Postęp analizy idzie przez **SSE** (`src/api/stream.ts`).
 

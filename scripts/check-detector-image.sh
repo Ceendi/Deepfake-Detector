@@ -30,8 +30,22 @@ DOCKERFILE
 
 docker build --platform "$platform" --build-arg "RUNTIME_IMAGE=$image" --tag "$test_image" "$context"
 # Verify that the production user can import the real CPU libraries.
-docker run --rm --platform "$platform" --network none --entrypoint python "$image" -c \
-  'import os, torch, torchvision, lightning; assert os.getuid() != 0; assert torch.version.cuda is None'
+if [[ "$service" == "audio-detector" ]]; then
+  # Training-only packages live in the "training" extra and must stay out of the image.
+  import_check='import os, importlib.util, torch, torchaudio, torchvision, onnxruntime, src.inference
+assert os.getuid() != 0 and torch.version.cuda is None
+training = ("lightning", "pytorch_lightning", "transformers", "onnx", "audiomentations",
+            "librosa", "pandas", "pyarrow", "pyroomacoustics", "seaborn", "sklearn")
+leaked = [name for name in training if importlib.util.find_spec(name)]
+assert not leaked, leaked'
+  # training/tests needs the training extra; CI's ML compatibility job runs it instead.
+  suites=(tests runtime-tests)
+else
+  import_check='import os, torch, torchvision, lightning
+assert os.getuid() != 0 and torch.version.cuda is None'
+  suites=(tests runtime-tests training/tests)
+fi
+docker run --rm --platform "$platform" --network none --entrypoint python "$image" -c "$import_check"
 # The audio wire fixture is shared with Java; its read-only mount mirrors the repository path.
 test_mounts=(
   --mount "type=bind,source=$repo_root/$service/tests,target=/app/tests,readonly"
@@ -41,7 +55,7 @@ test_mounts=(
 if [[ "$service" == "audio-detector" ]]; then
   test_mounts+=(--mount "type=bind,source=$repo_root/orchestrator/src/test/resources/contracts,target=/orchestrator/src/test/resources/contracts,readonly")
 fi
-for suite in tests runtime-tests training/tests; do
+for suite in "${suites[@]}"; do
   # Separate processes prevent the consumer tests' ML stubs from affecting real ML checks.
   docker run --rm --platform "$platform" --network none \
     --env OMP_NUM_THREADS=2 --env MKL_NUM_THREADS=2 \

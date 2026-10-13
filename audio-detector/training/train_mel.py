@@ -5,11 +5,12 @@ import lightning.pytorch as pl
 import numpy as np
 import torch
 import torch.nn.functional as F
-import torchaudio
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint, TQDMProgressBar
 from sklearn.metrics import roc_curve
-from torch import nn
-from torchvision import models
+
+# Running this file as a script from training/ needs the project root for the shared model.
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from src.models.mel_cnn import MelCNN, MelResNetGRU  # noqa: F401  (re-exported)
 
 try:
     from datasets import ASVspoofDataModule
@@ -26,56 +27,13 @@ def compute_eer(y_true, y_score):
     return eer
 
 
-class MelResNetGRU(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.resnet = models.resnet18(weights=None)
-        self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.gru = nn.GRU(input_size=512, hidden_size=64, bidirectional=True, batch_first=True)
-        self.dropout = nn.Dropout(0.3)
-        self.classifier = nn.Linear(128, 1)
-
-    def forward(self, x):
-        x = self.resnet.conv1(x)
-        x = self.resnet.bn1(x)
-        x = self.resnet.relu(x)
-        x = self.resnet.maxpool(x)
-        x = self.resnet.layer1(x)
-        x = self.resnet.layer2(x)
-        x = self.resnet.layer3(x)
-        x = self.resnet.layer4(x)
-        x = F.adaptive_avg_pool2d(x, (1, None))
-        x = x.squeeze(2)
-        x = x.permute(0, 2, 1)
-        x, _ = self.gru(x)
-        x = x.mean(dim=1)
-        x = self.dropout(x)
-        x = self.classifier(x)
-        return x
-
-
-class MelCNNLightningModule(pl.LightningModule):
+# MelCNN first: its forward wins and its attribute names keep checkpoint keys unchanged.
+class MelCNNLightningModule(MelCNN, pl.LightningModule):
     def __init__(self, learning_rate=1e-3):
         super().__init__()
         self.save_hyperparameters()
-        self.model = MelResNetGRU()
         self.learning_rate = learning_rate
-        self.mel_transform = torchaudio.transforms.MelSpectrogram(
-            sample_rate=16000, n_fft=2048, hop_length=512, n_mels=128
-        )
-        self.amp_to_db = torchaudio.transforms.AmplitudeToDB()
         self.validation_step_outputs = []
-
-    def forward(self, x):
-        if x.dim() == 1:
-            x = x.unsqueeze(0)
-        mean = x.mean(dim=-1, keepdim=True)
-        std = x.std(dim=-1, keepdim=True)
-        x = (x - mean) / (std + 1e-7)
-        mel = self.mel_transform(x)
-        mel_db = self.amp_to_db(mel)
-        mel_db = mel_db.unsqueeze(1)
-        return self.model(mel_db)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
