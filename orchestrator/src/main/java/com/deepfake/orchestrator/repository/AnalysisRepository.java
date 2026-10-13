@@ -118,6 +118,13 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     int cancelIfActive(@Param("id") UUID id, @Param("to") AnalysisStatus to,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
+    // Conditional hard delete: a concurrent duplicate waits for the winner's commit, then PostgreSQL
+    // rechecks the predicate and reports 0 rows instead of a failed entity flush.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM Analysis a WHERE a.id = :id AND a.userId = :userId AND a.status IN :terminal")
+    int deleteTerminal(@Param("id") UUID id, @Param("userId") String userId,
+            @Param("terminal") Collection<AnalysisStatus> terminal);
+
     // Each unaccepted source owns its heartbeat; sibling progress cannot extend its deadline.
     @Modifying
     @Query("""

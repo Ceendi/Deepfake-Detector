@@ -63,6 +63,8 @@ public class AnalysisService {
     private static final BigDecimal TWO       = new BigDecimal("2");
     private static final Set<AnalysisStatus> ACTIVE =
             EnumSet.of(AnalysisStatus.PENDING, AnalysisStatus.PROCESSING);
+    private static final Set<AnalysisStatus> TERMINAL =
+            EnumSet.of(AnalysisStatus.COMPLETED, AnalysisStatus.FAILED, AnalysisStatus.CANCELLED);
 
     private final AnalysisRepository repository;
     private final AnalysisTaskOutboxRepository outbox;
@@ -249,8 +251,8 @@ public class AnalysisService {
      *
      * <p>Hard delete, by design: the row simply vanishes from every read path (list, get, stats,
      * stream) with no soft-delete predicate to thread through each query — a stale row could never
-     * skew {@code userStats}. Terminal state is stable (no transition leaves it), so the read here
-     * and the delete need no CAS.
+     * skew {@code userStats}. Terminal state is stable (no transition leaves it), so the status read
+     * here stays valid; the delete itself is conditional, so a concurrent duplicate request gets 404.
      *
      * <p>Artifact deletion work is persisted in this same transaction and survives parent deletion.
      * The worker retries storage outside database transactions. Uploaded files have the file service's
@@ -261,16 +263,23 @@ public class AnalysisService {
                 .filter(found -> found.getUserId().equals(currentUserId))
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
-        if (!a.getStatus().isTerminal()) {
+        AnalysisStatus status = a.getStatus();
+        if (!status.isTerminal()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "cannot delete an in-progress analysis; cancel it first");
         }
 
         List<String> artifactKeys = gradcamKeysOf(a); // capture before the row (and its details) go away
-        artifactCleanup.enqueueDeletion(id, artifactKeys);
-        repository.delete(a);
-        metrics.deleted(a.getStatus());
+        if (repository.deleteTerminal(id, currentUserId, TERMINAL) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND); // a concurrent delete won
+        }
+        artifactCleanup.enqueueDeletion(id, artifactKeys); // only the winner, same transaction
+        afterCommit(() -> metrics.deleted(status));
         cleanupRedisAfterCommit(id);
+        if (status != AnalysisStatus.COMPLETED) {
+            // Queued or in-flight detector work may outlive the row; keep (refresh) its stop signal.
+            flagCancelAfterCommit(id);
+        }
         return artifactKeys;
     }
 
@@ -339,7 +348,7 @@ public class AnalysisService {
         @SuppressWarnings("unchecked")
         Map<String, Object> result = (Map<String, Object>) payload.get("result");
         BigDecimal prob = new BigDecimal(result.get("prob_fake").toString());
-        Map<String, Object> details = detailsExtractor.extract(result);
+        Map<String, Object> details = detailsExtractor.extract(result, id, source);
 
         int rows = "video".equals(source)
                 ? repository.writeVideoProb(id, prob, details, ACTIVE, Instant.now())
@@ -386,7 +395,7 @@ public class AnalysisService {
         if (repository.failSourceIfUnaccepted(id, source, AnalysisStatus.FAILED,
                 "dead-letter: " + reason, ACTIVE, Instant.now()) == 1) {
             onTerminal(id);
-            metrics.dlqFailure();
+            afterCommit(metrics::dlqFailure);
         }
     }
 
@@ -402,7 +411,7 @@ public class AnalysisService {
                 now.minusSeconds(dispatchTimeoutSeconds), now.minusSeconds(queueTimeoutSeconds),
                 now.minusSeconds(maxAgeSeconds), now) == 1) {
             onTerminal(id);
-            metrics.stuckRecovery();
+            afterCommit(metrics::stuckRecovery);
         }
     }
 
@@ -423,13 +432,19 @@ public class AnalysisService {
     // Side effects shared by every terminal transition (status already CAS-written). Re-reads because
     // the @Modifying CAS cleared the PC; that fresh row also carries the status/type/createdAt the
     // metrics need, so every terminal path (result, fail, DLQ, stuck, cancel) is counted here once.
+    // Metrics record only committed transitions; a rolled-back (then retried) CAS counts nothing.
     private Analysis onTerminal(UUID id) {
         evictCacheAfterCommit(id);
         Analysis a = repository.findById(id).orElseThrow();
-        metrics.terminal(a.getStatus(), a.getType());
-        if (a.getStatus() == AnalysisStatus.COMPLETED) {
-            metrics.duration(a.getType(), Duration.between(a.getCreatedAt(), Instant.now()));
-        }
+        AnalysisStatus status = a.getStatus();
+        AnalysisType type = a.getType();
+        Instant createdAt = a.getCreatedAt();
+        afterCommit(() -> {
+            metrics.terminal(status, type);
+            if (status == AnalysisStatus.COMPLETED) {
+                metrics.duration(type, Duration.between(createdAt, Instant.now()));
+            }
+        });
         if (a.getStatus() == AnalysisStatus.FAILED || a.getStatus() == AnalysisStatus.CANCELLED) {
             flagCancelAfterCommit(id);
         }
@@ -498,24 +513,29 @@ public class AnalysisService {
         }
     }
 
-    // Drop the deleted analysis's whole Redis footprint, but only after the delete commits — a
-    // rollback must leave the cache warm and the keys intact. Evicting the cache is the correctness-
-    // critical part: a cached AnalysisResponse would otherwise let GET serve a row the DB no longer
-    // has (cache hit -> IDOR passes -> stale 200 instead of 404). The progress/cancel/dedup keys are
-    // residual hygiene (TTL'd, UUID never reused), cleaned best-effort. Fail-open: a Redis outage
-    // must never fail a committed delete.
+    // Drop the deleted analysis's Redis footprint, but only after the delete commits — a rollback
+    // must leave the cache warm and the keys intact. Evicting the cache is the correctness-critical
+    // part: a cached AnalysisResponse would otherwise let GET serve a row the DB no longer has
+    // (cache hit -> IDOR passes -> stale 200 instead of 404). The progress/dedup keys are residual
+    // hygiene (TTL'd, UUID never reused), cleaned best-effort. cancel:{id} is deliberately kept: it is
+    // the only stop signal for detector work still queued after the row is gone. Fail-open: a Redis
+    // outage must never fail a committed delete.
     private void cleanupRedisAfterCommit(UUID id) {
-        Runnable cleanup = () -> {
+        afterCommit(() -> {
             cache.evictById(id);     // optional Redis, fail-open
             idempotency.clear(id);   // optional Redis, fail-open
-            optionalRedis.run("analysis cleanup", () -> redis.delete(List.of("progress:" + id, "cancel:" + id)));
-        };
+            optionalRedis.run("analysis cleanup", () -> redis.delete(List.of("progress:" + id)));
+        });
+    }
+
+    // Effects of committed state only; outside a transaction (unit tests, direct calls) run inline.
+    private static void afterCommit(Runnable action) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override public void afterCommit() { cleanup.run(); }
+                @Override public void afterCommit() { action.run(); }
             });
         } else {
-            cleanup.run();
+            action.run();
         }
     }
 

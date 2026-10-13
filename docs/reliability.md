@@ -372,8 +372,12 @@ idle and absolute deadlines plus rollback/commit ordering of all FAILED stop hin
 Every successful status CAS to `FAILED` or `CANCELLED` sets Redis `cancel:{id}` (TTL 2 h) after
 commit through the shared terminal path. This covers stuck recovery, DLQs, source errors and
 `DELETE /api/analysis/{id}` (user cancel). Rollbacks and losing CAS attempts set no stop flag;
-COMPLETED sets none. Detectors check the flag when they take a task, on each progress tick and
-before publishing a successful result; on a hit they ACK without a result. Cancellation is not an
+COMPLETED sets none. `DELETE /api/analysis/{id}/record` keeps the flag: after the delete commits it
+sets or refreshes `cancel:{id}` (TTL 2 h) for a FAILED or CANCELLED analysis, because tasks queued
+before the delete still need the stop signal. It removes only the cache, `dedup:` and `progress:`
+keys. The delete is conditional (`id`, owner, terminal status), so a concurrent duplicate gets
+`404` and does not enqueue artifact cleanup again. Detectors check the flag when they take a
+task, on each progress tick and before publishing a successful result; on a hit they ACK without a result. Cancellation is not an
 AMQP message. If Redis is down the worker finishes and its late result is rejected by the status
 guard. Publication, cancel, results and recovery all serialize on the analysis row, so a cancel
 that commits first prevents dispatch.

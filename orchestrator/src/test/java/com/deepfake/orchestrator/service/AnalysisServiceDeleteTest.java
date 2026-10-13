@@ -29,6 +29,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -42,9 +43,10 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
  * Delete semantics (DELETE /api/analysis/{id}/record): the owner permanently removes a finished
- * analysis (row hard-deleted + cache evicted + residual Redis keys dropped + metric); IDOR -> 404;
- * an in-progress analysis -> 409 with no side effects (slot must be freed by cancel first); a Redis
- * outage must not fail a committed delete. Distinct from cancel (DELETE /{id}), which is left alone.
+ * analysis (conditional row delete + cache evicted + residual Redis keys dropped + metric); a
+ * FAILED/CANCELLED analysis keeps (refreshes) its cancel:{id} stop flag; IDOR or a lost concurrent
+ * delete -> 404; an in-progress analysis -> 409 with no side effects (slot must be freed by cancel
+ * first); a Redis outage must not fail a committed delete. Distinct from cancel (DELETE /{id}).
  *
  * <p>No Spring transaction here, so the after-commit Redis cleanup runs inline (same fallback the
  * cancel/idempotency after-commit helpers use) — which is exactly what lets us assert it fired.
@@ -73,6 +75,7 @@ class AnalysisServiceDeleteTest {
             new OptionalRedisOperations(Duration.ofSeconds(2));
 
     @Mock ArtifactCleanupStore artifactCleanup;
+    @Mock ValueOperations<String, String> valueOps;
 
     @InjectMocks
     AnalysisService service;
@@ -83,17 +86,20 @@ class AnalysisServiceDeleteTest {
     void ownerDeletesCompletedAnalysis() {
         Analysis completed = analysis("alice", AnalysisStatus.COMPLETED);
         when(repository.findById(id)).thenReturn(Optional.of(completed));
+        givenDeleteWins();
 
         List<String> reclaimable = service.delete(id, "alice");
 
         assertThat(reclaimable).isEmpty(); // no detector details -> no Grad-CAM objects to reclaim
-        verify(repository).delete(completed);
+        verify(repository).deleteTerminal(eq(id), eq("alice"), any());
+        verify(repository, never()).delete(any());
         verify(metrics).deleted(AnalysisStatus.COMPLETED);
         // After-commit cleanup (inline, no tx): cache evict is the correctness-critical part, the
-        // dedup/progress/cancel keys are residual hygiene.
+        // dedup/progress keys are residual hygiene. COMPLETED needs no detector stop flag.
         verify(cache).evictById(id);
         verify(idempotency).clear(id);
-        verify(redis).delete(List.of("progress:" + id, "cancel:" + id));
+        verify(redis).delete(List.of("progress:" + id));
+        verify(redis, never()).opsForValue();
         verifyNoInteractions(rabbitTemplate, streams, backpressure);
     }
 
@@ -106,33 +112,55 @@ class AnalysisServiceDeleteTest {
                 .audioDetails(Map.of("gradcamKeys", List.of(id + "/audio/a1.png")))
                 .build();
         when(repository.findById(id)).thenReturn(Optional.of(a));
+        givenDeleteWins();
 
         List<String> reclaimable = service.delete(id, "alice");
 
         assertThat(reclaimable).containsExactlyInAnyOrder(
                 id + "/video/f1.png", id + "/video/f2.png", id + "/audio/a1.png");
         verify(artifactCleanup).enqueueDeletion(id, reclaimable);
-        verify(repository).delete(a);
+        verify(repository).deleteTerminal(eq(id), eq("alice"), any());
     }
 
     @Test
     void failedAnalysisIsDeletable() {
         when(repository.findById(id)).thenReturn(Optional.of(analysis("alice", AnalysisStatus.FAILED)));
+        givenDeleteWins();
+        when(redis.opsForValue()).thenReturn(valueOps);
 
         service.delete(id, "alice");
 
-        verify(repository).delete(any(Analysis.class));
+        verify(repository).deleteTerminal(eq(id), eq("alice"), any());
         verify(metrics).deleted(AnalysisStatus.FAILED);
+        verify(valueOps).set("cancel:" + id, "1", Duration.ofHours(2));
+        verify(redis).delete(List.of("progress:" + id));
     }
 
     @Test
     void cancelledAnalysisIsDeletable() {
         when(repository.findById(id)).thenReturn(Optional.of(analysis("alice", AnalysisStatus.CANCELLED)));
+        givenDeleteWins();
+        when(redis.opsForValue()).thenReturn(valueOps);
 
         service.delete(id, "alice");
 
-        verify(repository).delete(any(Analysis.class));
+        verify(repository).deleteTerminal(eq(id), eq("alice"), any());
         verify(metrics).deleted(AnalysisStatus.CANCELLED);
+        // Queued detector work for a cancelled analysis must still be stopped after the row is gone.
+        verify(valueOps).set("cancel:" + id, "1", Duration.ofHours(2));
+        verify(redis).delete(List.of("progress:" + id));
+    }
+
+    @Test
+    void lostConcurrentDeleteGets404AndNoSideEffects() {
+        when(repository.findById(id)).thenReturn(Optional.of(analysis("alice", AnalysisStatus.CANCELLED)));
+        when(repository.deleteTerminal(eq(id), eq("alice"), any())).thenReturn(0);
+
+        assertThatThrownBy(() -> service.delete(id, "alice"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
+
+        verifyNoInteractions(artifactCleanup, metrics, cache, idempotency, redis);
     }
 
     @Test
@@ -143,7 +171,7 @@ class AnalysisServiceDeleteTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
 
-        verify(repository, never()).delete(any());
+        verify(repository, never()).deleteTerminal(any(), any(), any());
         verifyNoInteractions(metrics, cache, idempotency, streams, backpressure);
     }
 
@@ -155,7 +183,7 @@ class AnalysisServiceDeleteTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
 
-        verify(repository, never()).delete(any());
+        verify(repository, never()).deleteTerminal(any(), any(), any());
         verifyNoInteractions(metrics, cache, idempotency);
     }
 
@@ -167,7 +195,7 @@ class AnalysisServiceDeleteTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
 
-        verify(repository, never()).delete(any());
+        verify(repository, never()).deleteTerminal(any(), any(), any());
         verifyNoInteractions(metrics, cache, idempotency, streams, backpressure);
     }
 
@@ -179,20 +207,25 @@ class AnalysisServiceDeleteTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
 
-        verify(repository, never()).delete(any());
+        verify(repository, never()).deleteTerminal(any(), any(), any());
         verifyNoInteractions(metrics);
     }
 
     @Test
     void redisOutageDoesNotFailTheDelete() {
         when(repository.findById(id)).thenReturn(Optional.of(analysis("alice", AnalysisStatus.COMPLETED)));
+        givenDeleteWins();
         doThrow(new RedisConnectionFailureException("down")).when(redis).delete(anyList());
 
-        // Fail-open: the row is already gone from the DB; a residual progress/cancel key just TTLs out.
+        // Fail-open: the row is already gone from the DB; a residual progress key just TTLs out.
         assertThatCode(() -> service.delete(id, "alice")).doesNotThrowAnyException();
 
-        verify(repository).delete(any(Analysis.class));
+        verify(repository).deleteTerminal(eq(id), eq("alice"), any());
         verify(metrics).deleted(AnalysisStatus.COMPLETED);
+    }
+
+    private void givenDeleteWins() {
+        when(repository.deleteTerminal(eq(id), eq("alice"), any())).thenReturn(1);
     }
 
     private Analysis analysis(String userId, AnalysisStatus status) {

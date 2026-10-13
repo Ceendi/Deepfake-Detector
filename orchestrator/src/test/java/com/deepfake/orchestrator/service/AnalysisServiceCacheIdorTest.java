@@ -89,7 +89,10 @@ class AnalysisServiceCacheIdorTest {
             }
             return Optional.ofNullable(snapshot);
         });
-        if (!delete) {
+        if (delete) {
+            when(repository.deleteTerminal(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.eq("user-a"),
+                    org.mockito.ArgumentMatchers.any())).thenReturn(1);
+        } else {
             when(repository.cancelIfActive(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.any(),
                     org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
                 current.set(Analysis.builder().id(id).userId("user-a").fileId("f").fileKey("k")
