@@ -34,6 +34,8 @@ updates:
     ignore:
       - dependency-name: "python"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # Locally built images (bases are tracked in their Dockerfiles) do not exist on Docker Hub.
+      - dependency-name: "deepfake-*"
     commit-message:
       prefix: "infra"
     labels:
@@ -80,6 +82,25 @@ updates:
       day: monday
     commit-message:
       prefix: "build(file-service)"
+    labels:
+      - "dependencies"
+      - "infra"
+
+  # Bases of the locally built infra images (deepfake-* tags in compose, ignored above).
+  - package-ecosystem: docker
+    directories:
+      - /infra/postgres
+      - /infra/keycloak-config-cli
+      - /infra/alloy
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      infra-images:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "infra"
     labels:
       - "dependencies"
       - "infra"
