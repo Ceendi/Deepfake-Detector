@@ -13,6 +13,28 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.health.contributor.Status;
 
 class AmqpRecoveryControlTest {
+    @Test void databasePauseUsesOneThenTwoSecondDelayAndResetsAfterSuccess() {
+        RabbitListenerEndpointRegistry registry = mock(RabbitListenerEndpointRegistry.class);
+        MessageListenerContainer container = mock(MessageListenerContainer.class);
+        @SuppressWarnings("unchecked") ObjectProvider<RabbitListenerEndpointRegistry> provider = mock(ObjectProvider.class);
+        when(provider.getObject()).thenReturn(registry);
+        when(registry.getListenerContainer("results")).thenReturn(container);
+        doAnswer(invocation -> { ((Runnable) invocation.getArgument(0)).run(); return null; })
+                .when(container).stop(any(Runnable.class));
+        try (var control = new AmqpRecoveryControl(provider, Duration.ofMillis(10), Duration.ofMillis(20))) {
+            control.databaseFailed("results");
+            await().during(Duration.ofMillis(700)).atMost(Duration.ofMillis(900))
+                    .untilAsserted(() -> verify(container, never()).start());
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> verify(container).start());
+            control.databaseFailed("results");
+            await().during(Duration.ofMillis(1400)).atMost(Duration.ofMillis(1700))
+                    .untilAsserted(() -> verify(container, times(1)).start());
+            await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> verify(container, times(2)).start());
+            control.succeeded("results");
+            control.databaseFailed("results");
+            await().atMost(Duration.ofMillis(1800)).untilAsserted(() -> verify(container, times(3)).start());
+        }
+    }
     @Test void restartWaitsForShutdownCallbackAndFailuresRemainVisibleUntilDeliverySucceeds() throws Exception {
         RabbitListenerEndpointRegistry registry = mock(RabbitListenerEndpointRegistry.class);
         MessageListenerContainer container = mock(MessageListenerContainer.class);

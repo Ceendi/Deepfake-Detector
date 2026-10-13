@@ -1,6 +1,7 @@
 package com.deepfake.orchestrator.service;
 
 import com.deepfake.orchestrator.redis.OptionalRedisOperations;
+import com.deepfake.orchestrator.listener.InvalidResultException;
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.entity.AnalysisTaskOutbox;
 import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
@@ -300,7 +301,15 @@ public class AnalysisService {
     }
 
     public void handleResult(Map<String, Object> payload) {
-        UUID id = UUID.fromString((String) payload.get("analysis_id"));
+        UUID id;
+        try {
+            id = UUID.fromString((String) payload.get("analysis_id"));
+            if (!id.toString().equalsIgnoreCase((String) payload.get("analysis_id"))) {
+                throw new InvalidResultException("Invalid analysis_id");
+            }
+        } catch (RuntimeException invalidId) {
+            throw new InvalidResultException("Invalid analysis_id");
+        }
         Object sourceValue = payload.get("source");
         if (!(sourceValue instanceof String source)
                 || !("video".equals(source) || "audio".equals(source))) {
@@ -311,6 +320,25 @@ public class AnalysisService {
         if (!("COMPLETED".equals(status) || "FAILED".equals(status))) {
             log.warn("Ignoring non-terminal result for {} ({}): {}", id, source, status);
             return;
+        }
+
+        BigDecimal prob = null;
+        Map<String, Object> result = null;
+        if ("COMPLETED".equals(status)) {
+            if (!(payload.get("result") instanceof Map<?, ?> values) || values.get("prob_fake") == null) {
+                throw new InvalidResultException("Completed result requires prob_fake");
+            }
+            try {
+                prob = new BigDecimal(values.get("prob_fake").toString());
+            } catch (NumberFormatException invalidScore) {
+                throw new InvalidResultException("Invalid prob_fake");
+            }
+            if (prob.compareTo(BigDecimal.ZERO) < 0 || prob.compareTo(BigDecimal.ONE) > 0) {
+                throw new InvalidResultException("prob_fake outside [0, 1]");
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> validated = (Map<String, Object>) values;
+            result = validated;
         }
 
         // Tie the AMQP consumer span to the analysis (HTTP -> publish -> detector -> result chain).
@@ -345,9 +373,6 @@ public class AnalysisService {
             return;
         }
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> result = (Map<String, Object>) payload.get("result");
-        BigDecimal prob = new BigDecimal(result.get("prob_fake").toString());
         Map<String, Object> details = detailsExtractor.extract(result, id, source);
 
         int rows = "video".equals(source)
@@ -393,7 +418,7 @@ public class AnalysisService {
             throw new IllegalArgumentException("Unknown dead-letter source");
         }
         if (repository.failSourceIfUnaccepted(id, source, AnalysisStatus.FAILED,
-                "dead-letter: " + reason, ACTIVE, Instant.now()) == 1) {
+                "[DEAD_LETTERED] Nie udało się zakończyć analizy.", ACTIVE, Instant.now()) == 1) {
             onTerminal(id);
             afterCommit(metrics::dlqFailure);
         }
