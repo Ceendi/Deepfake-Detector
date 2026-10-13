@@ -24,7 +24,12 @@ HTTP = build_opener(ProxyHandler({}))
 
 
 def command(*args):
-    return subprocess.check_output(args, cwd=ROOT, text=True, stderr=subprocess.STDOUT).strip()
+    result = subprocess.run(args, cwd=ROOT, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT)
+    if result.returncode:
+        print(result.stdout, flush=True)
+        result.check_returncode()
+    return result.stdout.strip()
 
 
 def resolved_compose():

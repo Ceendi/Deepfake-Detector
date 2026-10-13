@@ -32,10 +32,14 @@ class LocalBrowserCookiePolicy(http.cookiejar.DefaultCookiePolicy):
 
 class KeycloakSecurityTest(unittest.TestCase):
     def compose(self, *args):
-        return subprocess.check_output(
+        result = subprocess.run(
             ['docker', 'compose', '-f', str(self.compose_file), *args],
-            cwd=ROOT, text=True, stderr=subprocess.STDOUT,
-        ).strip()
+            cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        if result.returncode:
+            print(result.stdout, flush=True)
+            result.check_returncode()
+        return result.stdout.strip()
 
     def request(self, path, payload=None, method=None, token=None):
         headers = {'Content-Type': 'application/json'}
