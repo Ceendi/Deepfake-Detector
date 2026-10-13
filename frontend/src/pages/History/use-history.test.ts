@@ -58,6 +58,21 @@ describe('useHistory', () => {
     expect(vi.mocked(listAnalyses)).toHaveBeenCalledTimes(2)
   })
 
+  it('usuwa duplikaty po id, gdy strony nachodzą na siebie (nowe analizy w trakcie ładowania)', async () => {
+    vi.mocked(listAnalyses).mockImplementation((page) =>
+      Promise.resolve(
+        page === 0
+          ? paged([summary('c'), summary('b')], 2)
+          : paged([summary('b'), summary('a')], 2), // 'b' przesunięte na stronę 2
+      ),
+    )
+
+    const { result } = renderHook(() => useHistory())
+
+    await waitFor(() => expect(result.current.state).toBe('ready'))
+    expect(result.current.items.map((i) => i.id)).toEqual(['c', 'b', 'a'])
+  })
+
   it('błąd API → stan error', async () => {
     vi.mocked(listAnalyses).mockRejectedValue(new ApiError({ status: 500, message: 'boom' }))
 

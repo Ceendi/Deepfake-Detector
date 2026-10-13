@@ -1,6 +1,7 @@
 import { Upload, UploadCloud } from 'lucide-react'
 
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
+import { AUDIO_FORMATS_LABEL, VIDEO_FORMATS_LABEL } from '@/pages/Upload/upload-utils'
 
 import styles from '../Dashboard.module.css'
 
@@ -25,7 +26,9 @@ export function DashboardEmpty({ firstName }: { firstName: string }) {
         <LinkButton to="/upload" variant="primary" size="md" leftIcon={UploadCloud}>
           Wgraj pierwszy plik
         </LinkButton>
-        <p className={styles.emptyHint}>Obsługiwane: MP4 · MOV · WAV · MP3 — do 500 MB</p>
+        <p className={styles.emptyHint}>
+          Obsługiwane: {VIDEO_FORMATS_LABEL} · {AUDIO_FORMATS_LABEL} — do 500 MB
+        </p>
 
         <ol className={styles.steps}>
           <li className={styles.step}>

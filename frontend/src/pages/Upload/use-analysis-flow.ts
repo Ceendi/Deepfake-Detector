@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { uploadFileWithProgress } from '@/api/files'
 import { startAnalysis, cancelAnalysis } from '@/api/analysis'
 import { watchAnalysis } from '@/api/watch-analysis'
-import type { Analysis, AnalysisProgressEvent, AnalysisStatus } from '@/api/types'
+import { analysisFailureMessage } from '@/api/error-codes'
+import type { Analysis, AnalysisProgressEvent, AnalysisStatus, AnalysisType } from '@/api/types'
 
 import { isAbortError, messageForError, pickAnalysisType } from './upload-utils'
 
@@ -82,6 +83,8 @@ function useAnalysisStream() {
 // --- Kompozycja: upload → start → stream → wynik -----------------------------
 export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   const [state, setState] = useState<FlowState>({ name: 'idle' })
+  // Typ wynika z MIME wykrytego przez backend — decyduje, które paski postępu pokazać.
+  const [analysisType, setAnalysisType] = useState<AnalysisType | null>(null)
   const upload = useFileUpload()
   const stream = useAnalysisStream()
 
@@ -97,10 +100,12 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   async function start(file: File) {
     try {
       setState({ name: 'uploading' })
-      const { fileId } = await upload.upload(file)
+      const { fileId, mimetype } = await upload.upload(file)
 
+      const type = pickAnalysisType(mimetype)
+      setAnalysisType(type)
       setState({ name: 'starting' })
-      const analysis = await startAnalysis({ fileId, type: pickAnalysisType(file) })
+      const analysis = await startAnalysis({ fileId, type })
 
       setState({ name: 'analyzing', analysisId: analysis.id })
       stream.open(analysis.id, {
@@ -119,8 +124,7 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
     } else if (result.status === 'CANCELLED') {
       setState({ name: 'idle' })
     } else {
-      const message = result.errorMessage ?? 'Analiza nie powiodła się.'
-      setState({ name: 'failed', message })
+      setState({ name: 'failed', message: analysisFailureMessage(result.errorMessage) })
     }
   }
 
@@ -144,5 +148,13 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
     setState({ name: 'idle' })
   }
 
-  return { state, uploadProgress: upload.progress, bySource: stream.bySource, start, cancel, retry }
+  return {
+    state,
+    analysisType,
+    uploadProgress: upload.progress,
+    bySource: stream.bySource,
+    start,
+    cancel,
+    retry,
+  }
 }

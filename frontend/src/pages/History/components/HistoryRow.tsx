@@ -1,15 +1,13 @@
-import { useEffect, useState } from 'react'
-
 import { Link } from 'react-router-dom'
 
 import { Video, AudioLines, ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
 
-import { getFileMetadata } from '@/api/files'
 import type { AnalysisSummary, AnalysisStatus } from '@/api/types'
 import { Badge } from '@/components/ui/Badge/Badge'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
 
+import { useFileMeta } from '../file-meta'
 import styles from '../History.module.css'
 
 const dayFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'long' })
@@ -35,33 +33,6 @@ const STATUS_META: Record<AnalysisStatus, { label: string; dot: string; danger?:
   PENDING: { label: 'W toku', dot: styles.dotAccent },
   FAILED: { label: 'Błąd', dot: styles.dotDanger, danger: true },
   CANCELLED: { label: 'Anulowana', dot: styles.dotMuted },
-}
-
-// Lista (AnalysisSummary) nie zwraca nazwy/długości pliku — dociągamy je z File Service per wiersz.
-// Cache modułowy: powrót na wcześniejszą stronę nie odpala ponownych żądań.
-const META_CACHE = new Map<string, { name: string | null; duration: number | null }>()
-
-function useFileMeta(fileId: string) {
-  const [meta, setMeta] = useState(() => META_CACHE.get(fileId) ?? null)
-
-  useEffect(() => {
-    if (META_CACHE.has(fileId)) return // już w cache (zainicjowane w stanie)
-    const controller = new AbortController()
-
-    getFileMetadata(fileId, controller.signal)
-      .then((m) => {
-        const value = { name: m.name, duration: m.duration }
-        META_CACHE.set(fileId, value)
-        setMeta(value)
-      })
-      .catch(() => {
-        // 404 (plik usunięty / cudzy — IDOR) lub błąd sieci → zostaje fallback na #fileId
-      })
-
-    return () => controller.abort()
-  }, [fileId])
-
-  return meta
 }
 
 export function HistoryRow({ analysis }: { analysis: AnalysisSummary }) {

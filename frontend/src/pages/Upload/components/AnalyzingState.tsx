@@ -3,12 +3,15 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/Button/Button'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
 
+import type { AnalysisType } from '@/api/types'
+
 import { isVideoFile } from '../upload-utils'
 import type { ProgressBySource } from '../use-analysis-flow'
 import styles from '../Upload.module.css'
 
 interface AnalyzingStateProps {
-  file: File // tylko do ustalenia źródeł (wideo → video+audio, audio → audio)
+  file: File // fallback dla źródeł, dopóki nie znamy typu analizy
+  analysisType?: AnalysisType | null // typ z MIME wykrytego przez backend (AUDIO → tylko audio)
   bySource: ProgressBySource
   onCancel?: () => void // brak = faza `starting` (analiza jeszcze nieanulowalna)
 }
@@ -39,8 +42,9 @@ const STAGE_LABELS: Record<string, string> = {
 
 // Sekcja postępu + stopka fazy „analyzing"/„starting". Media renderuje wspólna karta w Upload.tsx.
 // Dla wideo dwa paski (video+audio), dla audio jeden; źródła znamy z typu pliku, więc paski są od razu.
-export function AnalyzingState({ file, bySource, onCancel }: AnalyzingStateProps) {
-  const sources = isVideoFile(file) ? (['video', 'audio'] as const) : (['audio'] as const)
+export function AnalyzingState({ file, analysisType, bySource, onCancel }: AnalyzingStateProps) {
+  const audioOnly = analysisType ? analysisType === 'AUDIO' : !isVideoFile(file)
+  const sources = audioOnly ? (['audio'] as const) : (['video', 'audio'] as const)
 
   return (
     <>

@@ -5,6 +5,8 @@ import Keycloak from 'keycloak-js'
 
 import { env } from '@/config/env'
 
+import { loginRedirectUri } from './redirect'
+
 export const keycloak = new Keycloak({
   url: env.keycloakUrl,
   realm: env.keycloakRealm,
@@ -28,12 +30,13 @@ export async function getToken(): Promise<string | undefined> {
 
 // Authorization Code + PKCE — Keycloak hostuje stronę logowania/rejestracji (redirect),
 // nie budujemy własnego formularza (directAccessGrants jest wyłączony dla tego klienta).
-export function login(): void {
-  void keycloak.login()
+// `redirectPath` — ścieżka chronionej strony, z której ProtectedRoute odesłał na /login.
+export function login(redirectPath?: string): void {
+  void keycloak.login({ redirectUri: loginRedirectUri(redirectPath) })
 }
 
-export function register(): void {
-  void keycloak.login({ action: 'register' })
+export function register(redirectPath?: string): void {
+  void keycloak.login({ action: 'register', redirectUri: loginRedirectUri(redirectPath) })
 }
 
 export function logout(): void {

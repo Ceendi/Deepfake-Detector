@@ -10,9 +10,21 @@ import { isVideoFile, getExt, formatMB, formatDuration } from '../upload-utils'
 import styles from '../Upload.module.css'
 
 // Wspólny podgląd pliku (media + wiersz metadanych) — używany w Preview/Uploading/Analyzing.
-// Sam czyta długość mediów z onLoadedMetadata, żeby nie przeciągać duration przez całą stronę.
-export function MediaPreview({ file, previewUrl }: { file: File; previewUrl: string }) {
-  const [duration, setDuration] = useState<number | null>(null)
+// Sam czyta długość mediów z onLoadedMetadata; `onDuration` przekazuje ją wyżej do walidacji limitu.
+export function MediaPreview({
+  file,
+  previewUrl,
+  onDuration,
+}: {
+  file: File
+  previewUrl: string
+  onDuration?: (seconds: number) => void
+}) {
+  const [duration, setDurationState] = useState<number | null>(null)
+  function setDuration(seconds: number) {
+    setDurationState(seconds)
+    onDuration?.(seconds)
+  }
   const isVideo = isVideoFile(file)
   const ext = getExt(file.name).toUpperCase()
 

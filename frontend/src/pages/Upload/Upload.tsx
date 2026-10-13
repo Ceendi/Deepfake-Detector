@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useNavigate } from 'react-router-dom'
 
-import { ACCEPT_ATTR, validateFile } from './upload-utils'
+import { ACCEPT_ATTR, validateDuration, validateFile } from './upload-utils'
 import { useAnalysisFlow } from './use-analysis-flow'
 import { Dropzone } from './components/Dropzone'
 import { ErrorState } from './components/ErrorState'
@@ -35,6 +35,18 @@ export default function Upload() {
     return () => URL.revokeObjectURL(previewUrl)
   }, [previewUrl])
 
+  // Zamknięcie karty w trakcie wysyłki przerywa upload — przeglądarka pyta o potwierdzenie.
+  const uploading = flow.state.name === 'uploading'
+  useEffect(() => {
+    if (!uploading) return
+    function warn(event: BeforeUnloadEvent) {
+      event.preventDefault()
+      event.returnValue = '' // starsze przeglądarki wymagają ustawienia returnValue
+    }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [uploading])
+
   function openPicker() {
     inputRef.current?.click()
   }
@@ -47,17 +59,26 @@ export default function Upload() {
     if (inputRef.current) inputRef.current.value = '' // pozwala wybrać ten sam plik ponownie
   }
 
+  function rejectFile(message: string) {
+    setError(message)
+    setFile(null)
+    setPreviewUrl(null)
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  // Długość znamy dopiero z metadanych podglądu. Odrzucamy tylko przed startem — w trakcie uploadu
+  // rozstrzyga backend (422 z tym samym komunikatem).
+  function handleDuration(seconds: number) {
+    const message = validateDuration(seconds)
+    if (message && flow.state.name === 'idle') rejectFile(message)
+  }
+
   function handleFiles(files: FileList | null) {
     const picked = files?.[0]
     if (!picked) return
 
     const message = validateFile(picked)
-    if (message) {
-      setError(message)
-      setFile(null)
-      setPreviewUrl(null)
-      return
-    }
+    if (message) return rejectFile(message)
 
     setError(null)
     setFile(picked)
@@ -103,7 +124,7 @@ export default function Upload() {
     // stopka/sekcja postępu pod spodem. Dzięki temu film nie przeładowuje się przy zmianie stanu.
     return (
       <div className={styles.previewCard}>
-        <MediaPreview file={file} previewUrl={previewUrl} />
+        <MediaPreview file={file} previewUrl={previewUrl} onDuration={handleDuration} />
         {renderPhaseControls(file)}
       </div>
     )
@@ -115,9 +136,18 @@ export default function Upload() {
         return <UploadingState progress={flow.uploadProgress} onCancel={flow.cancel} />
       case 'starting':
         // analiza jeszcze nie ma id → bez „Anuluj"; paski nieokreślone (bySource pusty)
-        return <AnalyzingState file={file} bySource={flow.bySource} />
+        return (
+          <AnalyzingState file={file} analysisType={flow.analysisType} bySource={flow.bySource} />
+        )
       case 'analyzing':
-        return <AnalyzingState file={file} bySource={flow.bySource} onCancel={flow.cancel} />
+        return (
+          <AnalyzingState
+            file={file}
+            analysisType={flow.analysisType}
+            bySource={flow.bySource}
+            onCancel={flow.cancel}
+          />
+        )
       default: // 'idle'
         return <PreviewState onReset={reset} onAnalyze={() => flow.start(file)} />
     }
