@@ -16,6 +16,7 @@ interface AnalyzingStateProps {
   cancelError?: string | null
   // Ustawione w stanie „nadal trwa": link do wyniku zamiast ponownego wgrywania.
   stillRunningId?: string
+  watching?: boolean // false = śledzenie zakończone, wynik tylko na stronie analizy
 }
 
 const SOURCE_LABEL = { video: 'Wideo', audio: 'Audio' } as const
@@ -51,6 +52,7 @@ export function AnalyzingState({
   cancelling = false,
   cancelError = null,
   stillRunningId,
+  watching = true,
 }: AnalyzingStateProps) {
   const sources = isVideoFile(file) ? (['video', 'audio'] as const) : (['audio'] as const)
 
@@ -81,7 +83,9 @@ export function AnalyzingState({
       <div className={styles.footer}>
         {stillRunningId ? (
           <span className={styles.footerNote} role="status">
-            Analiza nadal trwa… Wynik pojawi się tutaj albo na stronie analizy.
+            {watching
+              ? 'Analiza nadal trwa… Wynik pojawi się tutaj albo na stronie analizy.'
+              : 'Analiza nadal trwa… Sprawdź jej stan na stronie analizy.'}
           </span>
         ) : (
           <span className={styles.footerNote}>

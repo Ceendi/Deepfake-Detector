@@ -8,6 +8,7 @@ const kc = vi.hoisted(() => ({
   updateToken: vi.fn(),
   refreshToken: 'refresh' as string | undefined,
   refreshTokenParsed: undefined as { exp?: number } | undefined,
+  timeSkew: 0 as number | null,
   onTokenExpired: undefined as (() => void) | undefined,
   onAuthSuccess: undefined as (() => void) | undefined,
   onAuthLogout: undefined as (() => void) | undefined,
@@ -44,6 +45,7 @@ beforeEach(() => {
   kc.updateToken.mockReset()
   kc.refreshToken = 'refresh'
   kc.refreshTokenParsed = { exp: Math.floor(Date.now() / 1000) + 1800 }
+  kc.timeSkew = 0
 })
 afterEach(() => vi.useRealTimers())
 
@@ -127,4 +129,18 @@ it('unmount stops pending refresh retries', async () => {
   })
   expect(kc.updateToken).toHaveBeenCalledTimes(1)
   expect(kc.onTokenExpired).toBeUndefined()
+})
+
+it('a fast local clock does not end a session the server still considers valid', async () => {
+  // Local clock is 20 min ahead: locally expired, still valid on the server clock.
+  kc.refreshTokenParsed = { exp: Math.floor(Date.now() / 1000) - 1 }
+  kc.timeSkew = 1200
+  kc.updateToken.mockRejectedValueOnce(new TypeError('Network down')).mockResolvedValue(true)
+  await renderSignedIn()
+  await act(async () => {
+    kc.onTokenExpired?.()
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  expect(screen.getByText('in')).toBeInTheDocument()
+  expect(kc.updateToken).toHaveBeenCalledTimes(2)
 })

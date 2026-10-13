@@ -5,13 +5,19 @@ import type Keycloak from 'keycloak-js'
 const MIN_TOKEN_VALIDITY_SECONDS = 30
 export const REFRESH_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000]
 
-type RefreshClient = Pick<Keycloak, 'updateToken' | 'refreshToken' | 'refreshTokenParsed'>
+type RefreshClient = Pick<
+  Keycloak,
+  'updateToken' | 'refreshToken' | 'refreshTokenParsed' | 'timeSkew'
+>
 
 // keycloak-js clears tokens (and fires onAuthLogout) when Keycloak rejects the refresh token.
 export function sessionEnded(kc: RefreshClient, now = Date.now()): boolean {
   if (!kc.refreshToken) return true
   const exp = kc.refreshTokenParsed?.exp
-  return exp !== undefined && exp > 0 && exp * 1000 <= now
+  if (exp === undefined || exp <= 0) return false
+  // Same server-clock correction as keycloak-js isTokenExpired, so a fast local clock cannot
+  // end a still-valid session.
+  return exp - Math.ceil(now / 1000) + (kc.timeSkew ?? 0) <= 0
 }
 
 /** Returns `refresh` for onTokenExpired and `stop` for cleanup. */

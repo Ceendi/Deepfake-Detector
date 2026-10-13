@@ -136,36 +136,27 @@ export async function watchAnalysis(
   options: WatchOptions = {},
 ): Promise<void> {
   signal.throwIfAborted()
-  await streamOnce(id, handlers, signal)
-  try {
-    const analysis = await recoverAnalysis(id, signal)
-    signal.throwIfAborted()
-    handlers.onResult(analysis)
-    return
-  } catch (error) {
-    signal.throwIfAborted()
-    if (!(error instanceof AnalysisStillRunningError)) throw error
-  }
-
   const deadline = deadlineFor(options.createdAt)
-  if (Date.now() >= deadline) throw new AnalysisStillRunningError()
-  options.onStillRunning?.()
-
   let attempt = 0
+  let immediate = true
+  let announced = false
+
   for (;;) {
-    const wait = Math.min(
-      REOPEN_DELAYS[Math.min(attempt, REOPEN_DELAYS.length - 1)],
-      deadline - Date.now(),
-    )
-    if (wait > 0) await delay(wait, signal)
-    attempt += 1
+    if (!immediate) {
+      const backoff = REOPEN_DELAYS[Math.min(attempt, REOPEN_DELAYS.length - 1)]
+      const wait = Math.min(backoff, deadline - Date.now())
+      if (wait > 0) await delay(wait, signal)
+      attempt += 1
+    }
+    immediate = false
 
     const openedAt = Date.now()
     const receivedResult = await streamOnce(id, handlers, signal)
-    if (Date.now() - openedAt >= HEALTHY_STREAM_MS) attempt = 0
+    // A stream that ended at its server lifetime was healthy, not a sign of trouble.
+    const healthy = Date.now() - openedAt >= HEALTHY_STREAM_MS
 
-    if (receivedResult) {
-      // Same stale-cache-safe catch-up as the first result.
+    if (receivedResult || (!announced && !healthy)) {
+      // Stale-cache-safe catch-up after a result or the first unexpected stream end.
       try {
         const analysis = await recoverAnalysis(id, signal)
         signal.throwIfAborted()
@@ -175,8 +166,13 @@ export async function watchAnalysis(
         signal.throwIfAborted()
         if (!(error instanceof AnalysisStillRunningError)) throw error
       }
+      if (!announced) {
+        if (Date.now() >= deadline) throw new AnalysisStillRunningError()
+        announced = true
+        options.onStillRunning?.()
+      }
     } else {
-      // SSE may be unavailable (quota, proxy); one read keeps progress towards a result.
+      // One read per reopen; SSE may also be unavailable (quota, proxy).
       try {
         const analysis = await readOnce(id, signal)
         signal.throwIfAborted()
@@ -187,6 +183,10 @@ export async function watchAnalysis(
       } catch (error) {
         signal.throwIfAborted()
         if (!retryable(error)) throw error
+      }
+      if (healthy) {
+        attempt = 0
+        immediate = true
       }
     }
 

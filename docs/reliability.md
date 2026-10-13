@@ -464,14 +464,18 @@ Frontend watching (`frontend/src/api/watch-analysis.ts`, `stream.ts`):
 
 - A stream with no bytes at all (heartbeats included) for 45 s is treated as half-open and
   aborted; the client then reconciles as after an error.
-- After a result, EOF or error the client polls `GET` up to 9 times over 91.5 s (longer than the
-  60 s cache TTL). If the analysis is still `PENDING`/`PROCESSING`, it is not shown as failed:
+- A stream that stayed open for at least 60 s and ends without a result (normally the
+  `SSE_LIFETIME` close) is followed by one `GET` and an immediate reopen.
+- After a result, or an earlier EOF or error, the client polls `GET` up to 9 times over 91.5 s
+  (longer than the 60 s cache TTL). If the analysis is still `PENDING`/`PROCESSING`, it is not
+  shown as failed:
   the client reopens SSE with a 5 s → 30 s backoff (opening SSE replays a terminal result from the
   database) and does one `GET` whenever a reopened stream ends without a result. It stops at a
   terminal status or at `createdAt + 7200 s`, the absolute limit enforced by stuck recovery.
 - The upload screen switches to "analysis still running" with a link to the result page instead
   of offering a second upload. Cancel treats `200` and `409` as settled (`409` reads the analysis
-  and routes by its status); other errors are shown in place and the stream stays open.
+  and routes by its status); other errors and a 10 s timeout are shown in place and the stream
+  stays open.
 
 | Variable | Default | Meaning |
 |---|---|---|

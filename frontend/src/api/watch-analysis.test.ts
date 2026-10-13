@@ -279,4 +279,30 @@ describe('long-running analysis watching', () => {
     await vi.advanceTimersByTimeAsync(600000)
     expect(streamAnalysis).toHaveBeenCalledTimes(1)
   })
+
+  it('a healthy stream ending at its lifetime is reopened at once without bounded recovery', async () => {
+    vi.mocked(streamAnalysis)
+      .mockImplementationOnce(() => new Promise((resolve) => setTimeout(resolve, 600000)))
+      .mockImplementationOnce(() => new Promise(() => {}))
+    vi.mocked(getAnalysis).mockResolvedValue(active)
+    const onStillRunning = vi.fn()
+    void watchAnalysis(
+      'a1',
+      { onProgress: vi.fn(), onResult: vi.fn() },
+      new AbortController().signal,
+      { createdAt: createdNow(), onStillRunning },
+    ).catch(() => {})
+    await vi.advanceTimersByTimeAsync(600000)
+    expect(getAnalysis).toHaveBeenCalledOnce()
+    expect(streamAnalysis).toHaveBeenCalledTimes(2)
+    expect(onStillRunning).not.toHaveBeenCalled()
+  })
+
+  it('an idle-watchdog timeout falls back to recovery instead of failing', async () => {
+    vi.mocked(streamAnalysis).mockRejectedValue(new DOMException('SSE stream idle', 'TimeoutError'))
+    vi.mocked(getAnalysis).mockResolvedValue(terminal)
+    const onResult = vi.fn()
+    await watchAnalysis('a1', { onProgress: vi.fn(), onResult }, new AbortController().signal)
+    expect(onResult).toHaveBeenCalledExactlyOnceWith(terminal)
+  })
 })

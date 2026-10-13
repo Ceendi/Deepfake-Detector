@@ -218,7 +218,11 @@ describe('useAnalysisFlow', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(91500)
     })
-    expect(result.current.state).toEqual({ name: 'stillRunning', analysisId: 'an-1' })
+    expect(result.current.state).toEqual({
+      name: 'stillRunning',
+      analysisId: 'an-1',
+      watching: true,
+    })
     expect(onComplete).not.toHaveBeenCalled()
     expect(getAnalysis).toHaveBeenCalledTimes(9)
     expect(uploadFileWithProgress).toHaveBeenCalledOnce()
@@ -299,7 +303,7 @@ describe('useAnalysisFlow', () => {
       await result.current.cancel()
     })
 
-    expect(cancelAnalysis).toHaveBeenCalledWith('an-1')
+    expect(cancelAnalysis).toHaveBeenCalledWith('an-1', expect.any(AbortSignal))
     expect(result.current.state).toEqual({ name: 'idle' })
   })
 
@@ -439,7 +443,7 @@ describe('useAnalysisFlow', () => {
       await result.current.cancel()
     })
 
-    expect(getAnalysis).toHaveBeenCalledWith('an-1')
+    expect(getAnalysis).toHaveBeenCalledWith('an-1', expect.any(AbortSignal))
     expect(onComplete).toHaveBeenCalledExactlyOnceWith('an-1')
     expect(result.current.cancelling).toBe(false)
   })
@@ -480,5 +484,47 @@ describe('useAnalysisFlow', () => {
       })
     })
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith('an-1'))
+  })
+
+  it('stops offering cancel once watching ended at the absolute age limit', async () => {
+    vi.useFakeTimers()
+    vi.mocked(startAnalysis).mockResolvedValue(
+      analysis({ createdAt: new Date(Date.now() - 7200 * 1000).toISOString() }),
+    )
+    vi.mocked(streamAnalysis).mockResolvedValue()
+    vi.mocked(getAnalysis).mockResolvedValue(analysis())
+    const { result } = renderFlow()
+    await startUntilAnalyzing(result)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(91500)
+    })
+    expect(result.current.state).toEqual({
+      name: 'stillRunning',
+      analysisId: 'an-1',
+      watching: false,
+    })
+    await act(async () => {
+      await result.current.cancel()
+    })
+    expect(cancelAnalysis).not.toHaveBeenCalled()
+  })
+
+  it('a hanging cancel request times out into an inline error', async () => {
+    vi.useFakeTimers()
+    vi.mocked(cancelAnalysis).mockImplementation(() => new Promise(() => {}))
+    const { result } = renderFlow()
+    await startUntilAnalyzing(result)
+    let cancelled!: Promise<void>
+    act(() => {
+      cancelled = result.current.cancel()
+    })
+    expect(result.current.cancelling).toBe(true)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000)
+      await cancelled
+    })
+    expect(result.current.cancelling).toBe(false)
+    expect(result.current.cancelError).toBe('Nie udało się anulować analizy. Spróbuj ponownie.')
+    expect(result.current.state.name).toBe('analyzing')
   })
 })

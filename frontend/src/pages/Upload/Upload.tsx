@@ -117,17 +117,22 @@ export default function Upload() {
         // analiza jeszcze nie ma id → bez „Anuluj"; paski nieokreślone (bySource pusty)
         return <AnalyzingState file={file} bySource={flow.bySource} />
       case 'analyzing':
-      case 'stillRunning':
+      case 'stillRunning': {
+        const stillRunning = flow.state.name === 'stillRunning' ? flow.state : undefined
+        // Bez aktywnego śledzenia nie ma strumienia, który dowiózłby wynik anulowania.
+        const watching = !stillRunning || stillRunning.watching
         return (
           <AnalyzingState
             file={file}
             bySource={flow.bySource}
-            onCancel={flow.cancel}
+            onCancel={watching ? flow.cancel : undefined}
             cancelling={flow.cancelling}
             cancelError={flow.cancelError}
-            stillRunningId={flow.state.name === 'stillRunning' ? flow.state.analysisId : undefined}
+            stillRunningId={stillRunning?.analysisId}
+            watching={watching}
           />
         )
+      }
       default: // 'idle'
         return <PreviewState onReset={reset} onAnalyze={() => flow.start(file)} />
     }

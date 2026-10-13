@@ -24,7 +24,8 @@ export type FlowState =
   | { name: 'uploading' } // POST /files/upload w locie (postęp w uploadProgress)
   | { name: 'starting' } // POST /analysis w locie (krótko)
   | { name: 'analyzing'; analysisId: string } // SSE otwarty (postęp w bySource)
-  | { name: 'stillRunning'; analysisId: string } // dłużej niż odzyskiwanie; śledzenie trwa w tle
+  // Dłużej niż odzyskiwanie. watching=false: przekroczony limit wieku, śledzenie zakończone.
+  | { name: 'stillRunning'; analysisId: string; watching: boolean }
   // retry: 'start' = plik już jest na serwerze, ponów tylko POST /analysis; 'reset' = wróć do podglądu.
   | { name: 'failed'; message: string; retry: 'start' | 'reset' }
 
@@ -125,13 +126,13 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
       {
         createdAt: analysis.createdAt,
         onStillRunning: () => {
-          if (!signal.aborted) setState({ name: 'stillRunning', analysisId })
+          if (!signal.aborted) setState({ name: 'stillRunning', analysisId, watching: true })
         },
       },
     ).catch((err) => {
       if (signal.aborted || isAbortError(err)) return
       if (err instanceof AnalysisStillRunningError) {
-        return setState({ name: 'stillRunning', analysisId })
+        return setState({ name: 'stillRunning', analysisId, watching: false })
       }
       setState({ name: 'failed', message: messageForError(err), retry: 'reset' })
     })
@@ -157,13 +158,13 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
       setState({ name: 'idle' })
       return
     }
-    if (state.name !== 'analyzing' && state.name !== 'stillRunning') return
+    if (state.name !== 'analyzing' && !(state.name === 'stillRunning' && state.watching)) return
 
     const signal = flowRef.current?.signal
     setCancelling(true)
     setCancelError(null)
     try {
-      const settled = await cancelAndSettle(state.analysisId)
+      const settled = await cancelAndSettle(state.analysisId, signal)
       if (signal?.aborted) return
       if (settled) settle(state.analysisId, settled)
       else setCancelling(false) // already finishing; the open stream delivers the result
