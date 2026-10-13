@@ -37,6 +37,7 @@ Exhaustion returns `409` with code `STORAGE_QUOTA_EXCEEDED` and message
 The check is serialized across replicas per owner before the S3 write.
 The gateway permits 5 uploads/minute with burst 5 by default (429). A full replica
 (`UPLOAD_MAX_CONCURRENT`, default 4) returns 503 with `Retry-After: 5` before multipart parsing.
+This guard also covers multipart requests on other paths/methods before MVC routing.
 
 Response `200 OK`:
 

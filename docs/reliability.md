@@ -534,7 +534,9 @@ Upload admission has three bounds: the gateway token bucket (five/minute, burst 
 a servlet filter before multipart parsing (four concurrent uploads per replica), and
 a PostgreSQL per-owner quota (5 GiB). Gateway Redis outages retain their existing
 fail-closed 503 policy; reads retain fail-open behavior. Replica saturation returns
-503 with Retry-After: 5 and no body. The slot is released after successful or failed
+503 with Retry-After: 5 and no body. The filter covers every multipart request,
+including unknown routes, other methods and mixed-case content types: MVC parses
+multipart before selecting a handler. The slot is released after successful or failed
 request processing. Upload spool uses a dedicated directory; transferTo(File) moves
 Tomcat's disk part for validation and S3, and the file is removed in finally. ffprobe
 allows only the file protocol and checks each stream's pixel product against 4K.

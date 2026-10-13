@@ -96,6 +96,15 @@ class UploadSpoolIntegrationTest {
                 var rejected = http.send(upload(), HttpResponse.BodyHandlers.ofString());
                 assertThat(rejected.statusCode()).isEqualTo(503);
                 assertThat(rejected.headers().firstValue("Retry-After")).contains("5");
+                for (String method : List.of("POST", "PUT")) {
+                    var unknown = HttpRequest.newBuilder(upload(), (name, value) -> true)
+                            .uri(URI.create("http://localhost:" + port + "/api/files/unknown"))
+                            .setHeader("Content-Type", "MuLtIpArT/form-data; boundary=boundary")
+                            .method(method, upload().bodyPublisher().orElseThrow()).build();
+                    var rejectedUnknown = http.send(unknown, HttpResponse.BodyHandlers.ofString());
+                    assertThat(rejectedUnknown.statusCode()).isEqualTo(503);
+                    assertThat(rejectedUnknown.headers().firstValue("Retry-After")).contains("5");
+                }
                 try (var files = Files.list(spool)) {
                     assertThat(files.toList()).containsExactly(validationFile.get());
                 }

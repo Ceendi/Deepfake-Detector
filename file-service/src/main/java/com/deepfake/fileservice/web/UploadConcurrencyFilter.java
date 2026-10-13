@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -30,7 +31,9 @@ public class UploadConcurrencyFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod()) || !"/api/files/upload".equals(request.getServletPath());
+        boolean upload = "POST".equals(request.getMethod()) && "/api/files/upload".equals(request.getServletPath());
+        // MVC parses multipart before routing, including requests that will ultimately return 404.
+        return !upload && !StringUtils.startsWithIgnoreCase(request.getContentType(), "multipart/");
     }
 
     @Override

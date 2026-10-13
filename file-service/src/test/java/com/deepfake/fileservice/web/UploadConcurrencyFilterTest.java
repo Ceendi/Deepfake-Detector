@@ -49,6 +49,14 @@ class UploadConcurrencyFilterTest {
                 });
                 assertThat(rejected.getStatus()).isEqualTo(503);
                 assertThat(rejected.getHeader("Retry-After")).isEqualTo("5");
+                var unknown = new MockHttpServletRequest("PUT", "/api/files/unknown");
+                unknown.setServletPath("/api/files/unknown");
+                unknown.setContentType("MuLtIpArT/form-data; boundary=test");
+                var unknownResponse = new MockHttpServletResponse();
+                filter.doFilter(unknown, unknownResponse, (request, response) -> {
+                    throw new AssertionError("multipart on unknown routes must not parse when full");
+                });
+                assertThat(unknownResponse.getStatus()).isEqualTo(503);
                 var read = new MockHttpServletRequest("GET", "/api/files/id/metadata");
                 var passed = new AtomicBoolean();
                 filter.doFilter(read, new MockHttpServletResponse(), (request, response) -> passed.set(true));
