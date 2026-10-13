@@ -146,7 +146,8 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
             self.assertEqual(401, self.request(self.gateway_url, path)[0])
         health = json.loads(self.compose('exec', '-T', 'gateway', 'wget', '-qO-',
                                          'http://localhost:9090/actuator/health'))
-        self.assertEqual({'status': 'UP'}, health)
+        self.assertEqual('UP', health['status'])
+        self.assertTrue(set(health) <= {'status', 'groups'}, health)
 
         def scraped():
             _, result = self.request(self.prometheus_url, '/api/v1/targets')
