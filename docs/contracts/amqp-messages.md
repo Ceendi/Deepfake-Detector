@@ -165,7 +165,9 @@ The object-key shape and result fields are unchanged.
 `gradcam_keys` — list of **bare object keys** in the `analysis-artifacts` bucket,
 following the `{analysisId}/{source}/{name}.png` convention from
 [`object-storage.md`](./object-storage.md). No URI scheme, no bucket prefix — the
-Orchestrator persists the keys and serves the artifacts itself. Empty list when the
+Orchestrator persists the keys and serves the artifacts itself. Only keys matching
+`{analysisId}/{source}/{name}.png` for the reporting analysis and source, with `name` made of
+`[A-Za-z0-9_.-]`, are stored; other keys are logged and dropped. Empty list when the
 detector produced no visualizations. This is the only accepted field — URI-style
 variants (`gradcam_url`, `gradcam_urls`) are ignored.
 
@@ -254,7 +256,8 @@ Contract:
   DLQ, source failure and user cancel) the Orchestrator sets the
   Redis key **`cancel:{analysis_id}`** = `"1"` with a 2 h TTL (after commit, so a
   rolled-back failure/cancel can never abort a live analysis). One flag covers both
-  sources of a FULL analysis.
+  sources of a FULL analysis. Deleting a `FAILED`/`CANCELLED` analysis
+  (`DELETE /api/analysis/{id}/record`) sets the flag again instead of removing it.
 - Detectors check the flag (`EXISTS`) at **task pickup** — cancelled-while-queued,
   the common case behind a long job with `prefetch=1` — and on **every progress
   tick**, so an in-flight inference aborts within one chunk/frame batch.

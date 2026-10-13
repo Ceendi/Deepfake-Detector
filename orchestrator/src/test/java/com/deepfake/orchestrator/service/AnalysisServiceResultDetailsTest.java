@@ -85,6 +85,26 @@ class AnalysisServiceResultDetailsTest {
     }
 
     @Test
+    void foreignGradcamKeysAreNotPersisted() {
+        // A persisted key authorizes its download and is reclaimed on delete; another analysis's
+        // or source's object must never become part of this result.
+        givenActiveAnalysis(AnalysisType.VIDEO);
+        when(repository.writeVideoProb(eq(id), any(), any(), any(), any())).thenReturn(1);
+        String own = id + "/video/gradcam_frame_00_" + "a".repeat(32) + ".png";
+
+        service.handleResult(Map.of(
+                "analysis_id", id.toString(), "source", "video", "status", "COMPLETED",
+                "result", Map.of(
+                        "prob_fake", "0.42",
+                        "gradcam_keys", List.of(own, UUID.randomUUID() + "/video/x.png",
+                                id + "/audio/x.png", id + "/video/../x.png"))));
+
+        verify(repository).writeVideoProb(eq(id), eq(new BigDecimal("0.42")),
+                detailsCaptor.capture(), any(), any());
+        assertThat(detailsCaptor.getValue()).containsEntry("gradcamKeys", List.of(own));
+    }
+
+    @Test
     void videoStubResultWithoutExtrasWritesNullDetails() {
         givenActiveAnalysis(AnalysisType.VIDEO);
         when(repository.writeVideoProb(eq(id), any(), isNull(), any(), any())).thenReturn(1);

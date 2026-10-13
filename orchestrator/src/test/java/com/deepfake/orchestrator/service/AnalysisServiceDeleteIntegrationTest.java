@@ -1,6 +1,8 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 import java.math.BigDecimal;
@@ -121,7 +123,9 @@ class AnalysisServiceDeleteIntegrationTest {
         assertThat(after.inProgress()).isEqualTo(1);
         assertThat(after.avgConfidence()).isNull(); // the only COMPLETED (the one with a confidence) is gone
 
-        verify(metrics).deleted(AnalysisStatus.COMPLETED);
+        // The test transaction never commits, so the after-commit metric must not have fired
+        // (committed counting: AnalysisServiceDeleteCommitIntegrationTest).
+        verify(metrics, never()).deleted(any());
     }
 
     // persist() forces PENDING/@PrePersist timestamps; overwrite the stat-relevant columns natively

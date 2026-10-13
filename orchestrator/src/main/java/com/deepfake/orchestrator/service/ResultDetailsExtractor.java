@@ -6,7 +6,10 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.UUID;
+import java.util.regex.Pattern;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Maps the AMQP result payload onto the per-source details JSON persisted on the analysis
@@ -14,13 +17,17 @@ import java.util.Objects;
  * {@code metadata} is detector-defined and passed through as-is, except for the segment cap.
  * Stateless — instantiated directly by {@link AnalysisService}, no wiring needed.
  */
+@Slf4j
 class ResultDetailsExtractor {
+
+    // Single safe filename under this analysis and source (docs/contracts/object-storage.md).
+    private static final String ARTIFACT_NAME = "[A-Za-z0-9_.-]+\\.png";
 
     // 1h of audio ≈ 7200 half-second segments (~0.5 MB JSONB); uniform stride keeps the timeline shape.
     static final int MAX_SEGMENTS = 500;
 
     /** Returns the details to persist, or null when the result carries nothing beyond prob_fake. */
-    Map<String, Object> extract(Map<String, Object> result) {
+    Map<String, Object> extract(Map<String, Object> result, UUID analysisId, String source) {
         Map<String, Object> details = new LinkedHashMap<>();
         Object modelVersion = result.get("model_version");
         if (modelVersion != null) {
@@ -34,7 +41,7 @@ class ResultDetailsExtractor {
         if (verdict != null) {
             details.put("verdict", verdict.toString());
         }
-        List<String> keys = gradcamKeys(result);
+        List<String> keys = gradcamKeys(result, analysisId, source);
         if (!keys.isEmpty()) {
             details.put("gradcamKeys", keys);
         }
@@ -46,11 +53,27 @@ class ResultDetailsExtractor {
     }
 
     // Contract field only (amqp-messages.md): bare object keys, no URI scheme, no bucket prefix.
-    private List<String> gradcamKeys(Map<String, Object> result) {
-        if (result.get("gradcam_keys") instanceof Collection<?> keys) {
-            return keys.stream().filter(Objects::nonNull).map(Object::toString).toList();
+    // Persisted keys authorize downloads and are enqueued for deletion with this analysis, so a
+    // key outside {analysisId}/{source}/ must never be stored.
+    private List<String> gradcamKeys(Map<String, Object> result, UUID analysisId, String source) {
+        if (!(result.get("gradcam_keys") instanceof Collection<?> keys)) {
+            return List.of();
         }
-        return List.of();
+        Pattern own = Pattern.compile(Pattern.quote(analysisId + "/" + source + "/") + ARTIFACT_NAME);
+        List<String> accepted = new ArrayList<>();
+        int dropped = 0;
+        for (Object key : keys) {
+            if (key == null) continue;
+            if (own.matcher(key.toString()).matches()) {
+                accepted.add(key.toString());
+            } else {
+                dropped++;
+            }
+        }
+        if (dropped > 0) {
+            log.warn("Dropped {} gradcam key(s) outside {}/{}/ from the detector result", dropped, analysisId, source);
+        }
+        return accepted;
     }
 
     @SuppressWarnings("unchecked")

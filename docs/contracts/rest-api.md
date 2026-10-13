@@ -250,7 +250,8 @@ gone from list/get/stats/stream, not soft-flagged). `204 No Content` on success.
 (code `CONFLICT`) if the analysis is still in progress (`PENDING`/`PROCESSING`) — cancel it first
 (see `DELETE /api/analysis/{id}`), because deleting an active analysis would discard its
 state prematurely and race the detector still writing its result. `404 Not Found` for a missing,
-already-deleted, or non-owned analysis (IDOR — never `403`).
+already-deleted, or non-owned analysis (IDOR — never `403`); of two concurrent deletes of the same
+analysis, one gets `204` and the other `404`.
 
 Distinct route from cancel on purpose: `DELETE /api/analysis/{id}` soft-stops a *running* analysis
 (and is idempotent on an already-`CANCELLED` one), whereas this removes a *finished* one — the two

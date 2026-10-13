@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 class ResultDetailsExtractorTest {
 
     private final ResultDetailsExtractor extractor = new ResultDetailsExtractor();
+    private final UUID id = UUID.randomUUID();
 
     @Test
     void mapsModelVersionConfidenceVerdictGradcamKeysAndMetadata() {
@@ -26,14 +28,14 @@ class ResultDetailsExtractorTest {
                 "verdict", "FAKE",
                 "confidence", 0.74,
                 "model_version", "v1.2.0-accurate",
-                "gradcam_keys", List.of("id/audio/gradcam.png"),
-                "metadata", Map.of("duration_seconds", 12.5)));
+                "gradcam_keys", List.of(id + "/audio/gradcam.png"),
+                "metadata", Map.of("duration_seconds", 12.5)), id, "audio");
 
         assertThat(details)
                 .containsEntry("modelVersion", "v1.2.0-accurate")
                 .containsEntry("confidence", new BigDecimal("0.74"))
                 .containsEntry("verdict", "FAKE")
-                .containsEntry("gradcamKeys", List.of("id/audio/gradcam.png"))
+                .containsEntry("gradcamKeys", List.of(id + "/audio/gradcam.png"))
                 .containsEntry("metadata", Map.of("duration_seconds", 12.5));
     }
 
@@ -41,7 +43,7 @@ class ResultDetailsExtractorTest {
     void confidenceIsPersistedAsBigDecimalAndVerdictAsString() {
         Map<String, Object> details = extractor.extract(Map.of(
                 "confidence", 0.82,
-                "verdict", "REAL"));
+                "verdict", "REAL"), id, "audio");
 
         assertThat(details.get("confidence")).isInstanceOf(BigDecimal.class);
         assertThat(details.get("confidence")).isEqualTo(new BigDecimal("0.82"));
@@ -50,9 +52,9 @@ class ResultDetailsExtractorTest {
 
     @Test
     void probOnlyResultYieldsNull() {
-        assertThat(extractor.extract(Map.of("prob_fake", 0.5))).isNull();
+        assertThat(extractor.extract(Map.of("prob_fake", 0.5), id, "audio")).isNull();
         assertThat(extractor.extract(Map.of("prob_fake", 0.5, "gradcam_keys", List.of(),
-                "metadata", Map.of()))).isNull();
+                "metadata", Map.of()), id, "audio")).isNull();
     }
 
     @Test
@@ -61,9 +63,32 @@ class ResultDetailsExtractorTest {
         Map<String, Object> details = extractor.extract(Map.of(
                 "model_version", "v1",
                 "gradcam_url", "minio://analysis-artifacts/abc/gradcam.png",
-                "gradcam_urls", List.of("abc/frame1.png")));
+                "gradcam_urls", List.of("abc/frame1.png")), id, "audio");
 
         assertThat(details).doesNotContainKey("gradcamKeys");
+    }
+
+    @Test
+    void gradcamKeysOutsideThisAnalysisAndSourceAreDropped() {
+        String own = id + "/audio/gradcam_" + "a".repeat(32) + ".png";
+        String legacy = id + "/audio/frame1.png";
+        Map<String, Object> details = extractor.extract(Map.of("gradcam_keys", List.of(
+                own, legacy,
+                UUID.randomUUID() + "/audio/gradcam.png",       // another analysis
+                id + "/video/gradcam.png",                      // another source
+                id + "/audio/nested/gradcam.png",               // nested path
+                id + "/audio/../x/gradcam.png",                 // traversal
+                id + "/audio/gradcam.jpg",                      // not a PNG
+                "analysis-artifacts/" + id + "/audio/gradcam.png", // bucket prefix
+                id.toString().toUpperCase() + "/audio/gradcam.png")), id, "audio");
+
+        assertThat(details).containsEntry("gradcamKeys", List.of(own, legacy));
+    }
+
+    @Test
+    void onlyForeignGradcamKeysLeaveNoKeysField() {
+        assertThat(extractor.extract(Map.of("gradcam_keys",
+                List.of(UUID.randomUUID() + "/video/gradcam.png")), id, "video")).isNull();
     }
 
     @Test
@@ -78,7 +103,7 @@ class ResultDetailsExtractorTest {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> out = (Map<String, Object>)
-                extractor.extract(Map.of("metadata", metadata)).get("metadata");
+                extractor.extract(Map.of("metadata", metadata), id, "audio").get("metadata");
 
         assertThat((List<?>) out.get("segment_predictions"))
                 .hasSizeLessThanOrEqualTo(ResultDetailsExtractor.MAX_SEGMENTS)
@@ -94,7 +119,7 @@ class ResultDetailsExtractorTest {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> out = (Map<String, Object>)
-                extractor.extract(Map.of("metadata", metadata)).get("metadata");
+                extractor.extract(Map.of("metadata", metadata), id, "audio").get("metadata");
 
         assertThat(out).isEqualTo(metadata).doesNotContainKey("segment_predictions_downsampled");
     }
