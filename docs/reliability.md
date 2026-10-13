@@ -200,9 +200,9 @@ This also protects old uploads or tasks created outside the upload endpoint.
 Video checks finite frame-count/FPS duration before reading any frames, then checks
 decoded frame count against the same limit on every `grab()`. Reading continues to EOF
 instead of trusting the advertised frame count, so understated metadata cannot bypass
-the guard. Missing, non-positive or non-finite FPS uses a conservative 1 fps frame budget
-only for the guard (default 1800 frames); valid clips with missing FPS may therefore be
-rejected earlier. Reported timestamps/FPS keep their existing zero fallback. An overlong
+the guard. Missing, non-positive or non-finite FPS assumes 60 fps only for the guard
+(default 108 000 frames): decoding stays bounded, and ordinary 24–60 fps clips within the
+limit are not rejected. Reported timestamps/FPS keep their existing zero fallback. An overlong
 video returns the same confirmed `FAILED/MEDIA_TOO_LONG` before ACK, and the capture is
 released on success and all failures. Both detectors use the shared runtime error class.
 

@@ -61,6 +61,9 @@ MODEL_VERSION = os.getenv("MODEL_VERSION", "effnetb4-bilstm-v1.0.0")
 MEDIA_MAX_DURATION_SECONDS = float(os.getenv("MEDIA_MAX_DURATION_SECONDS", "1800"))
 if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <= 0:
     raise ValueError("Media duration limit must be finite and positive")
+# Without usable FPS metadata, assume a high frame rate: the frame budget still bounds decoding
+# without rejecting ordinary 24-60 fps clips that fit the duration limit.
+FALLBACK_FPS = 60.0
 
 # Prog decyzyjny z ewaluacji (training/eval.py); 0.5 = brak przesuniecia.
 # Wkalibrowany w prob_fake, zeby Orchestrator (sztywne 0.5) mowil tym samym jezykiem.
@@ -132,8 +135,8 @@ class VideoInference:
                 raise MediaTooLongError()
             if total <= 0:
                 raise VideoDecodeError(f"no decodable frames in {os.path.basename(video_path)}")
-            # Missing FPS uses a conservative 1 fps budget, without inventing result timestamps.
-            budget_fps = fps or 1.0
+            # Only the guard uses the fallback; result timestamps keep fps 0.
+            budget_fps = fps or FALLBACK_FPS
             wanted = set(sample_indices(total, fps, FRAME_STRATEGY).tolist())
             frames = []
             i = 0
