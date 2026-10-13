@@ -2,18 +2,16 @@ import json
 import math
 import os
 import subprocess
+import time
 
-import matplotlib
 import numpy as np
 import onnxruntime as ort
 import soundfile as sf
+import structlog
 import torch
-from detector_runtime import MediaTooLongError
-
-matplotlib.use('Agg')
-import time
-
-import matplotlib.pyplot as plt
+from detector_runtime import DetectorError, MediaTooLongError
+from matplotlib.figure import Figure
+from matplotlib.image import imsave
 from prometheus_client import Gauge, Histogram
 
 from .models.mel_cnn import load_mel_cnn
@@ -32,9 +30,13 @@ W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.3000"))
 MEDIA_MAX_DURATION_SECONDS = float(os.getenv("MEDIA_MAX_DURATION_SECONDS", "1800"))
 if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <= 0:
     raise ValueError("Media duration limit must be finite and positive")
+# Extraction is roughly 10x faster than real time; a stall beyond this budget is a hung ffmpeg.
+FFMPEG_TIMEOUT_SECONDS = 60 + MEDIA_MAX_DURATION_SECONDS / 10
+
+log = structlog.get_logger(__name__)
 
 
-class NoAudioTrackError(RuntimeError):
+class NoAudioTrackError(DetectorError):
     code = "NO_AUDIO_TRACK"
 
     def __init__(self):
@@ -76,11 +78,12 @@ class AudioInference:
             raise NoAudioTrackError()
         try:
             proc = subprocess.run([
-                "ffmpeg", "-y", "-i", input_path,
+                "ffmpeg", "-nostdin", "-y", "-i", input_path,
                 "-vn", "-t", str(MEDIA_MAX_DURATION_SECONDS + 1 / sr),
                 "-ar", str(sr), "-ac", "1", out_path
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        except OSError:
+            ], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=False, timeout=FFMPEG_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
             raise RuntimeError("Nie udało się wyodrębnić ścieżki audio z materiału.") from None
         if proc.returncode != 0:
             raise RuntimeError("Nie udało się wyodrębnić ścieżki audio z materiału.")
@@ -128,21 +131,24 @@ class AudioInference:
 
         target_layer = self.mel_module.model.resnet.layer4
         h1 = target_layer.register_forward_hook(fwd_hook)
-        h2 = target_layer.register_full_backward_hook(bwd_hook)
+        try:
+            h2 = target_layer.register_full_backward_hook(bwd_hook)
+            try:
+                # audio_chunk_16k has shape (Time,). Make it (1, Time) and require grad.
+                audio_in = audio_chunk_16k.unsqueeze(0).requires_grad_(True)
+                logits = self.mel_module(audio_in)
+                logits.backward()
+            finally:
+                # Hooks left on the shared model would accumulate tensors in later tasks.
+                h2.remove()
+        finally:
+            h1.remove()
 
-        # audio_chunk_16k has shape (Time,). Make it (1, Time) and require grad.
-        audio_in = audio_chunk_16k.unsqueeze(0).requires_grad_(True)
-        logits = self.mel_module(audio_in)
-        logits.backward()
-
-        h1.remove()
-        h2.remove()
-        
         # Get mel spec for plotting
         mel_spec = self.mel_module.mel_transform(audio_chunk_16k.unsqueeze(0)).squeeze().detach()
 
         if not activations or not gradients:
-            plt.imsave(out_png_path, mel_spec.numpy(), cmap='viridis')
+            imsave(out_png_path, mel_spec.numpy(), cmap='viridis')
             return out_png_path
 
         acts = activations[0].squeeze(0)
@@ -168,15 +174,25 @@ class AudioInference:
         )
         cam = cam_resized.squeeze().numpy()
 
-        plt.figure(figsize=(10, 4))
-        plt.imshow(mel_spec.numpy(), aspect='auto', origin='lower', cmap='viridis')
-        plt.imshow(cam, aspect='auto', origin='lower', cmap='jet', alpha=0.5)
-        plt.axis('off')
-        plt.tight_layout()
-        plt.savefig(out_png_path, bbox_inches='tight', pad_inches=0)
-        plt.close()
+        # Figure avoids pyplot's global state, which is not thread-safe and leaks figures.
+        fig = Figure(figsize=(10, 4))
+        ax = fig.add_subplot()
+        ax.imshow(mel_spec.numpy(), aspect='auto', origin='lower', cmap='viridis')
+        ax.imshow(cam, aspect='auto', origin='lower', cmap='jet', alpha=0.5)
+        ax.axis('off')
+        fig.tight_layout()
+        fig.savefig(out_png_path, bbox_inches='tight', pad_inches=0)
 
         return out_png_path
+
+    def _try_gradcam(self, audio_chunk_16k, out_png_path):
+        # The heatmap is explanatory; its failure must not discard a computed verdict.
+        try:
+            self.generate_gradcam(audio_chunk_16k, out_png_path)
+        except Exception:
+            log.exception("gradcam_failed")
+            if os.path.exists(out_png_path):
+                os.remove(out_png_path)
 
     @INFERENCE_TIME.time()
     def analyze(self, file_path, mode="accurate", progress_callback=None):
@@ -273,12 +289,14 @@ class AudioInference:
         if worst_chunk_16k is not None:
             if progress_callback:
                 progress_callback(95, "POSTPROCESSING")
-            self.generate_gradcam(worst_chunk_16k, gradcam_path)
+            self._try_gradcam(worst_chunk_16k, gradcam_path)
 
         if progress_callback:
             progress_callback(100, "POSTPROCESSING")
             
-        result["local_gradcam_path"] = gradcam_path
+        # A failed heatmap must not leave a local path in the published result.
+        if os.path.exists(gradcam_path):
+            result["local_gradcam_path"] = gradcam_path
         result["metadata"].update({
             "duration_seconds": duration_sec,
             "analysis_time_seconds": round(time.time() - start_analysis, 2),
