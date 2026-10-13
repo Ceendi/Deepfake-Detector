@@ -39,7 +39,11 @@ cp .env.example .env
 cp frontend/.env.example frontend/.env
 ```
 
-Nothing needs editing — the defaults are configured for local development.
+The defaults import the realm without test accounts. Register a user through
+the app. For local smoke tests with `alice`/`bob` or JMeter, add
+`KEYCLOAK_REALM_CONFIG=dev/realm-export.json` to the root `.env` before starting
+`auth`; see [Keycloak configuration](infra/keycloak/README.md). Keep this option
+unset in deployments.
 
 ---
 

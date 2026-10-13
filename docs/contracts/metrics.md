@@ -37,3 +37,9 @@ the `monitoring` profile once Tempo exists). The tracer + Micrometer bridge are 
 > **Cross-service heads-up (PR4):** gateway, file-service and eureka also need
 > `micrometer-registry-prometheus` on the classpath for their `/actuator/prometheus` to exist before
 > Prometheus can scrape them.
+
+## Gateway scrape transport
+
+Gateway metrics keep the `/actuator/prometheus` path on the dedicated management
+port 9090 (`gateway:9090` inside Compose). Port 8080 rejects Actuator access, even
+with an application JWT. Compose does not publish port 9090 on the host.

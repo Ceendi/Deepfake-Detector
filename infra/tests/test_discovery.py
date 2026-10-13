@@ -24,7 +24,12 @@ HTTP = build_opener(ProxyHandler({}))
 
 
 def command(*args):
-    return subprocess.check_output(args, cwd=ROOT, text=True, stderr=subprocess.STDOUT).strip()
+    result = subprocess.run(args, cwd=ROOT, text=True, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT)
+    if result.returncode:
+        print(result.stdout, flush=True)
+        result.check_returncode()
+    return result.stdout.strip()
 
 
 def resolved_compose():
@@ -136,6 +141,8 @@ class DiscoveryIntegrationTest(unittest.TestCase):
             else:
                 # Infrastructure clients use Compose DNS; no host ports are needed.
                 service.pop('ports', None)
+            if name in ('eureka-server', 'gateway', 'file-service', 'orchestrator'):
+                service['image'] = self.project + '-' + name
             if name in ('gateway', 'file-service', 'orchestrator'):
                 service['environment'].update({
                     'JWT_ISSUER_URI': issuer,

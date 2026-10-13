@@ -88,6 +88,7 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
                 service['ports'] = [{'target': target, 'published': str(published),
                                      'host_ip': '127.0.0.1'}]
             if name in JAVA_LIMITS:
+                service['image'] = cls.project + '-' + name
                 service['environment']['OTEL_TRACING_EXPORT_ENABLED'] = 'false'
         services['file-service']['deploy']['replicas'] = 2
         config = {
@@ -109,6 +110,7 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
         cls.broker_url = f'http://127.0.0.1:{broker_port}'
         cls.prometheus_url = f'http://127.0.0.1:{prometheus_port}'
         cls.orchestrator_url = f'http://127.0.0.1:{orchestrator_port}'
+        cls.gateway_url = f'http://127.0.0.1:{gateway_port}'
         environment = services['rabbitmq']['environment']
         cls.broker_authorization = 'Basic ' + base64.b64encode(
             (environment['RABBITMQ_DEFAULT_USER'] + ':'
@@ -138,6 +140,24 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
                                     {'Authorization': self.broker_authorization})
         self.assertEqual(expected, status, f'RabbitMQ API {path}: {body}')
         return body
+
+    def test_gateway_actuator_boundary_and_real_prometheus_scrape(self):
+        for path in ('/actuator/health', '/actuator/prometheus'):
+            self.assertEqual(401, self.request(self.gateway_url, path)[0])
+        health = json.loads(self.compose('exec', '-T', 'gateway', 'wget', '-qO-',
+                                         'http://localhost:9090/actuator/health'))
+        self.assertEqual('UP', health['status'])
+        self.assertTrue(set(health) <= {'status', 'groups'}, health)
+
+        def scraped():
+            _, result = self.request(self.prometheus_url, '/api/v1/targets')
+            targets = [target for target in result['data']['activeTargets']
+                       if target['labels']['job'] == 'gateway']
+            self.assertEqual(1, len(targets))
+            self.assertEqual('http://gateway:9090/actuator/prometheus', targets[0]['scrapeUrl'])
+            self.assertEqual('up', targets[0]['health'], targets[0]['lastError'])
+
+        self.eventually(scraped)
 
     def eventually(self, check, timeout=120):
         deadline = time.monotonic() + timeout

@@ -32,10 +32,14 @@ class LocalBrowserCookiePolicy(http.cookiejar.DefaultCookiePolicy):
 
 class KeycloakSecurityTest(unittest.TestCase):
     def compose(self, *args):
-        return subprocess.check_output(
+        result = subprocess.run(
             ['docker', 'compose', '-f', str(self.compose_file), *args],
-            cwd=ROOT, text=True, stderr=subprocess.STDOUT,
-        ).strip()
+            cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        if result.returncode:
+            print(result.stdout, flush=True)
+            result.check_returncode()
+        return result.stdout.strip()
 
     def request(self, path, payload=None, method=None, token=None):
         headers = {'Content-Type': 'application/json'}
@@ -143,6 +147,28 @@ class KeycloakSecurityTest(unittest.TestCase):
         return html.unescape(match.group(1))
 
     def test_reset_requires_email_proof_and_existing_clients_work(self):
+        users = self.request('/admin/realms/deepfake/users', token=self.admin)
+        self.assertEqual([], users, 'Default import must not provision test identities')
+        clients = self.request('/admin/realms/deepfake/clients', token=self.admin)
+        self.assertNotIn('deepfake-loadtest', {client['clientId'] for client in clients})
+        self.request('/admin/realms/deepfake/users', {
+            'username': 'registered-user', 'enabled': True,
+        }, method='POST', token=self.admin)
+
+        config = json.loads(self.compose_file.read_text())
+        config['services']['keycloak-config-cli']['environment']['IMPORT_FILES_LOCATIONS'] = (
+            '/config/dev/realm-export.json'
+        )
+        self.compose_file.write_text(json.dumps(config))
+        self.compose('up', '-d', '--force-recreate', 'keycloak-config-cli')
+        self.compose('wait', 'keycloak-config-cli')
+        status = json.loads(self.compose('ps', '-a', '--format', 'json', 'keycloak-config-cli'))
+        if isinstance(status, list):
+            status = status[0]
+        self.assertEqual(0, status['ExitCode'])
+        users = self.request('/admin/realms/deepfake/users', token=self.admin)
+        self.assertTrue({'alice', 'bob', 'registered-user'} <= {user['username'] for user in users})
+
         token = self.token('deepfake', {
             'grant_type': 'client_credentials', 'client_id': 'deepfake-loadtest',
             'client_secret': 'changeme_dev_loadtest',

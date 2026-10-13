@@ -12,6 +12,8 @@ Proves D4: replicating `file-service` behind the Gateway's Eureka load balancer 
 # Valid ~5 MB MP4 (random blobs get a 422 from Tika+ffprobe and never reach S3).
 .\generate-sample.ps1            # or ./generate-sample.sh
 
+# Opt in to the development realm and load-test client before starting auth.
+$env:KEYCLOAK_REALM_CONFIG = "dev/realm-export.json"
 # .env must define LOADTEST_CLIENT_SECRET (see .env.example). Export it for the runner too:
 $env:LOADTEST_CLIENT_SECRET = "<same as .env>"
 ```

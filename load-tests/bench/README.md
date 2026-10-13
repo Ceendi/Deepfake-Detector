@@ -5,7 +5,9 @@ Measures the three backend optimizations (orchestrator). Report:
 
 **Tools:** `psql` (in the postgres container), `wrk` (via `williamyeh/wrk`, run on the `deepfake`
 network), and the `deepfake-loadtest` client for a token (added in the D4 PR; the orchestrator
-validates its USER role). Bring up `docker compose --profile core --profile auth up -d` first.
+validates its USER role). Set `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in the local
+`.env` to enable this client, then bring up `docker compose --profile core --profile auth up -d`.
+See [Keycloak configuration](../../infra/keycloak/README.md).
 
 ## 1. Indexes — `EXPLAIN (ANALYZE, BUFFERS)`, no auth
 

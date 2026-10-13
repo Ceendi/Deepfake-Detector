@@ -9,10 +9,35 @@ on every `docker compose --profile auth up` — see [ADR-0001](../../docs/adr/00
 - One public client (`deepfake-web`, PKCE S256) for the SPA
 - Realm role `USER`, granted by default to every newly-registered user via the
   composite meta-role `default-roles-deepfake`
-- Two dev users (`alice`, `bob`, password `Test1234!@`) for smoke tests and IDOR
-  verification — passwords satisfy the realm policy and contain no username
-  substring
+- No fixture users or service-account clients in the default import
 - Password policy, brute-force protection, token lifespans (details below)
+
+## Local smoke tests and load tests
+
+Test identities live in `dev/realm-export.json`, a complete development variant
+of the same realm. Its policy and SPA client must match `realm-export.json`;
+`infra/tests/test_security_configuration.py` checks this to prevent drift.
+It adds `alice` and `bob` (password `Test1234!@`) and the confidential
+`deepfake-loadtest` client with its USER service account. The client secret
+comes from `LOADTEST_CLIENT_SECRET`; use these identities only locally.
+
+The default `.env.example` keeps this variant disabled. To opt in, put
+`KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in your local `.env`, then run:
+
+```bash
+docker compose --profile auth up -d keycloak-config-cli
+```
+
+Compose mounts the config directory read-only and imports only the selected
+file, never a wildcard. Keep `KEYCLOAK_REALM_CONFIG` unset in deployments.
+
+**Existing installations:** switching back to the default import removes the
+managed load-test client, but `IMPORT_MANAGED_USER=no-delete` preserves existing
+users, including previously imported `alice` and `bob`. Removing the dev option
+alone therefore does not revoke those passwords. Before using an existing dev
+database in a deployment, remove the two fixture users and verify the load-test
+client and service account are absent through the Keycloak Admin API. Preserve
+real registered users; no volume reset is needed.
 
 ## Update flow — how to change realm config
 
@@ -51,7 +76,7 @@ you created manually for testing survive.
 | roles, clients, authentication flows | `full` (default) | File is the sole source of truth. UI additions get purged on next sync. |
 | users             | `no-delete` | File-declared users are reconciled (incl. password reset). UI-created users are preserved. |
 
-This split means **dev users `alice` and `bob` have their passwords reset to
+With the development variant enabled, **dev users `alice` and `bob` have their passwords reset to
 `Test1234!@` on every sync** — that's deliberate, gives the team a known good
 state for scripted tests. If you want a dev account whose password sticks,
 create it via Admin UI; `no-delete` will leave it alone.
@@ -62,11 +87,10 @@ resources will silently disappear on the next sync.
 
 ## Compatibility note
 
-We pin `adorsys/keycloak-config-cli:6.5.0-26.5.4` (latest stable as of May
-2026). Our Keycloak is `26.6.1` — the cli was built/tested against 26.5.4.
-The Admin REST API surface we exercise (realms, roles, users, clients,
-password policy) is stable across the 26.5→26.6 minor bump, so this works for
-our scope. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for
+Compose builds `deepfake-keycloak-config-cli:6.5.1-security` from the pinned
+upstream source with patched dependencies and tests it against Keycloak `26.8.0`.
+The integration test verifies both the default import and the development
+variant, then exercises the password-reset flow. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for
 the full risk analysis and upgrade plan.
 
 ## Password policy
