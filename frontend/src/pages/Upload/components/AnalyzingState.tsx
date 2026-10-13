@@ -1,6 +1,7 @@
-import { X } from 'lucide-react'
+import { ArrowRight, CircleAlert, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/Button/Button'
+import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
 
 import { isVideoFile } from '../upload-utils'
@@ -11,6 +12,10 @@ interface AnalyzingStateProps {
   file: File // tylko do ustalenia źródeł (wideo → video+audio, audio → audio)
   bySource: ProgressBySource
   onCancel?: () => void // brak = faza `starting` (analiza jeszcze nieanulowalna)
+  cancelling?: boolean
+  cancelError?: string | null
+  // Ustawione w stanie „nadal trwa": link do wyniku zamiast ponownego wgrywania.
+  stillRunningId?: string
 }
 
 const SOURCE_LABEL = { video: 'Wideo', audio: 'Audio' } as const
@@ -39,7 +44,14 @@ const STAGE_LABELS: Record<string, string> = {
 
 // Sekcja postępu + stopka fazy „analyzing"/„starting". Media renderuje wspólna karta w Upload.tsx.
 // Dla wideo dwa paski (video+audio), dla audio jeden; źródła znamy z typu pliku, więc paski są od razu.
-export function AnalyzingState({ file, bySource, onCancel }: AnalyzingStateProps) {
+export function AnalyzingState({
+  file,
+  bySource,
+  onCancel,
+  cancelling = false,
+  cancelError = null,
+  stillRunningId,
+}: AnalyzingStateProps) {
   const sources = isVideoFile(file) ? (['video', 'audio'] as const) : (['audio'] as const)
 
   return (
@@ -59,15 +71,46 @@ export function AnalyzingState({ file, bySource, onCancel }: AnalyzingStateProps
         })}
       </div>
 
+      {cancelError && (
+        <p className={styles.inlineError} role="alert">
+          <CircleAlert size={16} strokeWidth={2.4} aria-hidden="true" />
+          <span>{cancelError}</span>
+        </p>
+      )}
+
       <div className={styles.footer}>
-        <span className={styles.footerNote}>
-          Analiza w toku — to zwykle kilka–kilkanaście sekund.
-        </span>
-        {onCancel && (
+        {stillRunningId ? (
+          <span className={styles.footerNote} role="status">
+            Analiza nadal trwa… Wynik pojawi się tutaj albo na stronie analizy.
+          </span>
+        ) : (
+          <span className={styles.footerNote}>
+            Analiza w toku — to zwykle kilka–kilkanaście sekund.
+          </span>
+        )}
+        {(onCancel || stillRunningId) && (
           <div className={styles.actions}>
-            <Button variant="ghost" size="md" leftIcon={X} onClick={onCancel}>
-              Anuluj
-            </Button>
+            {onCancel && (
+              <Button
+                variant="ghost"
+                size="md"
+                leftIcon={X}
+                onClick={onCancel}
+                isLoading={cancelling}
+              >
+                Anuluj
+              </Button>
+            )}
+            {stillRunningId && (
+              <LinkButton
+                to={`/analysis-result/${stillRunningId}`}
+                variant="primary"
+                size="md"
+                rightIcon={ArrowRight}
+              >
+                Przejdź do analizy
+              </LinkButton>
+            )}
           </div>
         )}
       </div>
