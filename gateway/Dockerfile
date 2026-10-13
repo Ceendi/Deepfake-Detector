@@ -13,5 +13,5 @@ USER app
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 ENV JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders -XX:MaxRAMPercentage=75"
-EXPOSE 8080
+EXPOSE 8080 9090
 ENTRYPOINT ["java", "-jar", "app.jar"]

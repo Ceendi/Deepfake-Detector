@@ -48,6 +48,29 @@ Tests: `infra/tests/test_core_reliability.py` boots `core` on fresh isolated vol
 processes, recreates RabbitMQ with a persistent message, verifies liveness during failed AMQP
 recovery, and checks real Prometheus scrapes during file-service scaling.
 
+## Identity, management and image updates
+
+The default Keycloak import provisions the SPA client and realm policy without
+fixture users or the load-test service account. Development/load-test installations
+explicitly select `KEYCLOAK_REALM_CONFIG=dev/realm-export.json`; managed users stay
+`no-delete`, so registered accounts survive sync. Switching an existing dev database
+to deployment requires explicit removal of fixture users, as described in
+[Keycloak configuration](../infra/keycloak/README.md).
+
+Gateway Actuator endpoints listen on internal port 9090; Compose publishes only
+application port 8080. Security checks the actual local socket port before allowing
+health, info or Prometheus requests. Forwarded headers cannot make a request internal.
+Anonymous health responses omit components and details, including component health.
+Prometheus scrapes `gateway:9090/actuator/prometheus`. This does not change the gateway's
+Redis failure policy or application JWT checks.
+
+All four Java services declare local Compose image names, so the existing Trivy
+inventory builds and scans their actual runtime images. CRITICAL findings block that
+workflow; HIGH findings remain reported under its existing policy. Dependabot updates
+the four Java Dockerfiles, and every action in the job with `packages: write` is pinned
+to a verified full commit SHA with its version comment. The publishing workflow remains
+manual. Regression guards run in Infrastructure smoke.
+
 ## Creating an analysis
 
 `POST /api/analysis` goes through three steps.

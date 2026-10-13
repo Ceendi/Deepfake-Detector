@@ -136,6 +136,8 @@ class DiscoveryIntegrationTest(unittest.TestCase):
             else:
                 # Infrastructure clients use Compose DNS; no host ports are needed.
                 service.pop('ports', None)
+            if name in ('eureka-server', 'gateway', 'file-service', 'orchestrator'):
+                service['image'] = self.project + '-' + name
             if name in ('gateway', 'file-service', 'orchestrator'):
                 service['environment'].update({
                     'JWT_ISSUER_URI': issuer,
