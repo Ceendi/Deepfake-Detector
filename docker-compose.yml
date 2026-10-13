@@ -282,7 +282,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.37.9
+    image: amazon/aws-cli:2.37.12
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -337,7 +337,7 @@ services:
     networks: [deepfake]
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.0
+    image: quay.io/keycloak/keycloak:26.8.1
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s # let in-flight HTTP / DB connections drain
