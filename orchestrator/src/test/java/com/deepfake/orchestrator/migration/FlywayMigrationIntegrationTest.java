@@ -85,29 +85,65 @@ class FlywayMigrationIntegrationTest {
     @Test
     void perSourceDetailsColumnsAreJsonbAndLegacySingleColumnIsGone() throws Exception {
         List<String> types = query("SELECT data_type FROM information_schema.columns "
-                + "WHERE table_name = 'analysis' AND column_name IN ('video_details', 'audio_details')");
+                + "WHERE table_schema = 'public' AND table_name = 'analysis' AND column_name IN ('video_details', 'audio_details')");
         assertThat(types).hasSize(2).allMatch("jsonb"::equals);
 
         List<String> legacy = query("SELECT column_name FROM information_schema.columns "
-                + "WHERE table_name = 'analysis' AND column_name = 'details'");
+                + "WHERE table_schema = 'public' AND table_name = 'analysis' AND column_name = 'details'");
         assertThat(legacy).isEmpty();
     }
 
     @Test
     void timestampColumnsAreTimestamptz() throws Exception {
         List<String> types = query("SELECT data_type FROM information_schema.columns "
-                + "WHERE table_name = 'analysis' AND column_name IN ('created_at', 'updated_at')");
+                + "WHERE table_schema = 'public' AND table_name = 'analysis' AND column_name IN ('created_at', 'updated_at')");
         assertThat(types).hasSize(2).allMatch("timestamp with time zone"::equals);
     }
 
     @Test
     void artifactCleanupSurvivesParentDeletionAndHasDurableCursorAndLeases() throws Exception {
-        assertThat(query("SELECT constraint_name FROM information_schema.table_constraints WHERE table_name = 'artifact_cleanup' AND constraint_type = 'FOREIGN KEY'")).isEmpty();
-        assertThat(query("SELECT column_name FROM information_schema.columns WHERE table_name = 'artifact_cleanup'"))
+        assertThat(query("SELECT constraint_name FROM information_schema.table_constraints WHERE table_schema = 'public' AND table_name = 'artifact_cleanup' AND constraint_type = 'FOREIGN KEY'")).isEmpty();
+        assertThat(query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'artifact_cleanup'"))
                 .contains("object_key", "analysis_id", "next_attempt_at", "attempts", "lease_token", "lease_until");
         assertThat(query("SELECT id::text FROM artifact_cleanup_scan")).containsExactly("1");
         assertThat(query("SELECT indexname FROM pg_indexes WHERE tablename = 'analysis'"))
                 .contains("idx_analysis_video_gradcam_keys", "idx_analysis_audio_gradcam_keys");
+    }
+
+    @Test
+    void upgradePreservesKnownSingleSourceClocksWithoutGuessingFullPickup() throws Exception {
+        var upgrade = Flyway.configure()
+                .dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                .locations("classpath:db/migration").schemas("source_clock_upgrade");
+        upgrade.target("6").load().migrate();
+        try (var connection = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                var statement = connection.createStatement()) {
+            statement.execute("""
+                    INSERT INTO source_clock_upgrade.analysis (id, user_id, file_id, file_key, type, status, updated_at)
+                    SELECT gen_random_uuid(), 'alice', 'file', 'key', type, 'PROCESSING', '2026-01-01T00:00:00Z'
+                    FROM (VALUES ('VIDEO'), ('AUDIO'), ('FULL')) types(type)
+                    """);
+            Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword())
+                    .locations("classpath:db/migration").schemas("source_clock_upgrade").load().migrate();
+            try (var result = statement.executeQuery("""
+                    SELECT type, video_started_at = updated_at AND video_progress_at = updated_at AS video,
+                        audio_started_at = updated_at AND audio_progress_at = updated_at AS audio
+                    FROM source_clock_upgrade.analysis ORDER BY type
+                    """)) {
+                assertThat(result.next()).isTrue();
+                assertThat(result.getString("type")).isEqualTo("AUDIO");
+                assertThat(result.getBoolean("audio")).isTrue();
+                assertThat(result.getObject("video")).isNull();
+                assertThat(result.next()).isTrue();
+                assertThat(result.getString("type")).isEqualTo("FULL");
+                assertThat(result.getObject("video")).isNull();
+                assertThat(result.getObject("audio")).isNull();
+                assertThat(result.next()).isTrue();
+                assertThat(result.getString("type")).isEqualTo("VIDEO");
+                assertThat(result.getBoolean("video")).isTrue();
+                assertThat(result.getObject("audio")).isNull();
+            }
+        }
     }
 
     private static List<String> query(String sql) throws Exception {

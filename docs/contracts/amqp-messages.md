@@ -127,8 +127,11 @@ Consumers must tolerate its absence.
 
 Detectors send a start-ping (`progress: 0`, `stage: LOADING`) as soon as they pick up
 a task. The Orchestrator flips the analysis `PENDING` → `PROCESSING` on it and treats
-every later progress as a heartbeat (bumps `updated_at`), so stuck-job recovery measures
-silence since the last ping rather than age since start.
+every later progress from an expected, unaccepted source as that source's heartbeat
+(bumps `updated_at` and its own progress clock). A FULL source still waiting for pickup
+retains its dispatch-based queue allowance; sibling heartbeats cannot extend the idle
+clock of a source that already started. Accepted sources and invalid/unexpected sources
+cannot refresh recovery clocks. Payloads and allowed stage values are unchanged.
 
 ### Result — Detector → Orchestrator
 

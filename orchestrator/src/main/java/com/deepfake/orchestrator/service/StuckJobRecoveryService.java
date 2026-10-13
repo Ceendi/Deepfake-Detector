@@ -42,7 +42,8 @@ public class StuckJobRecoveryService {
         this.maxAgeSeconds = maxAgeSeconds;
     }
 
-    @Scheduled(fixedDelayString = "${reliability.stuck-job.scan-interval-ms:300000}")
+    @Scheduled(fixedDelayString = "${reliability.stuck-job.scan-interval-ms:300000}",
+            initialDelayString = "${reliability.stuck-job.initial-delay:${reliability.stuck-job.threshold-seconds:600}s}")
     public void reclaimStuck() {
         Instant now = Instant.now();
         List<UUID> stuck = repository.findExpiredIds(now.minusSeconds(thresholdSeconds),

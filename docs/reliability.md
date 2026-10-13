@@ -138,7 +138,8 @@ connection loop and a single inference thread per process.
   carry an attempt UUID (`{analysisId}/{source}/gradcam_..._{attempt}.png`), so a duplicate never
   overwrites artifacts referenced by the accepted result.
 - **Start ping:** a worker publishes `0/LOADING` before downloading, which flips the analysis to
-  `PROCESSING` and renews the stuck-job clock.
+  `PROCESSING` and records that source's first pickup and latest progress in PostgreSQL.
+  Later progress renews only that source's idle clock.
 - **Readiness:** models load once at startup. If loading fails the process stays up, `/health`
   returns `503 DOWN`, and each task immediately gets a `FAILED` result with code
   `MODEL_UNAVAILABLE` (no download, progress or inference). `/health` is `UP` only with loaded
@@ -276,21 +277,35 @@ Tests: `DeadLetterListenerIntegrationTest`, `AmqpRecoveryControlTest`.
 
 Code: `StuckJobRecoveryService`, `AnalysisRepository.failIfExpired`.
 
-Every `RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS` (300 s) an active analysis is failed when any
-of these conditions holds:
+The first scheduled scan waits `reliability.stuck-job.initial-delay`
+(`RELIABILITY_STUCK_JOB_INITIAL_DELAY`, default the configured idle threshold: 600 s).
+This gives result/progress listeners time to drain the backlog after a restart. The usual
+`RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS` (300 s) delay then applies between scans.
+
+An active analysis is failed when any of these conditions holds:
 
 - it still has an unsent outbox task and was created more than
   `RELIABILITY_OUTBOX_DISPATCH_TIMEOUT_SECONDS` (120 s) ago, regardless of sibling progress; or
-- all its tasks are sent (or it has no outbox rows), it is still `PENDING`, and `updated_at`
-  is older than `RELIABILITY_STUCK_JOB_QUEUE_TIMEOUT_SECONDS` (1800 s); or
-- all its tasks are sent (or it has no outbox rows), it is `PROCESSING`, and `updated_at`
-  is older than `RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS` (600 s); or
+- all its tasks are sent (or it has no outbox rows), an expected, unaccepted source has never
+  sent progress, and its own `sent_at` is older than
+  `RELIABILITY_STUCK_JOB_QUEUE_TIMEOUT_SECONDS` (1800 s); or
+- all its tasks are sent (or it has no outbox rows), an expected, unaccepted source has started,
+  and its own last progress is older than `RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS` (600 s); or
 - `created_at` is older than `RELIABILITY_STUCK_JOB_MAX_AGE_SECONDS` (7200 s), regardless
   of dispatch state or recent progress/start pings.
 
-The first start ping switches PENDING to PROCESSING; subsequent progress renews only the idle
-clock, never the absolute age. The queue allowance starts at the last confirmed dispatch
-(`updated_at`); legacy rows without an outbox use the same allowance.
+The first valid progress switches PENDING to PROCESSING and sets `video_started_at` or
+`audio_started_at` once. Each source owns its `video_progress_at` / `audio_progress_at` clock;
+repeated start pings never replace its first pickup. A FULL analysis keeps the queue allowance
+for an unstarted sibling after the other starts or completes. Conversely, a live sibling cannot
+hide silence from a started source. Accepted probabilities and audio NOT_APPLICABLE markers
+exclude that source from recovery and later progress; invalid or unexpected sources do not
+refresh any clock. The absolute age never changes.
+
+Migration V7 preserves `updated_at` as the pickup/progress time for existing single-source
+PROCESSING rows. The old shared clock cannot identify which FULL source started, so existing
+FULL rows use each source's dispatch-based queue allowance until new progress arrives.
+Legacy rows without outbox entries use `updated_at` as the queue baseline. No tasks are replayed.
 
 The scan is only a candidate list: the final transaction locks the row and rechecks all
 conditions with a fresh timestamp. These are eligibility deadlines; the actual failure happens
@@ -301,6 +316,9 @@ on RabbitMQ 4.3.6 before testing production queue arguments. `WorkerRedeliveryIn
 kills each source's worker six times, verifies DLQ → FAILED, skips queued sibling work and
 completes a subsequent healthy task. `TransactionalDispatchIntegrationTest` verifies queue,
 idle and absolute deadlines plus rollback/commit ordering of all FAILED stop hints.
+`AnalysisStuckRecoveryIntegrationTest` checks source guards and first-pickup preservation;
+`StuckJobRecoverySchedulingTest` exercises the real scheduler's startup delay;
+`FlywayMigrationIntegrationTest` upgrades populated V6 data to V7.
 
 ## Cancellation
 
@@ -312,6 +330,25 @@ before publishing a successful result; on a hit they ACK without a result. Cance
 AMQP message. If Redis is down the worker finishes and its late result is rejected by the status
 guard. Publication, cancel, results and recovery all serialize on the analysis row, so a cancel
 that commits first prevents dispatch.
+
+## Analysis cache consistency
+
+Terminal transitions and partial source acceptance evict the analysis cache after commit;
+a rollback leaves the existing cache intact. Delete also evicts only after commit.
+A GET captures a local fill token before consulting Redis or reading PostgreSQL. Eviction
+invalidates that token, and cache writes serialize with eviction, so a delayed GET that read
+an older row cannot refill the cache after completion, failure, cancellation or deletion.
+The overlapping GET may finish with the snapshot it already read; subsequent GETs use the
+committed state, or return 404 after deletion.
+
+The fill guard uses 64 fixed stripes and the existing Redis outage namespace, with no per-ID
+map or persistent tombstones. A stripe collision can suppress an unrelated in-flight fill,
+causing a later DB cache miss. Redis failures still fall back to PostgreSQL. This guard assumes
+the deliberately single orchestrator instance; it is not a distributed cache lock.
+
+Tests: `AnalysisServicePushAfterCommitTest` checks commit/rollback ordering;
+`AnalysisServiceCacheIdorTest` pauses a DB read, completes cancellation or deletion through
+the service, then releases the stale reader against real Redis and checks the next GET.
 
 ## Redis failure budgets
 

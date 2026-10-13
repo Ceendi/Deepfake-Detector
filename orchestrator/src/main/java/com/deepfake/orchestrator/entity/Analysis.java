@@ -59,6 +59,18 @@ public class Analysis {
     @Column(name = "audio_details")
     private Map<String, Object> audioDetails;
 
+    @Column(name = "video_started_at")
+    private Instant videoStartedAt;
+
+    @Column(name = "video_progress_at")
+    private Instant videoProgressAt;
+
+    @Column(name = "audio_started_at")
+    private Instant audioStartedAt;
+
+    @Column(name = "audio_progress_at")
+    private Instant audioProgressAt;
+
     @Column(name = "error_message")
     private String errorMessage;
 

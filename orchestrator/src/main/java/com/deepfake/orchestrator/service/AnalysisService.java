@@ -154,12 +154,13 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public AnalysisResponse get(UUID id, String currentUserId) {
+        AnalysisCache.FillToken fill = cache.beginFill(id);
         Optional<AnalysisResponse> cached = cache.getById(id);
         metrics.cache(cached.isPresent()); // Redis-down -> empty -> counted as a miss (cache_requests_total)
         AnalysisResponse a = cached.orElseGet(() -> {
             AnalysisResponse loaded = repository.findById(id).map(AnalysisResponse::from).orElse(null);
             if (loaded != null) {
-                cache.putById(loaded);
+                cache.putById(loaded, fill);
             }
             return loaded;
         });
@@ -361,7 +362,7 @@ public class AnalysisService {
                 && AudioApplicability.isNotApplicable(a.getAudioDetails());
         if ((needV && a.getVideoProb() == null)
                 || (needA && a.getAudioProb() == null && !audioNotApplicable)) {
-            cache.evictById(id);
+            evictCacheAfterCommit(id);
             return; // wait for the other source
         }
 
@@ -405,11 +406,25 @@ public class AnalysisService {
         }
     }
 
+    private void evictCacheAfterCommit(UUID id) {
+        Runnable evict = () -> {
+            try { cache.evictById(id); }
+            catch (RuntimeException failure) { log.warn("Committed cache eviction failed for {}", id, failure); }
+        };
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override public void afterCommit() { evict.run(); }
+            });
+        } else {
+            evict.run();
+        }
+    }
+
     // Side effects shared by every terminal transition (status already CAS-written). Re-reads because
     // the @Modifying CAS cleared the PC; that fresh row also carries the status/type/createdAt the
     // metrics need, so every terminal path (result, fail, DLQ, stuck, cancel) is counted here once.
     private Analysis onTerminal(UUID id) {
-        cache.evictById(id);
+        evictCacheAfterCommit(id);
         Analysis a = repository.findById(id).orElseThrow();
         metrics.terminal(a.getStatus(), a.getType());
         if (a.getStatus() == AnalysisStatus.COMPLETED) {
@@ -428,7 +443,9 @@ public class AnalysisService {
         if (progress == null || progress < 0 || progress > 100) {
             throw new IllegalArgumentException("Progress must be between 0 and 100");
         }
-        if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now()) == 0) return;
+        String source = (String) payload.get("source");
+        if (!("video".equals(source) || "audio".equals(source))) return;
+        if (repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now(), source) == 0) return;
         AnalysisProgressEvent event = new AnalysisProgressEvent(id.toString(),
                 (String) payload.get("source"), progress, (String) payload.get("stage"), "PROCESSING");
         Runnable publish = () -> {

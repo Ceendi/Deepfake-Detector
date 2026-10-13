@@ -118,14 +118,21 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
     int cancelIfActive(@Param("id") UUID id, @Param("to") AnalysisStatus to,
             @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
 
-    // Flip PENDING->PROCESSING on the first progress and bump updated_at on every one (heartbeat), in
-    // a single atomic UPDATE. Guards on the active set so a late progress on a finished/cancelled
-    // analysis matches nothing. PK lookup, so the IN guard doesn't affect index choice. Returns the
-    // number of rows touched: >0 means the analysis was active.
+    // Each unaccepted source owns its heartbeat; sibling progress cannot extend its deadline.
     @Modifying
-    @Query("UPDATE Analysis a SET a.status = :to, a.updatedAt = :now WHERE a.id = :id AND a.status IN :active")
+    @Query("""
+            UPDATE Analysis a SET a.status = :to, a.updatedAt = :now,
+                a.videoStartedAt = CASE WHEN :source = 'video' THEN COALESCE(a.videoStartedAt, :now) ELSE a.videoStartedAt END,
+                a.videoProgressAt = CASE WHEN :source = 'video' THEN :now ELSE a.videoProgressAt END,
+                a.audioStartedAt = CASE WHEN :source = 'audio' THEN COALESCE(a.audioStartedAt, :now) ELSE a.audioStartedAt END,
+                a.audioProgressAt = CASE WHEN :source = 'audio' THEN :now ELSE a.audioProgressAt END
+            WHERE a.id = :id AND a.status IN :active AND (
+                (:source = 'video' AND a.type IN (VIDEO, FULL) AND a.videoProb IS NULL) OR
+                (:source = 'audio' AND a.type IN (AUDIO, FULL) AND a.audioProb IS NULL AND a.audioDetails IS NULL))
+            """)
     int recordProgress(@Param("id") UUID id, @Param("to") AnalysisStatus to,
-            @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now);
+            @Param("active") Collection<AnalysisStatus> active, @Param("now") Instant now,
+            @Param("source") String source);
 
     // Single-row aggregate for the homepage dashboard, scoped to one user (IDOR-free by
     // construction, like findByUserId). SUMs are COALESCEd: over zero rows they yield NULL,
@@ -159,8 +166,17 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
             OR (EXISTS (SELECT 1 FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.sent_at IS NULL)
                 AND created_at < :dispatchCutoff)
             OR (NOT EXISTS (SELECT 1 FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.sent_at IS NULL)
-                AND ((status = 'PENDING' AND updated_at < :queueCutoff)
-                    OR (status = 'PROCESSING' AND updated_at < :cutoff))))
+                AND (
+                    (type IN ('VIDEO', 'FULL') AND video_prob IS NULL AND (
+                        (video_started_at IS NULL AND COALESCE(
+                            (SELECT o.sent_at FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.source = 'video'),
+                            updated_at) < :queueCutoff)
+                        OR (video_started_at IS NOT NULL AND video_progress_at < :cutoff)))
+                    OR (type IN ('AUDIO', 'FULL') AND audio_prob IS NULL AND audio_details IS NULL AND (
+                        (audio_started_at IS NULL AND COALESCE(
+                            (SELECT o.sent_at FROM analysis_task_outbox o WHERE o.analysis_id = analysis.id AND o.source = 'audio'),
+                            updated_at) < :queueCutoff)
+                        OR (audio_started_at IS NOT NULL AND audio_progress_at < :cutoff))))))
         """;
 
     @Query(value = "SELECT id FROM analysis WHERE " + EXPIRED, nativeQuery = true)

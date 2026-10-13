@@ -73,11 +73,12 @@ class AnalysisServicePushAfterCommitTest {
 
         service.handleResult(completedVideo());
 
-        verifyNoInteractions(streams); // registered, not yet fired
+        verifyNoInteractions(cache, streams); // registered, not yet fired
 
         fireAfterCommit();
 
         verify(streams).sendResult(eq(id), any(AnalysisResultEvent.class));
+        verify(cache).evictById(id);
     }
 
     @Test
@@ -89,6 +90,7 @@ class AnalysisServicePushAfterCommitTest {
 
         TransactionSynchronizationManager.clearSynchronization(); // rollback: cleared, afterCommit never runs
 
+        verifyNoInteractions(cache);
         verify(streams, never()).sendResult(any(), any());
         verify(streams, never()).complete(any());
     }
