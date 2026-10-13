@@ -171,6 +171,13 @@
     transparent 13px
   );
 }
+.previewUnavailable {
+  margin: 0;
+  padding: var(--spacing-7) var(--spacing-5);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
 .mediaAudio {
   padding: var(--spacing-7) var(--spacing-5);
 }

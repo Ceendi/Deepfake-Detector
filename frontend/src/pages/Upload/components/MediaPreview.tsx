@@ -21,6 +21,8 @@ export function MediaPreview({
   onDuration?: (seconds: number) => void
 }) {
   const [duration, setDurationState] = useState<number | null>(null)
+  // Przeglądarki nie odtwarzają np. AVI — plik jest poprawny, brakuje tylko podglądu.
+  const [previewFailed, setPreviewFailed] = useState(false)
   function setDuration(seconds: number) {
     setDurationState(seconds)
     onDuration?.(seconds)
@@ -39,10 +41,23 @@ export function MediaPreview({
   return (
     <>
       <div className={clsx(styles.media, !isVideo && styles.mediaAudio)}>
-        {isVideo ? (
-          <VideoPlayer src={previewUrl} onDuration={setDuration} />
+        {previewFailed ? (
+          <p className={styles.previewUnavailable}>
+            Podgląd niedostępny dla tego formatu w przeglądarce. Długość pliku sprawdzi serwer.
+          </p>
+        ) : isVideo ? (
+          <VideoPlayer
+            src={previewUrl}
+            onDuration={setDuration}
+            onError={() => setPreviewFailed(true)}
+          />
         ) : (
-          <AudioPlayer className={styles.audio} src={previewUrl} onDuration={setDuration} />
+          <AudioPlayer
+            className={styles.audio}
+            src={previewUrl}
+            onDuration={setDuration}
+            onError={() => setPreviewFailed(true)}
+          />
         )}
       </div>
 

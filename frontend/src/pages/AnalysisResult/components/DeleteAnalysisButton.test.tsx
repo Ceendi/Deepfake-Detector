@@ -72,6 +72,27 @@ describe('DeleteAnalysisButton', () => {
     await waitFor(() => expect(screen.getByText('Historia')).toBeInTheDocument())
   })
 
+  it('inny błąd usuwania pliku (np. 503) jest pokazany, a ponowienie zwalnia już tylko plik', async () => {
+    vi.mocked(deleteAnalysisRecord).mockResolvedValue(undefined)
+    vi.mocked(deleteFile)
+      .mockRejectedValueOnce(new ApiError({ status: 503, message: 'x' }))
+      .mockResolvedValueOnce(undefined)
+    renderButton()
+
+    await confirmDelete()
+
+    expect(
+      await screen.findByText(/Analiza została usunięta, ale nie udało się zwolnić miejsca/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Historia')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Spróbuj ponownie', hidden: true }))
+
+    await waitFor(() => expect(screen.getByText('Historia')).toBeInTheDocument())
+    expect(deleteAnalysisRecord).toHaveBeenCalledTimes(1)
+    expect(deleteFile).toHaveBeenCalledTimes(2)
+  })
+
   it('409 rekordu (analiza w toku) nie usuwa pliku i pokazuje komunikat', async () => {
     vi.mocked(deleteAnalysisRecord).mockRejectedValue(
       new ApiError({ status: 409, message: 'Analysis is still active' }),

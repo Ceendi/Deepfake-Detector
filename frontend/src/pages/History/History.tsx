@@ -77,7 +77,7 @@ export default function History() {
   // Nazwy wszystkich plików ładujemy dopiero przy pierwszym wyszukiwaniu (osobne żądanie na plik).
   const searching = query.trim() !== ''
   const fileIds = useMemo(() => items.map((it) => it.fileId), [items])
-  const fileNames = useFileNames(fileIds, searching)
+  const { names: fileNames, loading: namesLoading } = useFileNames(fileIds, searching)
   const filtered = useMemo(
     () => applyFilters(items, filters, query, fileNames),
     [items, filters, query, fileNames],
@@ -127,7 +127,11 @@ export default function History() {
             onClear={clearAll}
           />
 
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && searching && namesLoading ? (
+            <div className={styles.center}>
+              <Spinner label="Szukam po nazwach plików…" />
+            </div>
+          ) : filtered.length === 0 ? (
             <HistoryNoResults onClear={clearAll} />
           ) : (
             <HistoryList

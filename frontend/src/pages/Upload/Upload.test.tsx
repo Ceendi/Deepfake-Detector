@@ -61,6 +61,16 @@ describe('Upload', () => {
     expect(screen.getByRole('button', { name: /Analizuj plik/ })).toBeInTheDocument()
   })
 
+  it('AVI bez podglądu w przeglądarce: komunikat zamiast pustego odtwarzacza, analiza możliwa', () => {
+    const { container, input } = renderUpload()
+    pick(input, new File(['x'], 'clip.avi', { type: 'video/x-msvideo' }))
+
+    fireEvent.error(container.querySelector('video')!)
+
+    expect(screen.getByText(/Podgląd niedostępny dla tego formatu/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Analizuj plik/ })).toBeInTheDocument()
+  })
+
   it('odrzuca WEBM jeszcze w przeglądarce (backend go nie przyjmuje)', () => {
     const { input } = renderUpload()
     pick(input, new File(['x'], 'clip.webm', { type: 'video/webm' }))

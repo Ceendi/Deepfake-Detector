@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/Button/Button'
 
 import styles from '../AnalysisResult.module.css'
 
+const REVOKE_DELAY_MS = 40_000
+
 function reportErrorMessage(err: unknown): string {
   if (err instanceof ApiError && err.isConflict) return 'Raport jeszcze niegotowy.'
   if (err instanceof ApiError && err.isNotFound) return 'Nie znaleziono analizy.'
@@ -52,8 +54,8 @@ export function ReportPdfButton({
       document.body.appendChild(link)
       link.click()
       link.remove()
-      // Revoke po bieżącym tasku — część przeglądarek startuje pobieranie asynchronicznie.
-      setTimeout(() => URL.revokeObjectURL(url), 0)
+      // Safari/Firefox startują pobieranie asynchronicznie — zbyt wczesny revoke psuje plik.
+      setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
     } catch (err) {
       if (controller.signal.aborted) return
       setError(reportErrorMessage(err))

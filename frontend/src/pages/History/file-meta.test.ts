@@ -33,12 +33,22 @@ describe('useFileNames', () => {
 
     const { result } = renderHook(() => useFileNames(ids, true))
 
-    await waitFor(() =>
-      expect([...result.current.entries()]).toEqual([
-        ['a', 'a.mp4'],
-        ['b', 'b.mp4'],
-      ]),
-    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect([...result.current.names.entries()]).toEqual([
+      ['a', 'a.mp4'],
+      ['b', 'b.mp4'],
+    ])
     expect(getFileMetadata).toHaveBeenCalledTimes(3) // 'a' tylko raz
+  })
+
+  it('zatrzymuje ładowanie po 429 zamiast wysyłać żądania dla całej historii', async () => {
+    vi.mocked(getFileMetadata).mockRejectedValue(new ApiError({ status: 429, message: 'x' }))
+    const ids = Array.from({ length: 50 }, (_, i) => `rl-${i}`)
+
+    const { result } = renderHook(() => useFileNames(ids, true))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    // Każdy z równoległych workerów kończy najwyżej jedno żądanie.
+    expect(vi.mocked(getFileMetadata).mock.calls.length).toBeLessThanOrEqual(4)
   })
 })
