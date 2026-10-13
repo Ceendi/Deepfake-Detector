@@ -61,6 +61,16 @@ class AnalysisStuckRecoveryIntegrationTest {
     }
 
     @Test
+    void expiredAnalysisStoresNeutralTimeoutMessage() {
+        Instant now = Instant.now();
+        UUID id = persist(AnalysisStatus.PENDING, now.minusSeconds(3600));
+        assertThat(repository.failIfExpired(id, now.minusSeconds(600), now.minusSeconds(120),
+                now.minusSeconds(1800), now.minusSeconds(7200), now)).isEqualTo(1);
+        assertThat(em.find(Analysis.class, id).getErrorMessage())
+                .isEqualTo("[ANALYSIS_TIMEOUT] Analiza trwała zbyt długo i została przerwana.");
+    }
+
+    @Test
     void recordProgressFlipsPendingAndHeartbeats() {
         UUID id = persist(AnalysisStatus.PENDING, Instant.now().minus(5, ChronoUnit.MINUTES));
         Instant firstTouch = Instant.now();

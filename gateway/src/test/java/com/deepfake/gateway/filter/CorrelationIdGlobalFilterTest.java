@@ -56,6 +56,26 @@ class CorrelationIdGlobalFilterTest {
     }
 
     @Test
+    void rejectsUnsafeAndOversizedIdsAndEchoesTheReplacement() {
+        for (String header : java.util.List.of("x".repeat(65), "bad_id", "bad id", "é")) {
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/analysis")
+                    .header(CorrelationIdGlobalFilter.HEADER, header));
+            filter.filter(exchange, downstream -> {
+                String id = downstream.getRequest().getHeaders().getFirst(CorrelationIdGlobalFilter.HEADER);
+                assertThat(id).matches("[A-Za-z0-9-]{1,64}").isNotEqualTo(header);
+                assertThat(exchange.getResponse().getHeaders().getFirst(CorrelationIdGlobalFilter.HEADER)).isEqualTo(id);
+                return Mono.empty();
+            }).block();
+        }
+        var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/analysis")
+                .header(CorrelationIdGlobalFilter.HEADER, "x".repeat(64)));
+        filter.filter(exchange, downstream -> {
+            assertThat(downstream.getRequest().getHeaders().getFirst(CorrelationIdGlobalFilter.HEADER)).isEqualTo("x".repeat(64));
+            return Mono.empty();
+        }).block();
+    }
+
+    @Test
     void generatesIdWhenHeaderBlank() {
         MockServerWebExchange exchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/analysis")

@@ -38,7 +38,11 @@ public class FileUploadController {
 
     @Operation(summary = "Upload a media file for analysis")
     @ApiResponse(responseCode = "200", description = "Stored; returns fileId, fileKey, size, detected mimetype")
-    @ApiResponse(responseCode = "413", description = "File exceeds the 500 MB limit")
+    @ApiResponse(responseCode = "400", description = "Missing file part or invalid multipart request (VALIDATION_FAILED)")
+    @ApiResponse(responseCode = "405", description = "Method not allowed; Allow header lists supported methods")
+    @ApiResponse(responseCode = "406", description = "Requested representation unavailable; empty body",
+            content = @io.swagger.v3.oas.annotations.media.Content)
+    @ApiResponse(responseCode = "413", description = "File exceeds the 500 MB limit (PAYLOAD_TOO_LARGE)")
     @ApiResponse(responseCode = "422", description = "Invalid A/V container or media duration exceeds configured limit (default 1800 seconds)")
     @PostMapping("/upload")
     public FileUploadResponse upload(@CurrentUser AuthenticatedUser user,

@@ -38,6 +38,10 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/analysis")
+@ApiResponse(responseCode = "400", description = "Invalid parameters (VALIDATION_FAILED) or malformed JSON (MALFORMED_REQUEST)")
+@ApiResponse(responseCode = "405", description = "Method not allowed; Allow header lists supported methods")
+@ApiResponse(responseCode = "406", description = "Requested representation unavailable; empty body", content = @Content)
+@ApiResponse(responseCode = "415", description = "Unsupported request content type")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('USER')")
 public class AnalysisController {
@@ -64,7 +68,8 @@ public class AnalysisController {
     }
 
     // PagedModel, not the raw Page/PageImpl whose JSON shape is unstable across versions.
-    @Operation(summary = "List the caller's analyses (paginated, newest first)")
+    @Operation(summary = "List the caller's analyses",
+            description = "Page size defaults to 20, capped at 100. Always ordered by createdAt DESC, id DESC; sort is ignored.")
     @GetMapping
     public PagedModel<AnalysisSummary> list(
             @CurrentUser AuthenticatedUser user,
@@ -90,7 +95,10 @@ public class AnalysisController {
 
     @Operation(summary = "Stream progress + final result for one analysis (SSE)")
     @ApiResponse(responseCode = "200", description = "text/event-stream")
-    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
+    @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR); empty body", content = @Content)
+    @ApiResponse(responseCode = "429", description = "SSE connection limit; empty body", content = @Content,
+            headers = @Header(name = "Retry-After", description = "Seconds until retry (5)",
+                    schema = @Schema(type = "integer")))
     @GetMapping(value = "/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return service.openStream(id, user.id());

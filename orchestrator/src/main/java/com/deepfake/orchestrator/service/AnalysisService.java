@@ -24,6 +24,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.context.annotation.Import;
@@ -196,7 +198,9 @@ public class AnalysisService {
     @Transactional(readOnly = true)
     public Page<AnalysisSummary> list(String currentUserId, Pageable pageable) {
         // IDOR is enforced by scoping to currentUserId — the query never returns foreign rows.
-        return repository.findByUserId(currentUserId, pageable);
+        return repository.findByUserId(currentUserId, PageRequest.of(
+                pageable.getPageNumber(), Math.min(pageable.getPageSize(), 100),
+                Sort.by(Sort.Direction.DESC, "createdAt", "id")));
     }
 
     @Transactional(readOnly = true)
@@ -392,8 +396,9 @@ public class AnalysisService {
         if (!("video".equals(source) || "audio".equals(source))) {
             throw new IllegalArgumentException("Unknown dead-letter source");
         }
+        log.warn("Dead-lettered analysis_id={} source={} reason={}", id, source, reason);
         if (repository.failSourceIfUnaccepted(id, source, AnalysisStatus.FAILED,
-                "dead-letter: " + reason, ACTIVE, Instant.now()) == 1) {
+                "[DEAD_LETTERED] Nie udało się zakończyć analizy.", ACTIVE, Instant.now()) == 1) {
             onTerminal(id);
             afterCommit(metrics::dlqFailure);
         }

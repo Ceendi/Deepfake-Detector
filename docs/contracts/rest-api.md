@@ -6,6 +6,26 @@ never forwarded to clients as-is.
 
 Base path: `/api`. Auth: Bearer JWT (Keycloak OIDC, PKCE).
 
+`X-Correlation-ID` accepts only `^[A-Za-z0-9-]{1,64}$`; missing or invalid values
+are replaced with a UUID. Gateway forwards and echoes the accepted/generated ID.
+Orchestrator and file-service apply the same validation on direct requests;
+orchestrator forwards the request ID on its file-service metadata lookup.
+Gateway CORS accepts the comma-separated `GATEWAY_CORS_ORIGINS` (defaults
+`http://localhost:5173,http://localhost:4173`). Allowed preflights are answered
+before JWT authentication, with credentials and requested headers allowed.
+
+Both servlet services return `400 VALIDATION_FAILED` for invalid parameter types
+(including UUID), missing required parameters/file parts, invalid multipart requests
+and unknown property references. Unsupported methods return `405 METHOD_NOT_ALLOWED`
+with `Allow`; unsupported content types return `415 UNSUPPORTED_MEDIA_TYPE`.
+Unacceptable response types return `406` with no body. Multipart size overflow
+returns `413 PAYLOAD_TOO_LARGE`. True unexpected failures retain `500 INTERNAL_ERROR`.
+Shared HTTP error messages are neutral Polish text; `ResponseStatusException` reasons
+are not echoed. When the caller accepts only a binary/SSE representation, error
+responses keep their status/headers with an empty body instead of attempting JSON.
+Async disconnects write no further response and are not logged as errors;
+async timeouts return an empty `503` when the response is still writable.
+
 ## File Service
 
 ### `POST /api/files/upload`
@@ -139,7 +159,7 @@ Three distinct `429 Too Many Requests` can occur:
   by the frontend. `USER_LIMIT` displays the user's active-analysis limit; global backpressure
   keeps the queue message. `queuePosition` is the global active analysis count plus this
   rejected request, capped at the maximum signed integer.
-- **SSE connection admission**: normal error body (`TOO_MANY_REQUESTS`) and `Retry-After: 5`; configurable global/owner/analysis connection caps apply after ownership checks.
+- **SSE connection admission**: empty body and `Retry-After: 5`; configurable global/owner/analysis connection caps apply after ownership checks.
 - **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
   carried in `X-RateLimit-*` headers (Spring Cloud Gateway default).
 
@@ -180,7 +200,8 @@ written).
 ### `GET /api/analysis`
 
 Paginated history for the authenticated user. Query params: `page` (default `0`),
-`size` (default `20`); ordered by `createdAt DESC`. Returns `200 OK` with a
+`size` (default `20`, maximum `100`); ordered by `createdAt DESC, id DESC`.
+The `sort` parameter is ignored, including unknown property names. Returns `200 OK` with a
 `PagedModel` of the lightweight `AnalysisSummary` projection — **not** the full
 `Analysis` (detail-only fields such as `fileKey`, `videoProb`, `audioProb`,
 `errorMessage`, `details` are omitted; fetch them via `GET /api/analysis/{id}`).
@@ -302,6 +323,13 @@ touch and may be shared by other analyses — its lifecycle is the file service'
 | `details`      | `object` \| `null`                                             | no detector has reported yet                   |
 | `errorMessage` | `string` \| `null`                                             | `status != FAILED`                             |
 
+Backend-generated failures use these neutral `errorMessage` values:
+
+- DLQ: `[DEAD_LETTERED] Nie udało się zakończyć analizy.`
+- Stuck recovery: `[ANALYSIS_TIMEOUT] Analiza trwała zbyt długo i została przerwana.`
+
+Broker exception headers and internal recovery details are never exposed in those messages.
+
 For completed FULL analyses whose audio returned `NO_SPEECH` or `NO_AUDIO_TRACK`, `audioProb` remains
 null and `details.audio` records an explicit source outcome:
 
@@ -345,6 +373,9 @@ check is repeated after registration; both reads are scoped to the owner, and ev
 pushed by `analysisId`. Exhausted SSE connection admission returns `429` with
 `Retry-After: 5`. Defaults are128 global,4 per owner and4 per analysis; retained
 physical connections count until their writer and HTTP request both finish.
+Both open-time `404` and `429` have empty bodies even with `Accept: text/event-stream`;
+normal missing/foreign subscriptions do not log WARN. Async disconnect/timeout does
+not write an error body or log ERROR.
 
 Events:
 
@@ -413,6 +444,9 @@ These suites run in the existing CI Java and frontend jobs.
 | 200  | OK                                                         |
 | 201  | Created                                                    |
 | 400  | Bad Request (validation `VALIDATION_FAILED`, or malformed body `MALFORMED_REQUEST`) |
+| 405  | Method Not Allowed (`METHOD_NOT_ALLOWED`, `Allow` header) |
+| 406  | Not Acceptable (empty body)                                |
+| 415  | Unsupported Media Type (`UNSUPPORTED_MEDIA_TYPE`)          |
 | 401  | Unauthorized (missing/invalid token)                       |
 | 404  | Not Found (also IDOR — we never return 403)                |
 | 409  | Conflict (e.g. cancel on an already-finished analysis)     |

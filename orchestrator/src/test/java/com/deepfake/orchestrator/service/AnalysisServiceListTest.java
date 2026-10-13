@@ -49,13 +49,14 @@ class AnalysisServiceListTest {
 
     @Test
     void listDelegatesToRepositoryScopedToTheCurrentUser() {
-        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt"));
+        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.ASC, "unknown"));
+        Pageable expected = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
         Page<AnalysisSummary> page = new PageImpl<>(List.of(), pageable, 0);
-        when(repository.findByUserId("alice", pageable)).thenReturn(page);
+        when(repository.findByUserId("alice", expected)).thenReturn(page);
 
         Page<AnalysisSummary> result = service.list("alice", pageable);
 
         assertThat(result).isSameAs(page);
-        verify(repository).findByUserId("alice", pageable);
+        verify(repository).findByUserId("alice", expected);
     }
 }

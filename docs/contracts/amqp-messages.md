@@ -54,6 +54,9 @@ that also declare it don't hit `PRECONDITION_FAILED`. Only the Orchestrator decl
 and consumes `analysis.results.dlq`.
 
 Terminal DLQs use AUTO acknowledgements after the source-specific database commit.
+Their HTTP-visible analysis failure message is always
+`[DEAD_LETTERED] Nie udało się zakończyć analizy.`; `x-exception-message` is diagnostic
+information logged with `analysis_id`, never persisted in the user-visible message.
 Poison payloads and exhausted terminal database retries are durably parked in the
 backend-owned `analysis.backend.quarantine`, bound to `analysis.dlx` with the same
 routing key. That queue has no automatic consumer. Every recovery publication is
