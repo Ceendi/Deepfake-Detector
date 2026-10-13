@@ -56,7 +56,7 @@ spring:
                   args:
                     redis-rate-limiter.replenishRate: 2
                     redis-rate-limiter.burstCapacity: 100
-                    rate-limiter: "#{@protectiveRedisRateLimiter}"
+                    rate-limiter: "#{@availableRedisRateLimiter}"
                     key-resolver: "#{@userKeyResolver}"
             - id: orchestrator
               uri: lb://orchestrator
@@ -67,7 +67,7 @@ spring:
                   args:
                     redis-rate-limiter.replenishRate: 2
                     redis-rate-limiter.burstCapacity: 100
-                    rate-limiter: "#{@protectiveRedisRateLimiter}"
+                    rate-limiter: "#{@availableRedisRateLimiter}"
                     key-resolver: "#{@userKeyResolver}"
           default-filters:
             - name: RequestSize
@@ -75,6 +75,7 @@ spring:
                 maxSize: 500MB
 gateway:
   redis-limiter-budget: ${GATEWAY_REDIS_LIMITER_BUDGET:750ms}
+  redis-degraded-bypass: ${GATEWAY_REDIS_DEGRADED_BYPASS:2s}
 eureka:
   client:
     service-url:

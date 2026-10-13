@@ -1,46 +1,74 @@
 package com.deepfake.gateway.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
-import java.time.Instant;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.ServerSocket;
+import java.net.URI;
 import java.time.Duration;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-import org.springframework.security.oauth2.jwt.BadJwtException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.config.BeanPostProcessor;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.cloud.gateway.config.GatewayProperties;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import reactor.core.publisher.Mono;
+import reactor.netty.DisposableServer;
+import reactor.netty.http.server.HttpServer;
 
-/**
- * Runtime check of the per-user Redis token bucket: the upload route allows a burst of 10, so a
- * rapid 11th request from the same user is rejected with 429. Redis is real (Testcontainers); the
- * JWT decoder is stubbed so no Keycloak is needed, and Eureka is off (allowed requests just fail to
- * route, which is irrelevant — we only assert that the limiter starts returning 429).
- */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+/** Exercises real Redis quotas and outages while allowed requests reach a stub backend. */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "management.server.port=0")
+@AutoConfigureMetrics
 @Testcontainers
 class GatewayRateLimitIntegrationTest {
 
+    static final DisposableServer backend = HttpServer.create().port(0)
+            .handle((request, response) -> response.sendString(Mono.just("backend"))).bindNow();
+
+    @AfterAll
+    static void closeBackend() {
+        backend.disposeNow();
+    }
+
     @Container
-    static final GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:8-alpine")).withExposedPorts(6379);
+    static final GenericContainer<?> redis = redisContainer();
+
+    private static GenericContainer<?> redisContainer() {
+        var container = new GenericContainer<>(DockerImageName.parse("redis:8-alpine")).withExposedPorts(6379);
+        try (var socket = new ServerSocket(0)) {
+            // Stop/start must keep the gateway's Redis address, rather than allocate a new port.
+            container.setPortBindings(List.of(socket.getLocalPort() + ":6379"));
+        } catch (IOException error) {
+            throw new UncheckedIOException(error);
+        }
+        return container;
+    }
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -52,6 +80,23 @@ class GatewayRateLimitIntegrationTest {
 
     @TestConfiguration
     static class StubJwtConfig {
+        @Bean
+        static BeanPostProcessor stubBackendRoutes() {
+            return new BeanPostProcessor() {
+                @Override
+                public Object postProcessBeforeInitialization(Object bean, String beanName) {
+                    if (bean instanceof GatewayProperties properties) {
+                        properties.getRoutes().forEach(route -> {
+                            route.setUri(URI.create("http://localhost:" + backend.port()));
+                            route.getFilters().getFirst().getArgs()
+                                    .put("redis-rate-limiter.burstCapacity", "2");
+                        });
+                    }
+                    return bean;
+                }
+            };
+        }
+
         @Bean
         ReactiveJwtDecoder reactiveJwtDecoder() {
             Jwt jwt = Jwt.withTokenValue("test-token").header("alg", "none")
@@ -66,18 +111,24 @@ class GatewayRateLimitIntegrationTest {
     int port;
 
     @Autowired ProtectiveRedisRateLimiter limiter;
+    @Autowired MeterRegistry meters;
+    @Value("${local.management.port}") int managementPort;
     @Autowired LettuceConnectionFactory connectionFactory;
     WebTestClient client;
 
     @BeforeEach
     void setUp() {
         client = WebTestClient.bindToServer().baseUrl("http://localhost:" + port).build();
+        awaitRedisRecovery();
+        try (var connection = connectionFactory.getConnection()) {
+            connection.serverCommands().flushAll();
+        }
     }
 
     @Test
     void burstOnUploadRouteEventuallyReturns429() {
         int firstStatus = upload();
-        assertThat(firstStatus).as("first request consumes a token, not rate-limited").isNotEqualTo(429);
+        assertThat(firstStatus).as("first request reaches the backend").isEqualTo(200);
 
         int rateLimited = 0;
         for (int i = 0; i < 20; i++) {
@@ -85,7 +136,7 @@ class GatewayRateLimitIntegrationTest {
                 rateLimited++;
             }
         }
-        assertThat(rateLimited).as("burst of 10 exhausted -> later requests get 429").isGreaterThan(0);
+        assertThat(rateLimited).as("burst exhausted -> later requests get 429").isGreaterThan(0);
     }
 
     @Test
@@ -107,9 +158,74 @@ class GatewayRateLimitIntegrationTest {
         } finally {
             redis.getDockerClient().unpauseContainerCmd(redis.getContainerId()).exec();
         }
-        var recovered = limiter.isAllowed("file-service-upload", "recovered-user").block(Duration.ofSeconds(3));
-        assertThat(recovered.isAllowed()).isTrue();
-        assertThat(Long.parseLong(recovered.getHeaders().get("X-RateLimit-Remaining"))).isGreaterThanOrEqualTo(0);
+        awaitRedisRecovery();
+        assertBucketsEnforced();
+    }
+
+    @Test
+    void stoppedRedisAllowsReadsButRejectsUploadImmediatelyInSharedBypassWindow() {
+        client.get().uri("/api/analysis/probe").header("Authorization", "Bearer test-token")
+                .exchange().expectStatus().isOk().expectBody(String.class).isEqualTo("backend");
+        double analysisBefore = degradedCount("orchestrator");
+        double filesBefore = degradedCount("file-service");
+        redis.getDockerClient().stopContainerCmd(redis.getContainerId()).withTimeout(1).exec();
+        try {
+            client.get().uri("/api/analysis/outage").header("Authorization", "Bearer test-token")
+                    .exchange().expectStatus().isOk().expectBody(String.class).isEqualTo("backend");
+            long start = System.nanoTime();
+            client.get().uri("/api/files/probe/metadata").header("Authorization", "Bearer test-token")
+                    .exchange().expectStatus().isOk().expectHeader().doesNotExist("X-RateLimit-Remaining")
+                    .expectBody(String.class).isEqualTo("backend");
+            client.get().uri("/api/analysis/probe/events").header("Authorization", "Bearer test-token")
+                    .exchange().expectStatus().isOk().expectBody(String.class).isEqualTo("backend");
+            client.post().uri("/api/files/upload").header("Authorization", "Bearer test-token")
+                    .exchange().expectStatus().isEqualTo(503)
+                    .expectHeader().doesNotExist("X-RateLimit-Remaining");
+            assertThat(Duration.ofNanos(System.nanoTime() - start)).isLessThan(Duration.ofMillis(500));
+            assertThat(degradedCount("orchestrator")).isEqualTo(analysisBefore + 2);
+            assertThat(degradedCount("file-service")).isEqualTo(filesBefore + 1);
+            assertThat(degradedCount("file-service-upload")).isZero();
+            client.get().uri("/api/analysis/outage").exchange().expectStatus().isUnauthorized();
+            client.get().uri("/api/analysis/outage").header("Authorization", "Bearer invalid")
+                    .exchange().expectStatus().isUnauthorized();
+            WebTestClient.bindToServer().baseUrl("http://localhost:" + managementPort).build()
+                    .get().uri("/actuator/prometheus").exchange().expectStatus().isOk()
+                    .expectBody(String.class).value(body -> assertThat(body)
+                            .contains("gateway_ratelimiter_degraded_total{route=\"orchestrator\"}"));
+        } finally {
+            redis.getDockerClient().startContainerCmd(redis.getContainerId()).exec();
+            awaitRedisRecovery();
+        }
+        assertBucketsEnforced();
+    }
+
+    private double degradedCount(String route) {
+        var counter = meters.find("gateway.ratelimiter.degraded").tag("route", route).counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    private void awaitRedisRecovery() {
+        await().atMost(Duration.ofSeconds(10)).ignoreExceptionsInstanceOf(ResponseStatusException.class).untilAsserted(() -> {
+            var response = limiter.isAllowed("file-service-upload", "recovery-" + UUID.randomUUID())
+                    .block(Duration.ofSeconds(2));
+            assertThat(response.isAllowed()).isTrue();
+            assertThat(Long.parseLong(response.getHeaders().get("X-RateLimit-Remaining")))
+                    .isGreaterThanOrEqualTo(0);
+        });
+    }
+
+    private void assertBucketsEnforced() {
+        for (String path : List.of("/api/files/upload", "/api/files/probe/metadata", "/api/analysis/probe")) {
+            int rateLimited = 0;
+            for (int i = 0; i < 6; i++) {
+                var request = path.endsWith("upload") ? client.post().uri(path) : client.get().uri(path);
+                int status = request.header("Authorization", "Bearer test-token").exchange()
+                        .returnResult(Void.class).getStatus().value();
+                assertThat(status).isIn(200, 429);
+                if (status == 429) rateLimited++;
+            }
+            assertThat(rateLimited).as("recovered Redis enforces quota on %s", path).isGreaterThan(0);
+        }
     }
 
     private int upload() {
