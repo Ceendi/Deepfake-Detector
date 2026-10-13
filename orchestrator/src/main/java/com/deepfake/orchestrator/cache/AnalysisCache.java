@@ -26,6 +26,20 @@ public class AnalysisCache {
 
     private static final Duration TTL_BY_ID = Duration.ofSeconds(60);
 
+    // Bounded stripes fence fills that began before an eviction in this single-instance service.
+    private final Object[] fillLocks = java.util.stream.IntStream.range(0, 64)
+            .mapToObj(i -> new Object()).toArray();
+    private final long[] generations = new long[64];
+
+    public record FillToken(int stripe, long generation, String namespace) {}
+
+    public FillToken beginFill(UUID id) {
+        int stripe = Math.floorMod(id.hashCode(), fillLocks.length);
+        synchronized (fillLocks[stripe]) {
+            return new FillToken(stripe, generations[stripe], optionalRedis.cacheNamespace());
+        }
+    }
+
     private final StringRedisTemplate redis;
     private final OptionalRedisOperations optionalRedis;
     // Toggle (default on) so the MO benchmark can measure the cache-hit vs forced-miss path without
@@ -59,16 +73,29 @@ public class AnalysisCache {
     }
 
     public void putById(AnalysisResponse a) {
+        putById(a, beginFill(a.id()));
+    }
+
+    public void putById(AnalysisResponse a, FillToken token) {
         if (!enabled) return;
         try {
             String raw = json.writeValueAsString(a);
-            optionalRedis.run("cache write", () -> redis.opsForValue().set(keyById(a.id()), raw, TTL_BY_ID));
+            synchronized (fillLocks[token.stripe()]) {
+                if (generations[token.stripe()] != token.generation()
+                        || !optionalRedis.cacheNamespace().equals(token.namespace())) return;
+                String key = "cache:analysis:" + a.id() + token.namespace();
+                optionalRedis.run("cache write", () -> redis.opsForValue().set(key, raw, TTL_BY_ID));
+            }
         } catch (JacksonException e) {
             log.warn("cache putById skipped (degraded): {}", e.getMessage());
         }
     }
 
     public void evictById(UUID id) {
-        optionalRedis.run("cache eviction", () -> redis.delete(keyById(id)));
+        int stripe = Math.floorMod(id.hashCode(), fillLocks.length);
+        synchronized (fillLocks[stripe]) {
+            generations[stripe]++;
+            optionalRedis.run("cache eviction", () -> redis.delete(keyById(id)));
+        }
     }
 }

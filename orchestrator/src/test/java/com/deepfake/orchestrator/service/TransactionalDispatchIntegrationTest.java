@@ -302,10 +302,44 @@ class TransactionalDispatchIntegrationTest {
         start("video", "cancel-video", "unused", "0.8", false);
         start("audio", "cancel-audio", "unused", "0.4", false);
         await().atMost(Duration.ofSeconds(10)).until(() -> redis.hasKey("cancel:" + id));
-        service.handleProgress(Map.of("analysis_id", id.toString(), "progress", 99));
+        service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 99));
         service.handleResult(Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED", "result", Map.of("prob_fake", 0.9)));
         assertThat(stored(id)).isEqualTo(stable);
         create(AnalysisType.AUDIO);
+    }
+
+    @Test
+    void fullQueuedSiblingKeepsQueueAllowanceAfterFirstSourceCompletes() {
+        for (String source : List.of("video", "audio")) {
+            UUID id = create(AnalysisType.FULL);
+            publisher.dispatchDue();
+            service.handleProgress(Map.of("analysis_id", id.toString(), "source", source,
+                    "progress", 0, "stage", "LOADING"));
+            service.handleResult(Map.of("analysis_id", id.toString(), "source", source,
+                    "status", "COMPLETED", "result", Map.of("prob_fake", 0.8)));
+            jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '700 seconds' WHERE id=?", id);
+            jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP - INTERVAL '700 seconds' WHERE analysis_id=?", id);
+            service.failStuck(id, 600);
+            assertThat(stored(id).get("status")).isEqualTo("PROCESSING");
+            jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE analysis_id=?", id);
+            service.failStuck(id, 600);
+            assertThat(stored(id).get("status")).isEqualTo("FAILED");
+        }
+    }
+
+    @Test
+    void fullSourceSilenceCannotBeHiddenBySiblingHeartbeats() {
+        for (String silent : List.of("video", "audio")) {
+            UUID id = create(AnalysisType.FULL);
+            publisher.dispatchDue();
+            for (String source : List.of("video", "audio")) {
+                service.handleProgress(Map.of("analysis_id", id.toString(), "source", source, "progress", 0));
+            }
+            jdbc.update("UPDATE analysis SET " + silent + "_progress_at=CURRENT_TIMESTAMP - INTERVAL '601 seconds' WHERE id=?", id);
+            service.handleProgress(Map.of("analysis_id", id.toString(), "source", silent.equals("video") ? "audio" : "video", "progress", 50));
+            service.failStuck(id, 600);
+            assertThat(stored(id).get("status")).withFailMessage("silent source %s: %s", silent, stored(id)).isEqualTo("FAILED");
+        }
     }
 
     @Test
@@ -316,6 +350,7 @@ class TransactionalDispatchIntegrationTest {
         service.failStuck(id, 600);
         assertThat(stored(id).get("status")).isEqualTo("PENDING");
         jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE id=?", id);
+        jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE analysis_id=? AND sent_at IS NOT NULL", id);
         service.failStuck(id, 600);
         assertThat(stored(id).get("status")).isEqualTo("FAILED");
         assertThat(redis.opsForValue().get("cancel:" + id)).isEqualTo("1");
@@ -328,7 +363,7 @@ class TransactionalDispatchIntegrationTest {
             publisher.dispatchDue();
             jdbc.update("UPDATE analysis SET created_at=CURRENT_TIMESTAMP - INTERVAL '7201 seconds' WHERE id=?", id);
             if (started) {
-                service.handleProgress(Map.of("analysis_id", id.toString(), "progress", 0, "stage", "LOADING"));
+                service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 0, "stage", "LOADING"));
             }
             assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
                     java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).contains(id);
@@ -343,8 +378,8 @@ class TransactionalDispatchIntegrationTest {
         for (String cause : List.of("stuck", "dlq", "source")) {
             UUID id = create(AnalysisType.VIDEO);
             publisher.dispatchDue();
-            service.handleProgress(Map.of("analysis_id", id.toString(), "progress", 1));
-            jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '601 seconds' WHERE id=?", id);
+            service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 1));
+            jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '601 seconds', video_progress_at=CURRENT_TIMESTAMP - INTERVAL '601 seconds' WHERE id=?", id);
             var transaction = new org.springframework.transaction.support.TransactionTemplate(transactions);
             transaction.executeWithoutResult(status -> {
                 fail(id, cause);
@@ -378,6 +413,7 @@ class TransactionalDispatchIntegrationTest {
     void staleRecoveryCandidateDoesNotKillNewProgressOrConfirmedDispatch() {
         UUID id = create(AnalysisType.VIDEO);
         jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE id=?", id);
+        jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE analysis_id=? AND sent_at IS NOT NULL", id);
         // A fresh unsent outbox uses its finite dispatch deadline, rather than the progress clock.
         assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
                 java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).doesNotContain(id);
@@ -385,9 +421,10 @@ class TransactionalDispatchIntegrationTest {
         service.failStuck(id, 600); // Old scan decision must not survive a new confirmed dispatch.
         assertThat(stored(id).get("status")).isEqualTo("PENDING");
         jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE id=?", id);
+        jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE analysis_id=? AND sent_at IS NOT NULL", id);
         assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
                 java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).contains(id);
-        service.handleProgress(Map.of("analysis_id", id.toString(), "progress", 50));
+        service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 50));
         service.failStuck(id, 600);
         assertThat(stored(id).get("status")).isEqualTo("PROCESSING");
     }
@@ -397,7 +434,7 @@ class TransactionalDispatchIntegrationTest {
         UUID id = create(AnalysisType.FULL);
         jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP WHERE analysis_id=? AND source='video'", id);
         jdbc.update("UPDATE analysis SET created_at=CURRENT_TIMESTAMP - INTERVAL '121 seconds' WHERE id=?", id);
-        service.handleProgress(Map.of("analysis_id", id.toString(), "progress", 90));
+        service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 90));
         assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
                 java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).contains(id);
         publisher.dispatchDue();

@@ -65,31 +65,46 @@ class AnalysisStuckRecoveryIntegrationTest {
         UUID id = persist(AnalysisStatus.PENDING, Instant.now().minus(5, ChronoUnit.MINUTES));
         Instant firstTouch = Instant.now();
 
-        int flipped = repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, firstTouch);
+        int flipped = repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, firstTouch, "video");
         em.flush();
         em.clear();
 
         assertThat(flipped).isEqualTo(1);
         Analysis afterFlip = em.find(Analysis.class, id);
         assertThat(afterFlip.getStatus()).isEqualTo(AnalysisStatus.PROCESSING);
+        assertThat(afterFlip.getVideoStartedAt()).isCloseTo(firstTouch, org.assertj.core.api.Assertions.within(1, ChronoUnit.MILLIS));
+        assertThat(afterFlip.getAudioStartedAt()).isNull();
 
         int beat = repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE,
-                firstTouch.plusSeconds(30));
+                firstTouch.plusSeconds(30), "video");
         em.flush();
         em.clear();
 
         assertThat(beat).isEqualTo(1);
-        assertThat(em.find(Analysis.class, id).getUpdatedAt()).isAfter(afterFlip.getUpdatedAt());
+        Analysis afterBeat = em.find(Analysis.class, id);
+        assertThat(afterBeat.getUpdatedAt()).isAfter(afterFlip.getUpdatedAt());
+        assertThat(afterBeat.getVideoStartedAt()).isEqualTo(afterFlip.getVideoStartedAt());
+        assertThat(afterBeat.getVideoProgressAt()).isAfter(afterFlip.getVideoProgressAt());
     }
 
     @Test
     void recordProgressIgnoresTerminal() {
         UUID id = persist(AnalysisStatus.CANCELLED, Instant.now());
 
-        int rows = repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now());
+        int rows = repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now(), "video");
 
         assertThat(rows).isZero();
         assertThat(em.find(Analysis.class, id).getStatus()).isEqualTo(AnalysisStatus.CANCELLED);
+    }
+
+    @Test
+    void unexpectedAndAcceptedSourcesCannotRefreshProgress() {
+        UUID id = persist(AnalysisStatus.PENDING, Instant.now());
+        for (String source : java.util.Arrays.asList(null, "Video", "unknown", "audio")) {
+            assertThat(repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now(), source)).isZero();
+        }
+        repository.writeVideoProb(id, new java.math.BigDecimal("0.8"), java.util.Map.of(), ACTIVE, Instant.now());
+        assertThat(repository.recordProgress(id, AnalysisStatus.PROCESSING, ACTIVE, Instant.now(), "video")).isZero();
     }
 
     private static final EnumSet<AnalysisStatus> ACTIVE =

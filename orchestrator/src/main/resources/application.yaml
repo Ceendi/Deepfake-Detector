@@ -122,6 +122,7 @@ reliability:
     queue-timeout-seconds: ${RELIABILITY_STUCK_JOB_QUEUE_TIMEOUT_SECONDS:1800}
     max-age-seconds: ${RELIABILITY_STUCK_JOB_MAX_AGE_SECONDS:7200}
     scan-interval-ms: ${RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS:300000}
+    initial-delay: ${RELIABILITY_STUCK_JOB_INITIAL_DELAY:${reliability.stuck-job.threshold-seconds}s}
 management:
   endpoints:
     web:

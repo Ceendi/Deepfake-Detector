@@ -46,6 +46,7 @@ class AnalysisServiceCacheIdorTest {
     static final GenericContainer<?> redis =
             new GenericContainer<>(DockerImageName.parse("redis:8.8.0-alpine")).withExposedPorts(6379);
 
+    LettuceConnectionFactory connectionFactory;
     AnalysisRepository repository;
     AnalysisService service;
     final UUID id = UUID.randomUUID();
@@ -54,6 +55,7 @@ class AnalysisServiceCacheIdorTest {
     void setUp() {
         LettuceConnectionFactory cf =
                 new LettuceConnectionFactory(redis.getHost(), redis.getMappedPort(6379));
+        connectionFactory = cf;
         cf.afterPropertiesSet();
         StringRedisTemplate template = new StringRedisTemplate(cf);
         template.afterPropertiesSet();
@@ -63,6 +65,60 @@ class AnalysisServiceCacheIdorTest {
                 new OptionalRedisOperations(Duration.ofSeconds(2)),
                 new AnalysisCache(template, new OptionalRedisOperations(Duration.ofSeconds(2)), true), mock(AnalysisStreamRegistry.class),
                 mock(BackpressureGuard.class), mock(IdempotencyGuard.class), mock(AnalysisMetrics.class), mock(ArtifactCleanupStore.class));
+    }
+
+    @org.junit.jupiter.api.AfterEach
+    void closeRedisConnection() {
+        connectionFactory.destroy();
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void getAlreadyReadingCannotRefillAfterTerminalOrDelete(boolean delete) throws Exception {
+        Analysis old = Analysis.builder().id(id).userId("user-a").fileId("f").fileKey("k")
+                .type(AnalysisType.VIDEO).status(delete ? AnalysisStatus.COMPLETED : AnalysisStatus.PENDING).build();
+        var current = new java.util.concurrent.atomic.AtomicReference<>(old);
+        var first = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var read = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        when(repository.findById(id)).thenAnswer(invocation -> {
+            Analysis snapshot = current.get();
+            if (first.getAndSet(false)) {
+                read.countDown();
+                assertThat(release.await(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            }
+            return Optional.ofNullable(snapshot);
+        });
+        if (!delete) {
+            when(repository.cancelIfActive(org.mockito.ArgumentMatchers.eq(id), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenAnswer(invocation -> {
+                current.set(Analysis.builder().id(id).userId("user-a").fileId("f").fileKey("k")
+                        .type(AnalysisType.VIDEO).status(AnalysisStatus.CANCELLED).build());
+                return 1;
+            });
+        }
+        try (var pool = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            var reading = pool.submit(() -> service.get(id, "user-a"));
+            try {
+                assertThat(read.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                if (delete) {
+                    service.delete(id, "user-a");
+                    current.set(null);
+                } else {
+                    service.cancel(id, "user-a");
+                }
+            } finally {
+                release.countDown();
+            }
+            reading.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        if (delete) {
+            assertThatThrownBy(() -> service.get(id, "user-a"))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
+        } else {
+            assertThat(service.get(id, "user-a").status()).isEqualTo(AnalysisStatus.CANCELLED);
+        }
     }
 
     @Test

@@ -60,7 +60,7 @@ class AnalysisServiceProcessingTransitionTest {
 
     @Test
     void activeProgressEvictsAndPushes() {
-        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class)))
+        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class), eq("video")))
                 .thenReturn(1);
         @SuppressWarnings("unchecked")
         ValueOperations<String, String> ops = mock(ValueOperations.class);
@@ -74,7 +74,7 @@ class AnalysisServiceProcessingTransitionTest {
 
     @Test
     void snapshotFailureStillPushesProgress() {
-        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class)))
+        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class), eq("video")))
                 .thenReturn(1);
         @SuppressWarnings("unchecked")
         ValueOperations<String, String> ops = mock(ValueOperations.class);
@@ -89,7 +89,7 @@ class AnalysisServiceProcessingTransitionTest {
 
     @Test
     void lateProgressOnTerminalIsDropped() {
-        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class)))
+        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class), eq("video")))
                 .thenReturn(0);
 
         service.handleProgress(progress());
@@ -101,7 +101,7 @@ class AnalysisServiceProcessingTransitionTest {
 
     @Test
     void progressSideEffectsWaitForCommitAndRollbackEmitsNothing() {
-        when(repository.recordProgress(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.recordProgress(eq(id), any(), any(), any(), eq("video"))).thenReturn(1);
         org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
         try {
             service.handleProgress(progress());
@@ -117,7 +117,7 @@ class AnalysisServiceProcessingTransitionTest {
 
     @Test
     void afterCommitDeliveryFailureDoesNotChangeDatabaseSuccess() {
-        when(repository.recordProgress(eq(id), any(), any(), any())).thenReturn(1);
+        when(repository.recordProgress(eq(id), any(), any(), any(), eq("video"))).thenReturn(1);
         doThrow(new IllegalStateException("closed emitter")).when(streams).sendProgress(eq(id), any());
         org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
         try {
@@ -133,7 +133,7 @@ class AnalysisServiceProcessingTransitionTest {
 
     @Test
     void databaseErrorPropagatesToAdvisoryRetryWithoutSideEffects() {
-        when(repository.recordProgress(eq(id), any(), any(), any()))
+        when(repository.recordProgress(eq(id), any(), any(), any(), eq("video")))
                 .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("offline"));
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.handleProgress(progress()))
                 .isInstanceOf(org.springframework.dao.DataAccessResourceFailureException.class);
