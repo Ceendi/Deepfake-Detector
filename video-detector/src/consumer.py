@@ -50,7 +50,8 @@ def _record_outcome(outcome, result):
 
 def process(msg: dict, progress_callback=None) -> dict:
     return runtime.process(
-        msg, model=video_inference, unavailable_message="Video inference model is unavailable.",
+        msg, model=video_inference,
+        unavailable_message="Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie później.",
         analyze=_analyze, artifacts=_artifacts, progress_callback=progress_callback,
     )
 

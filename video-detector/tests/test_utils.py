@@ -15,6 +15,7 @@ from src.utils import (
     SEQ_LEN,
     InferenceError,
     NoFaceError,
+    ResolutionTooHighError,
     VideoDecodeError,
     calibration_shift,
     derive_outputs,
@@ -93,6 +94,20 @@ class TestDeriveOutputs:
         prob_above, verdict_above, _ = derive_outputs(raw_logit + 0.1, threshold=0.3)
         assert prob_above > 0.5 and verdict_above == "FAKE"
 
+    @pytest.mark.parametrize("logit", [1000.0, -1000.0, 1e308, -1e308])
+    def test_extreme_logits_do_not_overflow(self, logit):
+        prob, verdict, confidence = derive_outputs(logit, threshold=0.3)
+        assert prob == (1.0 if logit > 0 else 0.0)
+        assert verdict == ("FAKE" if logit > 0 else "REAL")
+        assert confidence == 1.0
+
+    @pytest.mark.parametrize("logit", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_logit_is_a_domain_error(self, logit):
+        with pytest.raises(InferenceError) as error:
+            derive_outputs(logit)
+        assert error.value.code == "PROCESSING_ERROR"
+        assert str(error.value) == "Nie udało się przetworzyć materiału. Spróbuj ponownie."
+
     def test_invalid_threshold_rejected(self):
         with pytest.raises(ValueError):
             calibration_shift(0.0)
@@ -108,10 +123,28 @@ class TestTopAttentionFrames:
     def test_k_larger_than_sequence_is_safe(self):
         assert len(top_attention_frames(np.array([0.5, 0.5]), 5)) == 2
 
+    def test_padded_frames_are_never_selected(self):
+        # 5 real faces padded to SEQ_LEN by repeating the last crop.
+        attn = np.full(SEQ_LEN, 0.01)
+        attn[[1, 3]] = [0.2, 0.1]
+        attn[5:] = 0.5
+        assert top_attention_frames(attn, 3, real_frames=5) == [1, 3, 4]
+
 
 class TestErrorCodes:
-    def test_codes_match_amqp_contract(self):
-        assert InferenceError("x").code == "PROCESSING_ERROR"
-        assert VideoDecodeError("x").code == "VIDEO_DECODE_FAILED"
-        assert NoFaceError("x").code == "NO_FACE_DETECTED"
-        assert InferenceError("x", code="CUSTOM").code == "CUSTOM"
+    @pytest.mark.parametrize("error_type, code, message", [
+        (InferenceError, "PROCESSING_ERROR",
+         "Nie udało się przetworzyć materiału. Spróbuj ponownie."),
+        (VideoDecodeError, "VIDEO_DECODE_FAILED",
+         "Nie udało się odczytać obrazu z pliku. Plik może być uszkodzony."),
+        (NoFaceError, "NO_FACE_DETECTED",
+         "Nie wykryto twarzy w nagraniu. Wgraj materiał, na którym widać twarz."),
+        (ResolutionTooHighError, "MEDIA_RESOLUTION_TOO_HIGH",
+         "Rozdzielczość nagrania jest za wysoka (maks. 4K)."),
+    ])
+    def test_codes_and_messages_match_amqp_contract(self, error_type, code, message):
+        from detector_runtime import DetectorError
+
+        error = error_type()
+        assert isinstance(error, DetectorError)
+        assert (error.code, str(error)) == (code, message)

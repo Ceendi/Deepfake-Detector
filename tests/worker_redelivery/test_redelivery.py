@@ -201,6 +201,12 @@ def test_unroutable_publication_reconnects_and_redelivers_without_failed_result(
     assert broker.basic_get("analysis.results", auto_ack=True)[0] is None
 
 
+UNAVAILABLE_MESSAGES = {
+    "audio": "Audio inference model is unavailable.",
+    "video": "Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie później.",
+}
+
+
 def test_unavailable_model_consumes_and_confirms_failed_without_input(source, broker, rds, workers):
     analysis_id = str(uuid.uuid4())
     worker = workers(source, MODEL_UNAVAILABLE="true", BLOCK_AT="confirmed")
@@ -212,7 +218,7 @@ def test_unavailable_model_consumes_and_confirms_failed_without_input(source, br
     assert payload == {"analysis_id": analysis_id, "correlation_id": "pr06", "source": source,
                        "status": "FAILED", "result": None,
                        "error": {"code": "MODEL_UNAVAILABLE",
-                                 "message": f"{source.title()} inference model is unavailable."}}
+                                 "message": UNAVAILABLE_MESSAGES[source]}}
     worker.release()
     worker.wait("acked")
     for operation in ("download", "inference", "upload"):

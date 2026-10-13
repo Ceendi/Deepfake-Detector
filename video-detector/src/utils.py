@@ -9,6 +9,7 @@ training/prep_cache.py) — model widzial crop 224x224, RGB, ImageNet mean/std.
 import math
 
 import numpy as np
+from detector_runtime import DetectorError
 
 SEQ_LEN = 16
 IMG_SIZE = 224
@@ -16,23 +17,30 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
-class InferenceError(RuntimeError):
+class InferenceError(DetectorError):
     """Blad pipeline'u z kodem publikowanym w `error.code` (analysis.results)."""
 
     code = "PROCESSING_ERROR"
+    # Published verbatim to users; diagnostic details belong in logs only.
+    message = "Nie udało się przetworzyć materiału. Spróbuj ponownie."
 
-    def __init__(self, message: str, code: str | None = None):
-        super().__init__(message)
-        if code is not None:
-            self.code = code
+    def __init__(self):
+        super().__init__(self.message)
 
 
 class VideoDecodeError(InferenceError):
     code = "VIDEO_DECODE_FAILED"
+    message = "Nie udało się odczytać obrazu z pliku. Plik może być uszkodzony."
 
 
 class NoFaceError(InferenceError):
     code = "NO_FACE_DETECTED"
+    message = "Nie wykryto twarzy w nagraniu. Wgraj materiał, na którym widać twarz."
+
+
+class ResolutionTooHighError(InferenceError):
+    code = "MEDIA_RESOLUTION_TOO_HIGH"
+    message = "Rozdzielczość nagrania jest za wysoka (maks. 4K)."
 
 
 def sample_indices(total: int, fps: float, strategy: str = "uniform") -> np.ndarray:
@@ -92,14 +100,23 @@ def derive_outputs(logit: float, threshold: float = 0.5) -> tuple[float, str, fl
     ta sama konwencja UI co w audio i Orchestratorze (NIE skalibrowana
     niepewnosc) — patrz docs/contracts/amqp-messages.md.
     """
+    if not math.isfinite(logit):
+        # NaN/inf would publish invalid JSON or a meaningless verdict.
+        raise InferenceError()
     shifted = logit - calibration_shift(threshold)
-    prob = 1.0 / (1.0 + math.exp(-shifted))
+    # Numerically stable sigmoid: math.exp overflows for |logit| > ~709.
+    if shifted >= 0:
+        prob = 1.0 / (1.0 + math.exp(-shifted))
+    else:
+        z = math.exp(shifted)
+        prob = z / (1.0 + z)
     verdict = "FAKE" if prob > 0.5 else "REAL"
     confidence = abs(prob - 0.5) * 2.0
     return round(prob, 4), verdict, round(confidence, 4)
 
 
-def top_attention_frames(attention: np.ndarray, k: int) -> list[int]:
+def top_attention_frames(attention: np.ndarray, k: int, real_frames: int = SEQ_LEN) -> list[int]:
     """Indeksy top-K klatek wg wag atencji (malejaco) — wybor klatek pod Grad-CAM."""
-    order = np.argsort(np.asarray(attention))[::-1]
+    # Padded crops duplicate the last real face; a heatmap of them repeats that frame.
+    order = np.argsort(np.asarray(attention)[:max(0, min(real_frames, SEQ_LEN))])[::-1]
     return [int(i) for i in order[:k]]
