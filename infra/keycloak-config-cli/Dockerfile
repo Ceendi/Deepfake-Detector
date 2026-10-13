@@ -1,4 +1,4 @@
-FROM maven:3.9.15-eclipse-temurin-21-alpine@sha256:856fe78872c59d3b584a64d07693d5433cbf44e35b5ba1f2c911147f39f54266 AS builder
+FROM maven:3.9-eclipse-temurin-26-alpine@sha256:4c85d516dd8c7e50d49a403d604e565e0dbb09a790186fe3245725d313ae7cb9 AS builder
 WORKDIR /source
 RUN apk add --no-cache python3
 # v6.5.1, pinned to its commit and archive checksum rather than a moving tag.
@@ -9,7 +9,7 @@ RUN python3 /tmp/patch_dependencies.py pom.xml \
     && mvn -B -ntp package -Dlicense.skip=true -Dlicense.skipCheckFileHeader=true -Dmaven.test.skip=true -Dlicense.skipCheckLicense \
         -Dcheckstyle.skip -Dmaven.site.skip=true -Dmaven.javadoc.skip=true -Dmaven.gitcommitid.skip=true
 
-FROM eclipse-temurin:21-jre-alpine@sha256:51ab5e3302e7141ce665ca3ea85e8b5cd648eafbc3c0c90dd79d6537684e4555
+FROM eclipse-temurin:25-jre-alpine@sha256:3c0a9084927a221ccd1d007fcaf614465672c0af37aaa834c5184483afe56d61
 COPY --from=builder /source/target/keycloak-config-cli.jar /app/keycloak-config-cli.jar
 ENV KEYCLOAK_SSL_VERIFY=true IMPORT_FILES_LOCATIONS=file:/config/*
 USER 65534:65534
