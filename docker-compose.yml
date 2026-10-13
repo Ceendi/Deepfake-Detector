@@ -247,7 +247,7 @@ services:
     # Runs before the main seaweedfs service starts (via depends_on).
     # Runs as root: the seaweedfs image entrypoint also runs as root, so a
     # 0644 file written here is readable downstream regardless of ownership.
-    image: python:3.14.8-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
+    image: python:3.15.0rc3-alpine3.24@sha256:f288a00331ddad8ddf86aa9d83331f188d9a5b1999dea3762adf2af1968b0c04
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -282,7 +282,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.37.9
+    image: amazon/aws-cli:2.37.12
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -337,7 +337,7 @@ services:
     networks: [deepfake]
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.0
+    image: quay.io/keycloak/keycloak:26.8.1
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s # let in-flight HTTP / DB connections drain
