@@ -44,6 +44,7 @@ public class S3CleanupService {
     private final String bucket;
     private final Duration retention;
     private final Duration orphanMinAge;
+    private final Duration unusedRetention;
     private final Counter purged;
     private final Counter orphansReclaimed;
 
@@ -51,12 +52,17 @@ public class S3CleanupService {
             @Value("${storage.bucket}") String bucket,
             @Value("${storage.cleanup.retention-hours:72}") long retentionHours,
             @Value("${storage.cleanup.orphan-min-age-hours:24}") long orphanMinAgeHours,
+            @Value("${storage.cleanup.unused-retention:7d}") Duration unusedRetention,
             MeterRegistry registry) {
+        if (unusedRetention.isNegative() || unusedRetention.isZero()) {
+            throw new IllegalArgumentException("Unused upload retention must be positive");
+        }
         this.repository = repository;
         this.s3 = s3;
         this.bucket = bucket;
         this.retention = Duration.ofHours(retentionHours);
         this.orphanMinAge = Duration.ofHours(orphanMinAgeHours);
+        this.unusedRetention = unusedRetention;
         this.purged = Counter.builder("files.purged")
                 .description("Soft-deleted files purged from S3 + DB after the retention window")
                 .register(registry);
@@ -68,6 +74,12 @@ public class S3CleanupService {
     @Scheduled(fixedDelayString = "${storage.cleanup.scan-interval-ms:3600000}",
             initialDelayString = "${storage.cleanup.initial-delay-ms:60000}")
     public void sweep() {
+        Instant now = Instant.now();
+        try {
+            repository.expireUnused(now.minus(unusedRetention), now);
+        } catch (Exception e) {
+            log.error("unused upload expiry failed, retrying next sweep", e);
+        }
         purgeSoftDeleted();
         reclaimOrphans();
     }

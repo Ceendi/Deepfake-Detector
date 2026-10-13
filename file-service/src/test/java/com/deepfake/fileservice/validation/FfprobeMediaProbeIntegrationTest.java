@@ -44,6 +44,16 @@ class FfprobeMediaProbeIntegrationTest {
     }
 
     @Test
+    void rejectsRealVideoAbove4kPixelBudget() throws Exception {
+        Path media = tmp.resolve("above4k.mp4");
+        runToFile(List.of("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                "color=c=black:s=4096x2160:r=1", "-frames:v", "1", "-c:v", "mpeg4", media.toString()),
+                tmp.resolve("generation.log"));
+        assertThatThrownBy(() -> validator.validate(media)).isInstanceOf(InvalidFileException.class)
+                .hasMessage("[MEDIA_RESOLUTION_TOO_HIGH] Rozdzielczość nagrania jest za wysoka (maks. 4K).");
+    }
+
+    @Test
     void probesValidWavAndReportsFormatAndDuration() throws IOException {
         Path wav = tmp.resolve("tone.wav");
         Files.write(wav, wav(new byte[0]));

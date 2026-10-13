@@ -52,6 +52,9 @@ class FileErrorContractTest {
     @MockitoBean
     JwtDecoder jwtDecoder;
 
+    @MockitoBean
+    com.deepfake.fileservice.service.FileStorageService storageService;
+
     private static SimpleGrantedAuthority userRole() {
         return new SimpleGrantedAuthority("ROLE_USER");
     }

@@ -33,20 +33,29 @@ public class FileValidator {
 
     private final MediaProbe mediaProbe;
     private final double maxDurationSeconds;
+    private final long maxPixels;
     private final Detector detector = new DefaultDetector();
 
     public FileValidator(MediaProbe mediaProbe) {
         this(mediaProbe, 1800);
     }
 
+    public FileValidator(MediaProbe mediaProbe,
+                         double maxDurationSeconds) {
+        this(mediaProbe, maxDurationSeconds, 8294400);
+    }
+
     @Autowired
     public FileValidator(MediaProbe mediaProbe,
-                         @Value("${media.max-duration-seconds:1800}") double maxDurationSeconds) {
+                         @Value("${media.max-duration-seconds:1800}") double maxDurationSeconds,
+                         @Value("${media.max-pixels:8294400}") long maxPixels) {
         if (!Double.isFinite(maxDurationSeconds) || maxDurationSeconds <= 0) {
             throw new IllegalArgumentException("Media duration limit must be finite and positive");
         }
         this.mediaProbe = mediaProbe;
         this.maxDurationSeconds = maxDurationSeconds;
+        if (maxPixels <= 0) throw new IllegalArgumentException("Media pixel limit must be positive");
+        this.maxPixels = maxPixels;
     }
 
     public Result validate(Path file) throws IOException {
@@ -60,6 +69,9 @@ public class FileValidator {
             throw new InvalidFileException("unsupported container format: " + probe.formatName());
         }
         Double duration = probe.durationSeconds();
+        if (probe.maxPixels() > maxPixels) {
+            throw new InvalidFileException("[MEDIA_RESOLUTION_TOO_HIGH] Rozdzielczość nagrania jest za wysoka (maks. 4K).");
+        }
         if (duration != null && (!Double.isFinite(duration) || duration < 0)) {
             throw new InvalidFileException("invalid media duration");
         }

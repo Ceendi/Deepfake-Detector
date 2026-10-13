@@ -26,8 +26,17 @@ class FfprobeMediaProbeProcessTest {
     private FfprobeMediaProbe probe(String mode, String output, Duration timeout) {
         return new FfprobeMediaProbe(LIMIT, List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-cp", System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")),
-                Child.class.getName(), mode, tmp.resolve("child.pid").toString(), output), timeout);
+                "-cp", childClasspath(), Child.class.getName(), mode, tmp.resolve("child.pid").toString(),
+                java.util.Base64.getEncoder().encodeToString(output.getBytes(StandardCharsets.UTF_8))), timeout);
+    }
+
+    private static String childClasspath() {
+        // The fixture needs only JDK classes; the full Maven classpath exceeds Windows limits.
+        try {
+            return Path.of(Child.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toString();
+        } catch (java.net.URISyntaxException error) {
+            throw new IllegalStateException(error);
+        }
     }
 
     @AfterEach
@@ -39,6 +48,24 @@ class FfprobeMediaProbeProcessTest {
         }
         assertThat(Thread.getAllStackTraces().keySet())
                 .noneMatch(t -> t.isAlive() && t.getName().startsWith("ffprobe-output-"));
+    }
+
+    @Test
+    void restrictsProtocolAndRequestsStreamDimensions() throws IOException {
+        assertThat(probe("arguments", "{\"streams\":[{\"index\":0}],\"format\":{\"format_name\":\"wav\"}}",
+                Duration.ofSeconds(3)).probe(tmp.resolve("media"))).isPresent();
+    }
+
+    @Test
+    void retainsLargestStreamPixelProductWithoutIntegerOverflow() throws IOException {
+        String output = "{\"streams\":[{\"index\":0,\"width\":2160,\"height\":3840},"
+                + "{\"index\":1,\"width\":100000,\"height\":100000}],\"format\":{\"format_name\":\"mp4\"}}";
+        var probe = new FfprobeMediaProbe(1024, List.of(
+                Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-cp",
+                childClasspath(), Child.class.getName(), "output", tmp.resolve("child.pid").toString(),
+                java.util.Base64.getEncoder().encodeToString(output.getBytes(StandardCharsets.UTF_8))), Duration.ofSeconds(3));
+        assertThat(probe.probe(tmp.resolve("media"))).get()
+                .extracting(MediaProbe.ProbeResult::maxPixels).isEqualTo(10_000_000_000L);
     }
 
     @Test
@@ -129,8 +156,20 @@ class FfprobeMediaProbeProcessTest {
 
     public static class Child {
         public static void main(String[] args) throws Exception {
-            Files.writeString(Path.of(args[1]), Long.toString(ProcessHandle.current().pid()));
-            byte[] output = args[2].getBytes(StandardCharsets.UTF_8);
+            Path pid = Path.of(args[1]);
+            Path pendingPid = pid.resolveSibling("child.pid.pending");
+            Files.writeString(pendingPid, Long.toString(ProcessHandle.current().pid()));
+            // Publish only a complete PID: the interruption test can kill us as soon as it appears.
+            Files.move(pendingPid, pid, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            if (args[0].equals("arguments")) {
+                var command = java.util.Arrays.asList(args);
+                int protocol = command.indexOf("-protocol_whitelist");
+                if (protocol < 0 || !command.get(protocol + 1).equals("file")
+                        || !command.contains("format=format_name,duration:stream=index,width,height")) {
+                    System.exit(2);
+                }
+            }
+            byte[] output = java.util.Base64.getDecoder().decode(args[2]);
             System.out.write(output);
             System.out.flush();
             switch (args[0]) {

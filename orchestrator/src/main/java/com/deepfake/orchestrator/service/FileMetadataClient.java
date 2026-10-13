@@ -36,9 +36,9 @@ public class FileMetadataClient {
     }
 
     public String resolve(UUID fileId, String bearerToken) {
-        var request = HttpRequest.newBuilder(baseUrl.resolve("/api/files/" + fileId + "/metadata"))
+        var request = HttpRequest.newBuilder(baseUrl.resolve("/api/files/" + fileId + "/claim"))
                 .timeout(timeout).header("Authorization", "Bearer " + bearerToken)
-                .header("Accept", "application/json").GET().build();
+                .header("Accept", "application/json").POST(HttpRequest.BodyPublishers.noBody()).build();
         var pending = http.sendAsync(request, HttpResponse.BodyHandlers.ofString());
         HttpResponse<String> response;
         try {

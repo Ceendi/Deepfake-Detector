@@ -16,6 +16,25 @@ import java.util.UUID;
 
 public interface FileMetadataRepository extends JpaRepository<FileMetadata, UUID> {
 
+    @Query("SELECT COALESCE(SUM(m.sizeBytes), 0) FROM FileMetadata m WHERE m.userId = :user AND m.deletedAt IS NULL")
+    long activeBytes(@Param("user") String userId);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE FileMetadata m SET m.analyzedAt = COALESCE(m.analyzedAt, :now) "
+            + "WHERE m.fileId = :id AND m.userId = :user AND m.deletedAt IS NULL")
+    int claim(@Param("id") UUID id, @Param("user") String userId, @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE FileMetadata m SET m.deletedAt = :now "
+            + "WHERE m.fileId = :id AND m.userId = :user AND m.deletedAt IS NULL")
+    int softDeleteOwned(@Param("id") UUID id, @Param("user") String userId, @Param("now") Instant now);
+
+    @Modifying
+    @Transactional
+    @Query("UPDATE FileMetadata m SET m.deletedAt = :now "
+            + "WHERE m.analyzedAt IS NULL AND m.deletedAt IS NULL AND m.createdAt < :cutoff")
+    int expireUnused(@Param("cutoff") Instant cutoff, @Param("now") Instant now);
+
     // Soft-deleted rows are invisible to the API (metadata/presign/delete all 404 once deleted_at is set).
     Optional<FileMetadata> findByFileIdAndDeletedAtIsNull(UUID fileId);
 

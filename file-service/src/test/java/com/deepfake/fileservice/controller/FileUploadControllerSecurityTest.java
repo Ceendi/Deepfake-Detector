@@ -43,7 +43,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
  * the object stamped with the caller's id as x-amz-meta-user-id.
  */
 @WebMvcTest(FileUploadController.class)
-@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class})
+@Import({SecurityConfig.class, JwtRoleConverter.class, WebConfig.class, CurrentUserArgumentResolver.class,
+        com.deepfake.fileservice.service.FileStorageService.class})
 class FileUploadControllerSecurityTest {
 
     @Autowired
@@ -61,12 +62,70 @@ class FileUploadControllerSecurityTest {
     @MockitoBean
     JwtDecoder jwtDecoder;
 
+    @MockitoBean
+    org.springframework.jdbc.core.JdbcTemplate jdbc;
+
     private static SimpleGrantedAuthority userRole() {
         return new SimpleGrantedAuthority("ROLE_USER");
     }
 
     private static MockMultipartFile sampleFile() {
         return new MockMultipartFile("file", "test.mp4", "video/mp4", "data".getBytes());
+    }
+
+    @Test
+    void untrustedNameNeverBecomesADiskOrObjectPath() throws Exception {
+        String name = "folder/" + "界".repeat(100) + "\u0000.mp4";
+        when(fileValidator.validate(any())).thenReturn(new FileValidator.Result("video/mp4", 1.0));
+        mvc.perform(multipart("/api/files/upload")
+                        .file(new MockMultipartFile("file", name, "video/mp4", "data".getBytes()))
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fileKey").value(org.hamcrest.Matchers.matchesPattern(
+                        "[0-9a-f-]{36}\\.mp4")));
+    }
+
+    @Test
+    void uploadMovesTheServletSpoolInsteadOfCopyingIt() throws Exception {
+        AtomicReference<Boolean> moved = new AtomicReference<>(false);
+        MockMultipartFile file = new MockMultipartFile("file", "test.mp4", "video/mp4", "data".getBytes()) {
+            @Override
+            public void transferTo(java.io.File destination) throws IOException {
+                moved.set(true);
+                super.transferTo(destination);
+            }
+        };
+        when(fileValidator.validate(any())).thenReturn(new FileValidator.Result("video/mp4", 1.0));
+        mvc.perform(multipart("/api/files/upload").file(file)
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isOk());
+        assertThat(moved.get()).isTrue();
+    }
+
+    @Test
+    void quotaReturns409WithNeutralPolishMessageBeforeS3() throws Exception {
+        when(fileValidator.validate(any())).thenReturn(new FileValidator.Result("video/mp4", 1.0));
+        when(metadataRepository.activeBytes("user-a")).thenReturn(5368709120L);
+        mvc.perform(multipart("/api/files/upload").file(sampleFile())
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STORAGE_QUOTA_EXCEEDED"))
+                .andExpect(jsonPath("$.message").value(
+                        "Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe."));
+        verifyNoInteractions(s3Client);
+    }
+
+    @Test
+    void originalNameIsBoundedAndHasNoControlCharacters() throws Exception {
+        when(fileValidator.validate(any())).thenReturn(new FileValidator.Result("video/mp4", 1.0));
+        String name = "界".repeat(600) + "\u0000\r\n.mp4";
+        mvc.perform(multipart("/api/files/upload")
+                        .file(new MockMultipartFile("file", name, "video/mp4", "data".getBytes()))
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isOk());
+        var saved = ArgumentCaptor.forClass(com.deepfake.fileservice.entity.FileMetadata.class);
+        verify(metadataRepository).save(saved.capture());
+        assertThat(saved.getValue().getOriginalName()).isEqualTo("界".repeat(512));
     }
 
     @Test

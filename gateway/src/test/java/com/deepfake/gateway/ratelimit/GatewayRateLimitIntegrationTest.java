@@ -88,8 +88,10 @@ class GatewayRateLimitIntegrationTest {
                     if (bean instanceof GatewayProperties properties) {
                         properties.getRoutes().forEach(route -> {
                             route.setUri(URI.create("http://localhost:" + backend.port()));
-                            route.getFilters().getFirst().getArgs()
-                                    .put("redis-rate-limiter.burstCapacity", "2");
+                            if (!route.getId().equals("file-service-upload")) {
+                                route.getFilters().getFirst().getArgs()
+                                        .put("redis-rate-limiter.burstCapacity", "2");
+                            }
                         });
                     }
                     return bean;
@@ -123,6 +125,16 @@ class GatewayRateLimitIntegrationTest {
         try (var connection = connectionFactory.getConnection()) {
             connection.serverCommands().flushAll();
         }
+    }
+
+    @Test
+    void defaultUploadBucketAllowsFiveThenRejectsSixth() {
+        for (int i = 0; i < 5; i++) assertThat(upload()).isEqualTo(200);
+        assertThat(upload()).isEqualTo(429);
+        var config = limiter.getConfig().get("file-service-upload");
+        assertThat(config.getReplenishRate()).isEqualTo(1);
+        assertThat(config.getRequestedTokens()).isEqualTo(12);
+        assertThat(config.getBurstCapacity()).isEqualTo(60);
     }
 
     @Test

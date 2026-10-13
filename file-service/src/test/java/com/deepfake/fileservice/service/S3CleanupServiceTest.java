@@ -45,7 +45,7 @@ class S3CleanupServiceTest {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
     private S3CleanupService service() {
-        return new S3CleanupService(repository, s3, BUCKET, 72, 24, registry);
+        return new S3CleanupService(repository, s3, BUCKET, 72, 24, java.time.Duration.ofDays(7), registry);
     }
 
     private FileMetadata expired(UUID id, String key) {
@@ -56,6 +56,21 @@ class S3CleanupServiceTest {
 
     private double counter(String name) {
         return registry.counter(name).count();
+    }
+
+    @Test
+    void sweepExpiresUnusedBeforeExistingPurgeAndOrphanPaths() {
+        when(s3.listObjectsV2(any(ListObjectsV2Request.class)))
+                .thenReturn(ListObjectsV2Response.builder().build());
+        service().sweep();
+        var order = org.mockito.Mockito.inOrder(repository, s3);
+        ArgumentCaptor<Instant> cutoff = ArgumentCaptor.forClass(Instant.class);
+        ArgumentCaptor<Instant> now = ArgumentCaptor.forClass(Instant.class);
+        order.verify(repository).expireUnused(cutoff.capture(), now.capture());
+        assertThat(java.time.Duration.between(cutoff.getValue(), now.getValue()))
+                .isEqualTo(java.time.Duration.ofDays(7));
+        order.verify(repository).findByDeletedAtBefore(any());
+        order.verify(s3).listObjectsV2(any(ListObjectsV2Request.class));
     }
 
     @Test

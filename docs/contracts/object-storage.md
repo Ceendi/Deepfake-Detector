@@ -7,7 +7,7 @@
 
 | Bucket               | Contents                               | Object key                         |
 | -------------------- | -------------------------------------- | ---------------------------------- |
-| `deepfake-uploads`   | User-uploaded files                    | `{fileId}_{originalName}`          |
+| `deepfake-uploads`   | User-uploaded files                    | `{fileId}.{detectedExtension}`          |
 | `analysis-artifacts` | Grad-CAM PNGs and other visualizations | `{analysisId}/{source}/{name}.png` |
 
 `{fileId}` and `{analysisId}` are full UUIDs (e.g.
@@ -55,7 +55,15 @@ virtual-hosted style (`bucket.endpoint/key`). Set
   top-frames next). Detectors publish the bare object keys in `result.gradcam_keys`
   (see [`amqp-messages.md`](./amqp-messages.md)); the Orchestrator persists them and
   serves the PNGs to the owner via `GET /api/analysis/{id}/artifacts/{source}/{name}`.
-- Retention policy on `deepfake-uploads` is TBD (privacy requirements).
+- Upload quota is 5368709120 bytes (5 GiB) per owner over non-deleted metadata rows.
+  Soft-delete frees logical quota immediately; physical space is reclaimed after 72 hours.
+- Unclaimed uploads older than 7 days are soft-deleted, then follow the same purge path.
+  `POST /api/files/{id}/claim` stores the first use timestamp atomically. Claimed files
+  are excluded from unused retention. Historical rows are conservatively marked used
+  by V3 because their analysis references belong to the orchestrator database.
+- New upload keys use UUID plus detected MIME extension, e.g.
+  `550e8400-e29b-41d4-a716-446655440000.mp4`. Original names are retained only in DB
+  (control characters removed, max 512 code points). Existing keys remain unchanged.
 - Bucket creation is centralised in `seaweedfs-bucket-init` — apps must NOT
   call `CreateBucket` at startup (their identities lack `Admin` and would
   fail with 403).

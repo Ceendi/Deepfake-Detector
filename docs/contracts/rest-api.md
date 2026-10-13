@@ -22,17 +22,28 @@ Two-stage validation (magic bytes via Tika, then `ffprobe`) runs before the file
 is stored; `mimetype` is the **detected** type, not the client-supplied one.
 Rejections: `413` (over the 500 MB limit), `422` (not a whitelisted A/V container —
 MP4/MOV/AVI/WAV/MP3/FLAC, invalid duration, or known duration above
-`MEDIA_MAX_DURATION_SECONDS`, default 1800 seconds for both audio and video).
+`MEDIA_MAX_DURATION_SECONDS`, default 1800 seconds for both audio and video, or
+any video stream above `MEDIA_MAX_PIXELS`, default 8294400 = 3840×2160).
+Resolution compares width×height regardless of orientation; the `INVALID_FILE` message is
+`[MEDIA_RESOLUTION_TOO_HIGH] Rozdzielczość nagrania jest za wysoka (maks. 4K).`
 Exactly the limit is accepted. Unknown duration remains accepted; the audio detector
 also bounds decoding and checks the decoded WAV before allocating its waveform.
 `422` body uses code `INVALID_FILE`; no S3 object or metadata row is stored.
+
+Owner quota: active (not soft-deleted) `size_bytes` plus the upload may not exceed
+`STORAGE_QUOTA_BYTES` (5368709120 bytes, 5 GiB). Exact equality is accepted.
+Exhaustion returns `409` with code `STORAGE_QUOTA_EXCEEDED` and message
+`Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe.`
+The check is serialized across replicas per owner before the S3 write.
+The gateway permits 5 uploads/minute with burst 5 by default (429). A full replica
+(`UPLOAD_MAX_CONCURRENT`, default 4) returns 503 with `Retry-After: 5` before multipart parsing.
 
 Response `200 OK`:
 
 ```json
 {
   "fileId": "550e8400-e29b-41d4-a716-446655440000",
-  "fileKey": "550e8400-e29b-41d4-a716-446655440000_test.mp4",
+  "fileKey": "550e8400-e29b-41d4-a716-446655440000.mp4",
   "size": 10485760,
   "mimetype": "video/mp4"
 }
@@ -50,7 +61,7 @@ not exist, was soft-deleted, OR `userId != jwt.sub` (IDOR guard — never `403`)
   "size": 10485760,
   "duration": 12.5,
   "mimetype": "video/mp4",
-  "objectKey": "550e8400-e29b-41d4-a716-446655440000_test.mp4"
+  "objectKey": "550e8400-e29b-41d4-a716-446655440000.mp4"
 }
 ```
 
@@ -59,7 +70,24 @@ This additive field lets the orchestrator resolve its input through the authoriz
 API using the caller's verified Bearer token.
 
 `duration` is the media length in seconds (from `ffprobe`); `null` if unknown.
-`name` is the original upload filename and may be `null`.
+`name` is the original upload filename without control characters, truncated to 512
+Unicode code points, and may be `null`. New storage keys use the UUID plus an
+extension from detected MIME; historical keys continue to be read from metadata.
+
+### `POST /api/files/{id}/claim`
+
+Marks an owned active upload as used for analysis. Returns `200 OK` with exactly
+the same body as `GET /metadata` (no request body). `404` for missing, soft-deleted
+or foreign files. The first `analyzed_at` is retained on repeated claims. Claim and
+unused-retention expiry are atomic: expiry cannot delete a claimed upload, and a
+claim cannot revive an expired upload. The orchestrator calls claim before its
+analysis creation transaction. A later backpressure rejection, timeout or rollback
+does not undo an already committed claim.
+
+Unclaimed uploads older than `UPLOAD_UNUSED_RETENTION` (default 7 days) are
+soft-deleted by cleanup, then purged after the existing 72-hour deleted-file retention.
+Migration conservatively marks historical uploads used because their analysis
+references live in the orchestrator database. New uploads start unclaimed.
 
 ### `GET /api/files/{id}/presign`
 
@@ -70,7 +98,7 @@ internal storage endpoint).
 
 ```json
 {
-  "url": "http://localhost:8333/deepfake-uploads/550e8400-..._test.mp4?X-Amz-Algorithm=...&X-Amz-Signature=...",
+  "url": "http://localhost:8333/deepfake-uploads/550e8400-....mp4?X-Amz-Algorithm=...&X-Amz-Signature=...",
   "expiresAt": "2026-04-21T11:30:00Z"
 }
 ```
@@ -109,7 +137,7 @@ before lookup or capacity admission. The optional audio `mode` remains unchanged
 
 Legacy clients may still send `fileKey` (maximum 500 characters), but it is
 **ignored**, including when it disagrees with metadata. The orchestrator forwards
-the verified Bearer token to `GET /api/files/{id}/metadata` and uses only its
+the verified Bearer token to `POST /api/files/{id}/claim` and uses only its
 canonical `objectKey` for the saved analysis and every detector task. The response's
 `fileKey` is that canonical value. `X-User-ID` does not establish identity.
 
@@ -269,7 +297,7 @@ touch and may be shared by other analyses — its lifecycle is the file service'
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "userId": "keycloak-sub-uuid",
   "fileId": "550e8400-e29b-41d4-a716-446655440000",
-  "fileKey": "550e8400-e29b-41d4-a716-446655440000_test.mp4",
+  "fileKey": "550e8400-e29b-41d4-a716-446655440000.mp4",
   "type": "VIDEO",
   "status": "COMPLETED",
   "verdict": "FAKE",
