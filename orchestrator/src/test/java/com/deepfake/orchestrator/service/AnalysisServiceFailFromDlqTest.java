@@ -67,7 +67,7 @@ class AnalysisServiceFailFromDlqTest {
 
         ArgumentCaptor<String> msg = ArgumentCaptor.forClass(String.class);
         verify(repository).failSourceIfUnaccepted(eq(id), eq("video"), eq(AnalysisStatus.FAILED), msg.capture(), any(), any());
-        assertThat(msg.getValue()).isEqualTo("dead-letter: boom");
+        assertThat(msg.getValue()).isEqualTo("[DEAD_LETTERED] Nie udało się zakończyć analizy.");
         verifyNoInteractions(backpressure);
         verify(streams).sendResult(eq(id), any());
         verify(values).set("cancel:" + id, "1", Duration.ofHours(2));

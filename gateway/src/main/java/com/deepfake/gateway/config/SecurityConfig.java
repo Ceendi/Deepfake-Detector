@@ -1,5 +1,13 @@
 package com.deepfake.gateway.config;
 
+import static org.springframework.security.config.Customizer.withDefaults;
+
+import java.util.Arrays;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.reactive.CorsConfigurationSource;
+import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -17,9 +25,23 @@ import reactor.core.publisher.Mono;
 class SecurityConfig {
 
     @Bean
+    CorsConfigurationSource corsConfigurationSource(@Value("${gateway.cors-origins}") String origins) {
+        CorsConfiguration cors = new CorsConfiguration();
+        cors.setAllowedOrigins(Arrays.stream(origins.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList());
+        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+        cors.setAllowedHeaders(List.of("*"));
+        cors.setAllowCredentials(true);
+        cors.setMaxAge(3600L);
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", cors);
+        return source;
+    }
+
+    @Bean
     SecurityWebFilterChain chain(ServerHttpSecurity http, JwtRoleConverter jwtConverter,
                                 Environment environment) {
         return http
+                .cors(withDefaults())
                 .csrf(ServerHttpSecurity.CsrfSpec::disable) // stateless API
                 .authorizeExchange(ex -> ex
                         .pathMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus")

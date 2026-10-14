@@ -60,6 +60,7 @@ class AnalysisFileResolutionIntegrationTest {
     static volatile boolean slowHeaders;
     static volatile boolean slowBody;
     static volatile String authorization;
+    static volatile String correlation;
     static volatile String identityHeader;
     static final HttpServer server = startServer();
 
@@ -69,6 +70,7 @@ class AnalysisFileResolutionIntegrationTest {
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
             server.createContext("/api/files/" + FILE + "/metadata", exchange -> {
                 authorization = exchange.getRequestHeaders().getFirst("Authorization");
+                correlation = exchange.getRequestHeaders().getFirst("X-Correlation-ID");
                 identityHeader = exchange.getRequestHeaders().getFirst("X-User-ID");
                 try {
                     if (slowHeaders) Thread.sleep(1500);
@@ -139,6 +141,14 @@ class AnalysisFileResolutionIntegrationTest {
         verifyNoInteractions(rabbit);
         assertThat(authorization).isEqualTo("Bearer verified-token");
         assertThat(identityHeader).isNull();
+    }
+
+    @Test void metadataLookupPropagatesRequestCorrelationId() {
+        org.slf4j.MDC.put("correlationId", "request-123");
+        try {
+            facade.create(request(null), "alice", "verified-token");
+            assertThat(correlation).isEqualTo("request-123");
+        } finally { org.slf4j.MDC.remove("correlationId"); }
     }
 
     @Test void fileIdAloneIsSufficient() {
