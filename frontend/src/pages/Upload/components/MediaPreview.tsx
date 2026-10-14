@@ -10,9 +10,23 @@ import { isVideoFile, getExt, formatMB, formatDuration } from '../upload-utils'
 import styles from '../Upload.module.css'
 
 // Wspólny podgląd pliku (media + wiersz metadanych) — używany w Preview/Uploading/Analyzing.
-// Sam czyta długość mediów z onLoadedMetadata, żeby nie przeciągać duration przez całą stronę.
-export function MediaPreview({ file, previewUrl }: { file: File; previewUrl: string }) {
-  const [duration, setDuration] = useState<number | null>(null)
+// Sam czyta długość mediów z onLoadedMetadata; `onDuration` przekazuje ją wyżej do walidacji limitu.
+export function MediaPreview({
+  file,
+  previewUrl,
+  onDuration,
+}: {
+  file: File
+  previewUrl: string
+  onDuration?: (seconds: number) => void
+}) {
+  const [duration, setDurationState] = useState<number | null>(null)
+  // Przeglądarki nie odtwarzają np. AVI — plik jest poprawny, brakuje tylko podglądu.
+  const [previewFailed, setPreviewFailed] = useState(false)
+  function setDuration(seconds: number) {
+    setDurationState(seconds)
+    onDuration?.(seconds)
+  }
   const isVideo = isVideoFile(file)
   const ext = getExt(file.name).toUpperCase()
 
@@ -27,10 +41,23 @@ export function MediaPreview({ file, previewUrl }: { file: File; previewUrl: str
   return (
     <>
       <div className={clsx(styles.media, !isVideo && styles.mediaAudio)}>
-        {isVideo ? (
-          <VideoPlayer src={previewUrl} onDuration={setDuration} />
+        {previewFailed ? (
+          <p className={styles.previewUnavailable}>
+            Podgląd niedostępny dla tego formatu w przeglądarce. Długość pliku sprawdzi serwer.
+          </p>
+        ) : isVideo ? (
+          <VideoPlayer
+            src={previewUrl}
+            onDuration={setDuration}
+            onError={() => setPreviewFailed(true)}
+          />
         ) : (
-          <AudioPlayer className={styles.audio} src={previewUrl} onDuration={setDuration} />
+          <AudioPlayer
+            className={styles.audio}
+            src={previewUrl}
+            onDuration={setDuration}
+            onError={() => setPreviewFailed(true)}
+          />
         )}
       </div>
 

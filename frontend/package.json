@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "analyze": "tsc -b && vite build --mode analyze",
     "build-keycloak-theme": "npm run build && keycloakify build",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -20,18 +21,13 @@
     "commitlint": "commitlint --edit"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.2.2",
-    "@stomp/stompjs": "^7.3.0",
     "clsx": "^2.1.1",
     "keycloak-js": "^26.2.4",
     "keycloakify": "^11.15.9",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
-    "react-hook-form": "^7.75.0",
-    "react-router-dom": "^7.18.4",
-    "sockjs-client": "^1.6.1",
-    "zod": "^4.4.3"
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",
@@ -44,7 +40,6 @@
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@types/sockjs-client": "^1.5.4",
     "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",

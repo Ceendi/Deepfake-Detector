@@ -1,5 +1,5 @@
 // Orchestrator — start analizy, pobranie, lista (paginacja), anulowanie.
-// Kontrakt: docs/contracts/rest-api.md. SSE (stream postępu) i report.pdf → osobno (KROK 10/11).
+// Kontrakt: docs/contracts/rest-api.md. SSE (stream postępu) → stream.ts / watch-analysis.ts.
 import { apiFetch, apiErrorFrom } from './client'
 import { env } from '@/config/env'
 import { getToken } from '@/auth/keycloak'
@@ -65,4 +65,40 @@ export async function fetchArtifact(url: string, signal?: AbortSignal): Promise<
     )
   }
   return response.blob()
+}
+
+// GET /api/analysis/{id}/report.pdf → PDF jako Blob. Wymaga Bearer, więc zwykły <a href> nie zadziała
+// (przeglądarka nie doda nagłówka Authorization). 409 = raport niegotowy (analiza nie COMPLETED).
+export async function fetchReportPdf(
+  id: string,
+  signal?: AbortSignal,
+): Promise<{ blob: Blob; filename: string }> {
+  const correlationId = newCorrelationId()
+  const token = await getToken()
+
+  const headers: Record<string, string> = {
+    // JSON obok PDF — inaczej odpowiedź błędu (409/404) nie ma akceptowalnego typu i serwer zwraca 406.
+    Accept: 'application/pdf, application/json',
+    'X-Correlation-Id': correlationId,
+  }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const response = await fetch(`${env.apiBaseUrl}/analysis/${id}/report.pdf`, { headers, signal })
+  if (!response.ok) {
+    throw apiErrorFrom(
+      response.status,
+      null,
+      response.headers.get('X-Correlation-Id') ?? correlationId,
+    )
+  }
+  return {
+    blob: await response.blob(),
+    filename:
+      filenameFromDisposition(response.headers.get('Content-Disposition')) ?? `report-${id}.pdf`,
+  }
+}
+
+function filenameFromDisposition(header: string | null): string | null {
+  const name = header?.match(/filename="?([^";]+)"?/i)?.[1]?.trim()
+  return name || null
 }

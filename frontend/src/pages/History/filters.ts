@@ -83,11 +83,13 @@ function typeMatches(filter: string, type: AnalysisType): boolean {
 
 // Filtrowanie po stronie klienta. TODO(backend): gdy GET /api/analysis dostanie query params
 // (status/type/verdict/from/to) + `name` w projekcji → przejść na server-side filter + paginację.
-// Szukajka działa po `fileId` (lista nie zwraca nazwy pliku — patrz AnalysisSummary).
+// Szukajka działa po nazwie pliku z metadanych File Service (`fileNames`: fileId → nazwa) oraz po
+// `fileId` — lista analiz nie zwraca nazwy pliku (patrz AnalysisSummary).
 export function applyFilters(
   items: AnalysisSummary[],
   filters: Filters,
   query: string,
+  fileNames: ReadonlyMap<string, string> = new Map(),
 ): AnalysisSummary[] {
   const q = query.trim().toLowerCase()
   const rangeMs = RANGE_MS[filters.range]
@@ -98,7 +100,11 @@ export function applyFilters(
     if (!typeMatches(filters.type, it.type)) return false
     if (filters.verdict !== 'all' && it.verdict !== filters.verdict) return false
     if (rangeMs && now - new Date(it.createdAt).getTime() > rangeMs) return false
-    if (q && !it.fileId.toLowerCase().includes(q)) return false
+    if (q && !matchesQuery(it.fileId, fileNames.get(it.fileId), q)) return false
     return true
   })
+}
+
+function matchesQuery(fileId: string, name: string | undefined, q: string): boolean {
+  return (name?.toLowerCase().includes(q) ?? false) || fileId.toLowerCase().includes(q)
 }

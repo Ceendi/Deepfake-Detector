@@ -5,7 +5,7 @@ import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'node:path'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     // Theme Keycloacka budowany z tego samego projektu (Keycloakify). themeName = loginTheme
@@ -18,7 +18,9 @@ export default defineConfig({
         'all-other-versions': 'keycloak-theme.jar',
       },
     }),
-    visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
+    // Raport rozmiaru bundla tylko na żądanie (`npm run analyze`) — nie trafia do zwykłego builda.
+    mode === 'analyze' &&
+      visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
   ],
   resolve: {
     alias: {
@@ -38,4 +40,4 @@ export default defineConfig({
       '/api': { target: 'http://localhost:8080', changeOrigin: true },
     },
   },
-})
+}))

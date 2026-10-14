@@ -6,6 +6,7 @@ import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 import { Spinner } from '@/components/ui/Spinner/Spinner'
 import { Alert } from '@/components/ui/Alert/Alert'
 
+import { useFileNames } from './file-meta'
 import { useHistory } from './use-history'
 import { HistoryToolbar } from './components/HistoryToolbar'
 import { HistoryEmpty } from './components/HistoryEmpty'
@@ -73,7 +74,14 @@ export default function History() {
     activeFilters.push({ id: 'range', label: `Zakres: ${labelOf(RANGE_OPTIONS, filters.range)}` })
   if (query.trim() !== '') activeFilters.push({ id: 'query', label: `„${query.trim()}”` })
 
-  const filtered = useMemo(() => applyFilters(items, filters, query), [items, filters, query])
+  // Nazwy wszystkich plików ładujemy dopiero przy pierwszym wyszukiwaniu (osobne żądanie na plik).
+  const searching = query.trim() !== ''
+  const fileIds = useMemo(() => items.map((it) => it.fileId), [items])
+  const { names: fileNames, loading: namesLoading } = useFileNames(fileIds, searching)
+  const filtered = useMemo(
+    () => applyFilters(items, filters, query, fileNames),
+    [items, filters, query, fileNames],
+  )
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages - 1) // klamruj bez setState (np. po zawężeniu filtra)
@@ -119,7 +127,11 @@ export default function History() {
             onClear={clearAll}
           />
 
-          {filtered.length === 0 ? (
+          {filtered.length === 0 && searching && namesLoading ? (
+            <div className={styles.center}>
+              <Spinner label="Szukam po nazwach plików…" />
+            </div>
+          ) : filtered.length === 0 ? (
             <HistoryNoResults onClear={clearAll} />
           ) : (
             <HistoryList

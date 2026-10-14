@@ -6,9 +6,9 @@ export interface AuthState {
   isAuthenticated: boolean
   isLoading: boolean
   user: AuthUser | null
-  login: () => void
+  login: (redirectPath?: string) => void
   logout: () => void
-  register: () => void
+  register: (redirectPath?: string) => void
 }
 
 export const AuthContext = createContext<AuthState | null>(null)

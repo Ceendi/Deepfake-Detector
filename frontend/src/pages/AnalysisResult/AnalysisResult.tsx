@@ -1,18 +1,16 @@
 import { useEffect, useState } from 'react'
 
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 
-import { ChevronLeft, Trash2 } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 
-import { getAnalysis, deleteAnalysisRecord } from '@/api/analysis'
+import { getAnalysis } from '@/api/analysis'
 import { ApiError } from '@/api/errors'
 import type { Analysis } from '@/api/types'
 
 import { Spinner } from '@/components/ui/Spinner/Spinner'
 import { Alert } from '@/components/ui/Alert/Alert'
-import { Button } from '@/components/ui/Button/Button'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog/ConfirmDialog'
 
 import { ResultHeader } from './components/ResultHeader'
 import { VerdictHero } from './components/VerdictHero'
@@ -23,6 +21,7 @@ import { AudioTimeline } from './components/AudioTimeline'
 import { SummarySection } from './components/SummarySection'
 import { ReportPdfButton } from './components/ReportPdfButton'
 import { AnalysisStatusState } from './components/AnalysisStatusState'
+import { DeleteAnalysisButton } from './components/DeleteAnalysisButton'
 import { LiveProgress } from './components/LiveProgress'
 
 import styles from './AnalysisResult.module.css'
@@ -32,15 +31,15 @@ type LoadState = 'loading' | 'ready' | 'notfound' | 'error'
 // Strona wyniku analizy. COMPLETED → werdykt + Grad-CAM (realne) + placeholdery (wnioski/model);
 // PENDING/PROCESSING → LiveProgress (postęp na żywo z SSE); FAILED/CANCELLED → AnalysisStatusState.
 // Po `result`/anulowaniu LiveProgress woła onSettled → refetch przełącza widok. Raport PDF osobno.
-export default function AnalysisResult() {
+export default function AnalysisResultRoute() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  // key = id: przejście na inną analizę montuje stronę od nowa, bez treści i stanu poprzedniej.
+  return <AnalysisResult key={id} id={id} />
+}
+
+function AnalysisResult({ id }: { id: string | undefined }) {
   const [state, setState] = useState<LoadState>('loading')
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
-  // Trwałe usunięcie zakończonej analizy: modal potwierdzenia + stan żądania + ewentualny błąd.
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   // Bump po SSE `result` / anulowaniu (LiveProgress.onSettled) → efekt poniżej przeładowuje pełny
   // zasób, przełączając ekran „w toku" na werdykt / FAILED / CANCELLED. setState w callbackach
   // promisy (nie synchronicznie w efekcie) — wymóg react-hooks/set-state-in-effect.
@@ -100,31 +99,6 @@ export default function AnalysisResult() {
     analysis.status === 'COMPLETED' && analysis.verdict != null && analysis.confidence != null
   const isInProgress = analysis.status === 'PENDING' || analysis.status === 'PROCESSING'
 
-  function closeDeleteConfirm() {
-    if (deleting) return // nie zamykaj w trakcie żądania
-    setConfirmDelete(false)
-    setDeleteError(null)
-  }
-
-  async function handleDelete() {
-    setDeleting(true)
-    setDeleteError(null)
-    try {
-      await deleteAnalysisRecord(id!) // hard delete; replace, by „wstecz" nie wracał na usunięty zasób
-      navigate('/history', { replace: true })
-    } catch (err) {
-      // 404 = już usunięta (lub cudza) → efekt docelowy ten sam, więc też przechodzimy do historii.
-      if (err instanceof ApiError && err.isNotFound) {
-        navigate('/history', { replace: true })
-        return
-      }
-      setDeleteError(
-        err instanceof ApiError ? err.message : 'Nie udało się usunąć analizy. Spróbuj ponownie.',
-      )
-      setDeleting(false) // zostań w modalu, pozwól ponowić
-    }
-  }
-
   return (
     <div className={styles.page}>
       <Link to="/history" className={styles.backLink}>
@@ -148,38 +122,15 @@ export default function AnalysisResult() {
               Wróć do historii
             </LinkButton>
             <div className={styles.footerEnd}>
-              <Button
-                variant="danger"
-                size="md"
-                leftIcon={Trash2}
-                onClick={() => setConfirmDelete(true)}
-              >
-                Usuń analizę
-              </Button>
-              <ReportPdfButton variant="primary" label="Pobierz raport PDF" />
+              <DeleteAnalysisButton analysis={analysis} />
+              <ReportPdfButton
+                analysisId={analysis.id}
+                status={analysis.status}
+                variant="primary"
+                label="Pobierz raport PDF"
+              />
             </div>
           </footer>
-
-          <ConfirmDialog
-            open={confirmDelete}
-            title="Usunąć analizę?"
-            confirmLabel="Usuń analizę"
-            danger
-            isLoading={deleting}
-            confirmIcon={Trash2}
-            onConfirm={handleDelete}
-            onCancel={closeDeleteConfirm}
-          >
-            <p>
-              Ta operacja jest nieodwracalna — analiza zniknie z Twojej historii, a wraz z nią
-              raport i heatmapy Grad-CAM.
-            </p>
-            {deleteError && (
-              <Alert variant="danger" title="Nie udało się usunąć">
-                {deleteError}
-              </Alert>
-            )}
-          </ConfirmDialog>
         </>
       ) : isInProgress ? (
         <LiveProgress
@@ -192,7 +143,10 @@ export default function AnalysisResult() {
           }}
         />
       ) : (
-        <AnalysisStatusState analysis={analysis} />
+        <AnalysisStatusState
+          analysis={analysis}
+          deleteAction={<DeleteAnalysisButton analysis={analysis} />}
+        />
       )}
     </div>
   )

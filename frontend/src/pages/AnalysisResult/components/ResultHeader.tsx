@@ -17,6 +17,8 @@ import styles from '../AnalysisResult.module.css'
 export function ResultHeader({ analysis }: { analysis: Analysis }) {
   const Icon = analysis.type === 'AUDIO' ? AudioLines : Video
   const inProgress = analysis.status === 'PENDING' || analysis.status === 'PROCESSING'
+  // FAILED/CANCELLED nigdy nie będą miały raportu.
+  const reportPossible = inProgress || analysis.status === 'COMPLETED'
   // W toku nie ma jeszcze „czasu analizy" → pokaż kiedy ruszyła; po zakończeniu — ile trwała.
   const timeInfo = inProgress
     ? `rozpoczęto: ${relativeTime(analysis.createdAt)}`
@@ -45,7 +47,14 @@ export function ResultHeader({ analysis }: { analysis: Analysis }) {
         <LinkButton to="/history" variant="ghost" size="md" leftIcon={ChevronLeft}>
           Historia
         </LinkButton>
-        <ReportPdfButton variant="ghost" label="Pobierz PDF" />
+        {reportPossible && (
+          <ReportPdfButton
+            analysisId={analysis.id}
+            status={analysis.status}
+            variant="ghost"
+            label="Pobierz PDF"
+          />
+        )}
       </div>
     </header>
   )
