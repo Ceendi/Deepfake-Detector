@@ -9,11 +9,11 @@ description = "Audio Detector Service for Deepfakes"
 requires-python = ">=3.12"
 dependencies = [
     "deepfake-detector-runtime",
-    "fastapi==0.136.*",
+    "fastapi>=0.136,<0.144",
     "uvicorn[standard]==0.46.*",
     "pika==1.4.*",
-    "pydantic==2.13.*",
-    "prometheus-client==0.25.*",
+    "pydantic>=2.13,<2.15",
+    "prometheus-client>=0.25,<0.27",
     "structlog==25.*",
     "boto3==1.42.*",
     "opentelemetry-sdk>=1.30",
