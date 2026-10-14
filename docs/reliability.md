@@ -19,8 +19,20 @@ Compose runs Eureka, gateway, file-service and the single orchestrator instance 
 stopped. An unhealthy healthcheck alone does not restart a container. Java containers use bounded
 `json-file` logs (three 10 MiB files) and memory limits: 512 MiB each for Eureka/gateway, 1 GiB
 each for orchestrator/file-service (per replica). With two file-service replicas, the running
-`core` + `auth` + `ml` services have 14.25 GiB of configured memory limits; allow additional room
-for Docker, the host and optional monitoring services.
+`core` + `auth` + `ml` services have 14.25 GiB of configured memory limits. Monitoring adds
+2 GiB: 512 MiB each for Prometheus, Loki and Tempo, and 256 MiB each for Grafana and Alloy.
+The combined limit is 16.25 GiB (15.25 GiB with one file-service replica), excluding one-shot
+init containers. These are ceilings, not reservations; allow additional room for Docker and
+the host, and use fewer profiles on a 16 GiB machine.
+
+Eureka, gateway, file-service and monitoring drop all capabilities, prevent privilege escalation
+and cap processes at 300. Eureka/gateway and monitoring use read-only root filesystems with a
+64 MiB `/tmp` tmpfs; writable monitoring state lives in named volumes. The root-run monitoring
+services retain only `DAC_OVERRIDE` to write existing volumes owned by root or their image user.
+Grafana uses its image user and a new `grafana-data` volume, preserving its SQLite state across
+recreation; settings in an old container's writable layer are not migrated automatically.
+File-service keeps its writable root filesystem because multipart spooling must use disk:
+charging two copies of a 500 MiB upload to tmpfs would exhaust its 1 GiB memory budget.
 
 Java images set `-XX:MaxRAMPercentage=75` alongside compact object headers. The maximum heap is
 approximately 384 MiB for Eureka/gateway and 768 MiB for orchestrator/file-service, rather than
@@ -32,6 +44,14 @@ The core integration test reads effective JVM flags and heap sizes inside every 
 The orchestrator container probes `/actuator/health/liveness`. The `amqpRecovery` contributor
 remains in readiness, which can stay DOWN after a broker outage until a successful delivery or
 recovery publication. That readiness state must not make a live process an unhealthy container.
+Gateway probes its internal management port (`9090/actuator/health`). RabbitMQ checks both
+`check_running` and `check_port_connectivity`, rather than only Erlang-node reachability.
+
+RabbitMQ's effective memory budget is explicitly `512MB` (512,000,000 bytes) and the quorum WAL is capped at
+64 MiB (`raft.wal_max_size_bytes=67108864`), leaving room for the Erlang runtime. Queue arguments,
+delivery limits and application retry policy stay the same. Redis caps dataset memory at 200 MiB
+inside its 256 MiB container and uses `volatile-lru`: only expiring hints/buckets can be evicted;
+non-expiring keys are kept. The existing Redis outage behavior still applies to command errors.
 
 RabbitMQ uses a stable hostname (`RABBITMQ_HOSTNAME`, default `rabbitmq`) so the node name and
 its storage directory remain the same when Compose recreates the container with `rabbitmqdata`.
@@ -48,6 +68,17 @@ node name before starting RabbitMQ. See [RabbitMQ backup and restore](https://ww
 Tests: `infra/tests/test_core_reliability.py` boots `core` on fresh isolated volumes, kills Java
 processes, recreates RabbitMQ with a persistent message, verifies liveness during failed AMQP
 recovery, and checks real Prometheus scrapes during file-service scaling.
+It also reads the live broker/Redis memory settings. `infra/tests/test_monitoring_configuration.py`
+runs native Prometheus/Loki/Alloy validators against valid and broken configs, checks dashboard JSON,
+boots monitoring on fresh volumes and verifies that Alloy excludes another project's logs.
+
+Alloy filters Docker discovery by `com.docker.compose.project`, using the automatically resolved
+Compose project name (including `--project-name` overrides). Prometheus's HTTP lifecycle/reload
+endpoint is disabled; edit configuration and recreate the container to apply it.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ALLOY_COMPOSE_PROJECT` | resolved Compose project name | Internal Alloy environment value supplied by Compose, not a separate deployment override |
 
 ## Identity, management and image updates
 
@@ -71,6 +102,20 @@ workflow; HIGH findings remain reported under its existing policy. Dependabot up
 the four Java Dockerfiles, and every action in the job with `packages: write` is pinned
 to a verified full commit SHA with its version comment. The publishing workflow remains
 manual. Regression guards run in Infrastructure smoke.
+
+Dependabot also tracks the detector Dockerfiles, all three uv projects, four Maven projects and
+frontend npm dependencies. Spring Boot/Spring Cloud major updates require a deliberate migration.
+Alloy upgrades OpenSSL without pinning an apt revision and asserts both packages are at least
+`3.0.13-0ubuntu3.16`; PostgreSQL installs/upgrades su-exec and asserts at least `0.3-r0`.
+Newer base-image packages are never downgraded. Checksum-based remote `ADD` uses the versioned
+Dockerfile 1.7 frontend rather than depending on the engine's bundled frontend.
+
+Application/detector CI reports every HIGH/CRITICAL finding in JSON artifacts, but blocks only
+findings with a published fix (`ignore-unfixed: true` in the blocking scan). The separate Compose
+security scan keeps its existing CRITICAL gate. CI and infrastructure actions are pinned to full
+SHAs. Superseded PR runs are cancelled; main runs are allowed to finish. Infrastructure smoke now
+covers all monitoring/security configs and the Keycloak theme, including native config validation
+and the regression guards in `infra/tests/test_ci_reliability.py`.
 
 ## Broker users and internal storage APIs
 
@@ -225,27 +270,62 @@ connection loop and a single inference thread per process.
   persistent and `mandatory=True` on a confirm channel; the task is ACKed only after the confirm.
   A return, nack, lost connection or failed ACK escapes to the reconnect loop: the connection is
   closed (releasing unacked work to RabbitMQ) and the worker reconnects after 5 s. Transport
-  failures never become an inference FAILED result. Malformed JSON is nacked to the task DLQ.
+  failures never become an inference FAILED result. Malformed JSON, a non-UTF-8 body or
+  excessive nesting is nacked to the task DLQ.
+- **Error classification:** only `DetectorError` subclasses (string `code`, deliberate Polish
+  message) publish their own code and message. Any other exception, including foreign objects
+  with a `code` attribute such as `cv2.error` (`-215`) or libsndfile errors, publishes
+  `PROCESSING_ERROR` with the neutral message; details stay in logs. The `failed` outcome
+  metric is recorded after the ACK, like `completed`.
+- **Object storage outages:** connection errors, timeouts, exhausted transfer retries, 5xx, 429
+  and botocore's retryable throttling/timeout codes (`SlowDown`, `RequestTimeout`, …) while downloading the input or uploading artifacts are treated as transport
+  failures: no result is published, the connection is closed, and RabbitMQ redelivers the task
+  within `x-delivery-limit=5`. Consecutive outages back off the reconnect 5 s → 10 s → 20 s →
+  30 s (reset after the next ACKed task), so roughly two minutes of S3 outage are absorbed before
+  the task dead-letters to FAILED. These warnings carry only the error type: botocore messages
+  include the object URL with the user's file name. Missing or forbidden input (`404`/`NoSuchKey`/`403`) stays
+  `FAILED/PROCESSING_ERROR`; a forbidden artifact upload still only drops that heatmap.
+- **Task watchdog:** a separate thread checks the running attempt once a second. An attempt
+  exceeding `DETECTOR_TASK_HARD_LIMIT_SECONDS` (a hung ffmpeg or native ONNX call cannot be
+  interrupted) marks the consumer DOWN and exits the process with status 1; Compose restarts it
+  (`unless-stopped`) and RabbitMQ redelivers the task, counted toward the delivery limit. Audio
+  ffmpeg extraction additionally runs with `-nostdin` and a timeout of
+  `60 + MEDIA_MAX_DURATION_SECONDS / 10` seconds, which fails the task with `PROCESSING_ERROR`.
+  The default limit is deliberately above the 600 s stuck-job idle threshold, so a legitimate
+  long analysis is never killed; a hung attempt may block the worker up to an hour after
+  stuck recovery has already failed the analysis, and its late result is rejected by the guard.
+- **Credentials:** `RABBITMQ_PASSWORD`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` have no defaults.
+  Missing storage keys stop the import; a missing broker password keeps the API up with
+  `/health` DOWN and logs the reason on every reconnect attempt.
 - **Isolation of duplicates:** each attempt works in a private temp directory, and Grad-CAM keys
   carry an attempt UUID (`{analysisId}/{source}/gradcam_..._{attempt}.png`), so a duplicate never
   overwrites artifacts referenced by the accepted result.
 - **Start ping:** a worker publishes `0/LOADING` before downloading, which flips the analysis to
   `PROCESSING` and records that source's first pickup and latest progress in PostgreSQL.
   Later progress renews only that source's idle clock.
-- **Readiness:** models load once at startup. If loading fails the process stays up, `/health`
+- **Readiness:** models load once at startup. If loading fails, including an import error of the
+  ML stack, the process stays up, `/health`
   returns `503 DOWN`, and each task immediately gets a `FAILED` result with code
   `MODEL_UNAVAILABLE` (no download, progress or inference). `/health` is `UP` only with loaded
   models, a connected consumer and a fresh consumer heartbeat. Fix the model and restart the
   container; there is no automatic reload, and Compose does not restart unhealthy containers.
+
+Cancel checks fail open; after a Redis error the worker skips them for 5 s instead of paying
+the 1 s socket timeout on every progress tick.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DETECTOR_TASK_HARD_LIMIT_SECONDS` | `3600` | Positive finite limit for one attempt before the worker restarts |
 
 Process kill before publishing → RabbitMQ redelivers and another worker recomputes. Kill after
 confirm but before ACK → the result may be published twice. A network loss is detected through
 the 30 s heartbeat (allow about a minute) plus the 5 s reconnect delay; this must fit inside the
 stuck-job idle budget below.
 
-Tests: `detector-runtime/tests/` (shared delivery guards), `tests/worker_redelivery/`
+Tests: `detector-runtime/tests/` (shared delivery guards, `test_failures.py` for error
+classification, storage outages and the watchdog), `tests/worker_redelivery/`
 (real worker processes with RabbitMQ and Redis; inference is
-stubbed), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
+stubbed, including S3 outage redelivery and the DLQ after the delivery limit), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
 
 ## Media duration and audio progress
 

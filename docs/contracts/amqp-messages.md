@@ -234,9 +234,14 @@ threshold, and `NO_AUDIO_TRACK` when a successful ffprobe audio-stream query
 returns an empty stream list. Failed, timed-out or invalid probes and failed audio
 extraction remain `PROCESSING_ERROR`; they must not be interpreted as missing audio.
 `NO_AUDIO_TRACK` carries the neutral localized message “Materiał nie zawiera ścieżki
-audio.” Generic processing failures use a neutral message without exception text or
-local file paths; full exceptions remain in internal logs. Existing domain codes
-retain their deliberate messages.
+audio.” Generic processing failures use `PROCESSING_ERROR` with the neutral message
+“Nie udało się przetworzyć materiału. Spróbuj ponownie.” without exception text or
+local file paths; full exceptions remain in internal logs. Only detector domain errors
+(the shared runtime's `DetectorError`) publish their own code and deliberate message;
+any other exception, even one carrying a `code` attribute, is `PROCESSING_ERROR`.
+`MODEL_UNAVAILABLE` (both detectors) carries “Usługa analizy jest chwilowo niedostępna.
+Spróbuj ponownie później.” Transient object storage failures publish no result: the
+task is redelivered (see `docs/reliability.md`).
 
 AUDIO remains FAILED for either `NO_SPEECH` or `NO_AUDIO_TRACK`. For FULL, only these
 exact audio codes may be accepted as a durable `details.audio` marker with `status:
