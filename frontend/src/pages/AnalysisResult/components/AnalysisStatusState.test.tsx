@@ -37,7 +37,9 @@ describe('analysis failure explanation', () => {
     )
     expect(screen.getByText('Analiza nie powiodła się')).toBeInTheDocument()
     expect(screen.getAllByText(/Wgraj nagranie z wyraźnie słyszalną mową/)[0]).toBeInTheDocument()
-    expect(screen.getByText(`[${failure.error.code}] ${failure.error.message}`)).toBeInTheDocument()
+    expect(screen.getByText(`Kod błędu: ${failure.error.code}`)).toBeInTheDocument()
+    // Surowa treść z detektora nie trafia do UI — tylko kod.
+    expect(screen.queryByText(new RegExp(`\\[${failure.error.code}\\]`))).not.toBeInTheDocument()
     expect(screen.queryByText(/Plik może być uszkodzony/)).not.toBeInTheDocument()
     expect(screen.queryByText('REAL')).not.toBeInTheDocument()
     expect(screen.queryByText('FAKE')).not.toBeInTheDocument()
@@ -56,12 +58,53 @@ describe('analysis failure explanation', () => {
     expect(screen.getAllByText(new RegExp(message))[0]).toBeInTheDocument()
   })
 
-  it('retains the existing generic failure explanation for other codes', () => {
+  it.each([
+    ['NO_FACE_DETECTED', 'Nie wykryto twarzy w nagraniu'],
+    ['MODEL_UNAVAILABLE', 'Usługa analizy jest chwilowo niedostępna'],
+    ['PROCESSING_ERROR', 'Nie udało się przetworzyć materiału'],
+    ['ANALYSIS_TIMEOUT', 'Analiza trwała zbyt długo'],
+    ['DEAD_LETTERED', 'Nie udało się zakończyć analizy'],
+  ])('explains %s with its own message, without blaming the file', (code, message) => {
     render(
       <MemoryRouter>
-        <AnalysisStatusState analysis={failedAnalysis('[PROCESSING_ERROR] Decode failed.')} />
+        <AnalysisStatusState analysis={failedAnalysis(`[${code}] Stack trace: boom.py:12`)} />
       </MemoryRouter>,
     )
-    expect(screen.getByText(/Plik może być uszkodzony/)).toBeInTheDocument()
+    expect(screen.getByText(new RegExp(message))).toBeInTheDocument()
+    expect(screen.queryByText(/Plik może być uszkodzony/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/boom\.py/)).not.toBeInTheDocument()
+  })
+
+  it('falls back to a neutral explanation for unknown codes', () => {
+    render(
+      <MemoryRouter>
+        <AnalysisStatusState analysis={failedAnalysis('[BRAND_NEW] detail')} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByText(/Nie udało się dokończyć przetwarzania/)).toBeInTheDocument()
+    expect(screen.queryByText(/Plik może być uszkodzony/)).not.toBeInTheDocument()
+  })
+
+  it('renders the delete action for FAILED and CANCELLED analyses', () => {
+    const { unmount } = render(
+      <MemoryRouter>
+        <AnalysisStatusState
+          analysis={failedAnalysis('[PROCESSING_ERROR] x')}
+          deleteAction={<button type="button">Usuń analizę</button>}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Usuń analizę' })).toBeInTheDocument()
+    unmount()
+
+    render(
+      <MemoryRouter>
+        <AnalysisStatusState
+          analysis={{ ...failedAnalysis(''), status: 'CANCELLED', errorMessage: null }}
+          deleteAction={<button type="button">Usuń analizę</button>}
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('button', { name: 'Usuń analizę' })).toBeInTheDocument()
   })
 })

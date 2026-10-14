@@ -287,9 +287,9 @@ describe('useAnalysisFlow', () => {
     expect(getAnalysis).toHaveBeenCalledTimes(1)
   })
 
-  it('wynik FAILED dociąga errorMessage z pełnego zasobu', async () => {
+  it('wynik FAILED dociąga errorMessage z pełnego zasobu i mapuje kod na komunikat', async () => {
     vi.mocked(getAnalysis).mockResolvedValue(
-      analysis({ status: 'FAILED', errorMessage: 'Detektor padł' }),
+      analysis({ status: 'FAILED', errorMessage: '[MODEL_UNAVAILABLE] Model file missing' }),
     )
     const { result } = renderFlow()
     await startUntilAnalyzing(result)
@@ -306,11 +306,26 @@ describe('useAnalysisFlow', () => {
     await waitFor(() =>
       expect(result.current.state).toEqual({
         name: 'failed',
-        message: 'Detektor padł',
+        message: 'Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie później.',
         retry: 'reset',
       }),
     )
     expect(getAnalysis).toHaveBeenCalledWith('an-1', expect.any(AbortSignal))
+  })
+
+  it('typ analizy wynika z MIME wykrytego przez backend, nie z rozszerzenia', async () => {
+    // `.mp4` z samą ścieżką dźwiękową — file-service wykrywa audio/mp4.
+    vi.mocked(uploadFileWithProgress).mockResolvedValue({
+      fileId: 'f1',
+      fileKey: 'k1',
+      size: 1,
+      mimetype: 'audio/mp4',
+    })
+    const { result } = renderFlow()
+    await startUntilAnalyzing(result)
+
+    expect(startAnalysis).toHaveBeenCalledWith({ fileId: 'f1', type: 'AUDIO' })
+    expect(result.current.analysisType).toBe('AUDIO')
   })
 
   it('cancel w trakcie analizy woła cancelAnalysis i wraca do idle', async () => {

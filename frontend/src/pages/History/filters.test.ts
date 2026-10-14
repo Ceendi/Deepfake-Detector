@@ -110,6 +110,20 @@ describe('applyFilters', () => {
     expect(out.map((i) => i.id)).toEqual(['a'])
   })
 
+  it('szuka po nazwie pliku z metadanych (case-insensitive)', () => {
+    const items = [
+      summary({ id: 'a', fileId: 'f-1' }),
+      summary({ id: 'b', fileId: 'f-2' }),
+      summary({ id: 'c', fileId: 'f-3' }), // nazwa nieznana (np. plik usunięty)
+    ]
+    const names = new Map([
+      ['f-1', 'Wywiad_Prezes.mp4'],
+      ['f-2', 'nagranie.wav'],
+    ])
+    const out = applyFilters(items, DEFAULT_FILTERS, 'prezes', names)
+    expect(out.map((i) => i.id)).toEqual(['a'])
+  })
+
   it('łączy filtry koniunkcją (AND)', () => {
     const items = [
       summary({ id: 'match', type: 'AUDIO', verdict: 'FAKE' }),

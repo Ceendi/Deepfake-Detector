@@ -14,6 +14,11 @@ import styles from './Login.module.css'
 export default function Login() {
   const { isAuthenticated, isLoading, login, register } = useAuth()
   const location = useLocation()
+  // Deep link: ProtectedRoute zapisuje w state stronę, na którą użytkownik chciał wejść.
+  const fromLocation = (location.state as { from?: Partial<Location> } | null)?.from
+  const from = fromLocation?.pathname
+    ? `${fromLocation.pathname}${fromLocation.search ?? ''}${fromLocation.hash ?? ''}`
+    : '/'
 
   // Sprawdzanie sesji — spinner wyśrodkowany na tym samym tle co karta.
   if (isLoading) {
@@ -26,7 +31,6 @@ export default function Login() {
 
   // Już zalogowany → wracamy tam, skąd ProtectedRoute przekierował (albo na dashboard).
   if (isAuthenticated) {
-    const from = (location.state as { from?: Location } | null)?.from?.pathname ?? '/'
     return <Navigate to={from} replace />
   }
 
@@ -51,7 +55,7 @@ export default function Login() {
             size="md"
             leftIcon={LogIn}
             className={styles.actionBtn}
-            onClick={login}
+            onClick={() => login(from)}
           >
             Zaloguj się
           </Button>
@@ -60,7 +64,7 @@ export default function Login() {
             size="md"
             leftIcon={UserPlus}
             className={styles.actionBtn}
-            onClick={register}
+            onClick={() => register(from)}
           >
             Załóż konto
           </Button>

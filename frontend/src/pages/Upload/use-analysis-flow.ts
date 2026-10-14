@@ -5,7 +5,8 @@ import { startAnalysis, cancelAnalysis } from '@/api/analysis'
 import { CANCEL_FAILED_MESSAGE, cancelAndSettle } from '@/api/cancel-analysis'
 import { ApiError } from '@/api/errors'
 import { watchAnalysis } from '@/api/watch-analysis'
-import type { Analysis, AnalysisProgressEvent, AnalysisStatus } from '@/api/types'
+import { analysisFailureMessage } from '@/api/error-codes'
+import type { Analysis, AnalysisProgressEvent, AnalysisStatus, AnalysisType } from '@/api/types'
 
 import { isAbortError, messageForError, pickAnalysisType } from './upload-utils'
 
@@ -39,10 +40,12 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   const [bySource, setBySource] = useState<ProgressBySource>({})
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  // Typ wynika z MIME wykrytego przez backend — decyduje, które paski postępu pokazać.
+  const [analysisType, setAnalysisType] = useState<AnalysisType | null>(null)
 
   // One controller per run covers upload, start, stream and recovery; unmount aborts it.
   const flowRef = useRef<AbortController | null>(null)
-  const uploadedRef = useRef<{ fileId: string; file: File } | null>(null)
+  const uploadedRef = useRef<{ fileId: string; type: AnalysisType } | null>(null)
   const onCompleteRef = useRef(onComplete)
   useEffect(() => {
     onCompleteRef.current = onComplete
@@ -62,12 +65,14 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   async function start(file: File) {
     const signal = begin()
     uploadedRef.current = null
+    setAnalysisType(null)
     setUploadProgress(0)
     setState({ name: 'uploading' })
 
     let fileId: string
+    let mimetype: string
     try {
-      ;({ fileId } = await uploadFileWithProgress(file, {
+      ;({ fileId, mimetype } = await uploadFileWithProgress(file, {
         signal,
         onProgress: (pct) => {
           if (!signal.aborted) setUploadProgress(pct)
@@ -80,17 +85,19 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
     }
     if (signal.aborted) return // cancel tuż po zakończeniu uploadu nie tworzy analizy
 
-    uploadedRef.current = { fileId, file }
-    await launch(fileId, file, signal)
+    const type = pickAnalysisType(mimetype)
+    setAnalysisType(type)
+    uploadedRef.current = { fileId, type }
+    await launch(fileId, type, signal)
   }
 
-  async function launch(fileId: string, file: File, signal: AbortSignal) {
+  async function launch(fileId: string, type: AnalysisType, signal: AbortSignal) {
     setBySource({})
     setState({ name: 'starting' })
 
     let analysis: Analysis
     try {
-      analysis = await startAnalysis({ fileId, type: pickAnalysisType(file) })
+      analysis = await startAnalysis({ fileId, type })
     } catch (err) {
       if (signal.aborted) return
       // 404: the upload is gone, so only a fresh upload can help.
@@ -148,8 +155,11 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
     } else if (result.status === 'CANCELLED') {
       setState({ name: 'idle' })
     } else {
-      const message = result.errorMessage ?? 'Analiza nie powiodła się.'
-      setState({ name: 'failed', message, retry: 'reset' })
+      setState({
+        name: 'failed',
+        message: analysisFailureMessage(result.errorMessage),
+        retry: 'reset',
+      })
     }
   }
 
@@ -180,7 +190,7 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   function retry() {
     const uploaded = uploadedRef.current
     if (state.name === 'failed' && state.retry === 'start' && uploaded) {
-      void launch(uploaded.fileId, uploaded.file, begin())
+      void launch(uploaded.fileId, uploaded.type, begin())
       return
     }
     setState({ name: 'idle' })
@@ -189,6 +199,7 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   function reset() {
     flowRef.current?.abort()
     uploadedRef.current = null
+    setAnalysisType(null)
     setCancelling(false)
     setCancelError(null)
     setState({ name: 'idle' })
@@ -196,6 +207,7 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
 
   return {
     state,
+    analysisType,
     uploadProgress,
     bySource,
     cancelling,

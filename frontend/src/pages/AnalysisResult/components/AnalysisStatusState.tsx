@@ -1,38 +1,39 @@
+import type { ReactNode } from 'react'
+
 import { TriangleAlert, Ban, RotateCcw, ChevronLeft } from 'lucide-react'
 
+import { analysisFailureMessage, parseErrorMessage } from '@/api/error-codes'
 import type { Analysis } from '@/api/types'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 import { Spinner } from '@/components/ui/Spinner/Spinner'
 
 import styles from '../AnalysisResult.module.css'
 
-const FAILURE_MESSAGES: Record<string, string> = {
-  NO_SPEECH:
-    'Brak wystarczająco wyraźnego sygnału audio do analizy. Wgraj nagranie z wyraźnie słyszalną mową.',
-  NO_AUDIO_TRACK: 'Materiał nie zawiera ścieżki audio. Wgraj nagranie z dźwiękiem.',
-  MEDIA_TOO_LONG: 'Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.',
-}
-
 // Stany inne niż COMPLETED — duży placeholder zamiast cienkiego alertu: wypełnia przestrzeń karty
-// i jasno komunikuje status. Podgląd postępu na żywo (SSE) dla „w toku" dojdzie osobno.
-export function AnalysisStatusState({ analysis }: { analysis: Analysis }) {
+// i jasno komunikuje status. `deleteAction` — przycisk usunięcia rekordu (tylko stany terminalne).
+export function AnalysisStatusState({
+  analysis,
+  deleteAction,
+}: {
+  analysis: Analysis
+  deleteAction?: ReactNode
+}) {
   if (analysis.status === 'FAILED') {
-    const code = analysis.errorMessage?.match(/^\[([A-Z_]+)\]/)?.[1] ?? ''
+    // Pokazujemy tylko kod — treść errorMessage bywa techniczna (starsze rekordy, detektory).
+    const code = parseErrorMessage(analysis.errorMessage).code
     return (
       <div className={styles.statusCard}>
         <span className={styles.statusIcon} data-tone="danger" aria-hidden="true">
           <TriangleAlert size={40} strokeWidth={2} />
         </span>
         <h2 className={styles.statusTitle}>Analiza nie powiodła się</h2>
-        <p className={styles.statusText}>
-          {FAILURE_MESSAGES[code] ??
-            'Nie udało się dokończyć przetwarzania tego materiału. Plik może być uszkodzony lub zapisany w nieobsługiwanym formacie. Spróbuj ponownie lub wgraj inny plik.'}
-        </p>
-        {analysis.errorMessage && <p className={styles.statusDetail}>{analysis.errorMessage}</p>}
+        <p className={styles.statusText}>{analysisFailureMessage(analysis.errorMessage)}</p>
+        {code && <p className={styles.statusDetail}>Kod błędu: {code}</p>}
         <div className={styles.statusActions}>
           <LinkButton to="/history" variant="ghost" size="md" leftIcon={ChevronLeft}>
             Wróć do historii
           </LinkButton>
+          {deleteAction}
           {/* Brak endpointu re-run — „Spróbuj ponownie" = nowe zgłoszenie przez /upload */}
           <LinkButton to="/upload" variant="primary" size="md" leftIcon={RotateCcw}>
             Spróbuj ponownie
@@ -57,6 +58,7 @@ export function AnalysisStatusState({ analysis }: { analysis: Analysis }) {
           <LinkButton to="/history" variant="ghost" size="md" leftIcon={ChevronLeft}>
             Wróć do historii
           </LinkButton>
+          {deleteAction}
           <LinkButton to="/upload" variant="primary" size="md" leftIcon={RotateCcw}>
             Spróbuj ponownie
           </LinkButton>

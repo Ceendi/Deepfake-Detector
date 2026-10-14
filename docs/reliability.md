@@ -370,10 +370,26 @@ the guard. Missing, non-positive or non-finite FPS assumes 60 fps only for the g
 limit are not rejected. Reported timestamps/FPS keep their existing zero fallback. An overlong
 video returns the same confirmed `FAILED/MEDIA_TOO_LONG` before ACK, and the capture is
 released on success and all failures. Both detectors use the shared runtime error class.
+FPS metadata above 240 is capped for the guard, so an inflated frame rate cannot grant
+an effectively unbounded decoding budget. Genuine clips above 240 fps are therefore limited
+to `MEDIA_MAX_DURATION_SECONDS × 240 / fps` seconds.
+
+Video also rejects `width*height` above `MEDIA_MAX_PIXELS` (default 8 294 400 = 3840×2160,
+orientation-independent) before decoding any frame, and re-checks each retained decoded
+frame because container metadata may be missing or understated. The result is a confirmed
+`FAILED/MEDIA_RESOLUTION_TOO_HIGH` before ACK. Retained frames are downscaled to a longest
+side of 1920 px right after decoding, so the sampled frames held until face detection stay
+bounded in memory (the container limit is 3 GB).
+
+While decoding, video publishes a `PREPROCESSING` progress tick (10–14 %,
+`details.step: "extract_frames"`) at most every 5 s of wall-clock time. The tick refreshes
+`video_progress_at` for the stuck-job idle budget and checks the `cancel:{id}` flag, so a
+cancelled or failed analysis stops decoding within about 5 s instead of after EOF.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `MEDIA_MAX_DURATION_SECONDS` | `1800` | Positive finite duration limit for uploads, audio and video |
+| `MEDIA_MAX_PIXELS` | `8294400` | Positive integer limit of video `width*height` (4K) |
 
 Unknown container duration remains accepted. Extraction disables video and stops
 after at most the limit plus one output sample, so even missing or misleading

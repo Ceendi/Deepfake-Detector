@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 
 import { Button } from '@/components/ui/Button/Button'
 
+import { AUDIO_FORMATS_LABEL, VIDEO_FORMATS_LABEL } from '../upload-utils'
 import { useFileDrop } from '../use-file-drop'
 import styles from '../Upload.module.css'
 
@@ -44,9 +45,9 @@ export function Dropzone({ onFiles, onPick }: DropzoneProps) {
         <span className={styles.formatsLabel}>max </span>
         <span className={styles.formatsValue}>500 MB</span>
         <span className={styles.formatsLabel}> · Video: </span>
-        <span className={styles.formatsValue}>MP4 · MOV · WEBM</span>
+        <span className={styles.formatsValue}>{VIDEO_FORMATS_LABEL}</span>
         <span className={styles.formatsLabel}> · Audio: </span>
-        <span className={styles.formatsValue}>WAV · MP3 · FLAC</span>
+        <span className={styles.formatsValue}>{AUDIO_FORMATS_LABEL}</span>
       </p>
     </div>
   )
