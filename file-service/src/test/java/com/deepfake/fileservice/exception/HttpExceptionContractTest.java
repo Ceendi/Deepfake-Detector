@@ -113,6 +113,21 @@ class HttpExceptionContractTest {
         } finally { logger.detachAppender(logs); logs.stop(); }
     }
 
+    @Test void multipartParseFailureIsLoggedWhileNonMultipartIsNot() throws Exception {
+        Logger logger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>(); logs.start(); logger.addAppender(logs);
+        try {
+            mvc.perform(post("/probe/upload")).andExpect(status().isBadRequest());
+            assertThat(logs.list).isEmpty();
+            controller.failure = new org.springframework.web.multipart.MultipartException(
+                    "Failed to parse multipart servlet request", new java.io.IOException("No space left on device"));
+            mvc.perform(post("/probe/failure").contentType("multipart/form-data; boundary=x"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+            assertThat(logs.list).singleElement()
+                    .satisfies(event -> assertThat(event.getLevel()).isEqualTo(ch.qos.logback.classic.Level.WARN));
+        } finally { logger.detachAppender(logs); logs.stop(); }
+    }
+
     @RestController static class Probe {
         Exception failure;
         @GetMapping("/probe/uuid/{id}") String uuid(@PathVariable UUID id) { return id.toString(); }
@@ -122,6 +137,6 @@ class HttpExceptionContractTest {
         Map<String,String> json() { return Map.of("status", "ok"); }
         @PostMapping(value="/probe/json", consumes=MediaType.APPLICATION_JSON_VALUE)
         String postJson() { return "ok"; }
-        @GetMapping("/probe/failure") String failure() throws Exception { throw failure; }
+        @RequestMapping("/probe/failure") String failure() throws Exception { throw failure; }
     }
 }

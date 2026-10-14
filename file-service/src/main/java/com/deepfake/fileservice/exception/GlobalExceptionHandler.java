@@ -61,8 +61,6 @@ public class GlobalExceptionHandler {
         return body(status, codeOf(status), message, null, request);
     }
 
-    // Unparseable/malformed request body -> 400, not the catch-all 500. Generic message: the parser
-    // detail (offset, field) stays in logs, never echoed to the client.
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         Map<String, String> fields = new LinkedHashMap<>();
@@ -71,6 +69,8 @@ public class GlobalExceptionHandler {
         return body(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Nieprawidłowe dane żądania.", fields, request);
     }
 
+    // Unparseable/malformed request body -> 400, not the catch-all 500. Generic message: the parser
+    // detail (offset, field) stays in logs, never echoed to the client.
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
         return body(HttpStatus.BAD_REQUEST, "MALFORMED_REQUEST", "Nieprawidłowa treść żądania.", null, request);
@@ -92,8 +92,18 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler({TypeMismatchException.class, MissingServletRequestParameterException.class,
-            MissingServletRequestPartException.class, PropertyReferenceException.class, MultipartException.class})
+            MissingServletRequestPartException.class, PropertyReferenceException.class})
     public ResponseEntity<ErrorResponse> handleInvalidParameter(Exception ex, HttpServletRequest request) {
+        return body(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Nieprawidłowe parametry żądania.", null, request);
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ErrorResponse> handleMultipart(MultipartException ex, HttpServletRequest request) {
+        // Spring wraps every non-size parse failure here, including a full spool disk; keep it visible.
+        String contentType = request.getContentType();
+        if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")) {
+            log.warn("Multipart request could not be parsed", ex);
+        }
         return body(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Nieprawidłowe parametry żądania.", null, request);
     }
 

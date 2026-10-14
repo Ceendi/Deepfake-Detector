@@ -107,8 +107,18 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler({TypeMismatchException.class, MissingServletRequestParameterException.class,
-            MissingServletRequestPartException.class, PropertyReferenceException.class, MultipartException.class})
+            MissingServletRequestPartException.class, PropertyReferenceException.class})
     public ResponseEntity<ErrorResponse> handleInvalidParameter(Exception ex, HttpServletRequest request) {
+        return body(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Nieprawidłowe parametry żądania.", null, request);
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<ErrorResponse> handleMultipart(MultipartException ex, HttpServletRequest request) {
+        // Spring wraps every non-size parse failure here, including a full spool disk; keep it visible.
+        String contentType = request.getContentType();
+        if (contentType != null && contentType.toLowerCase(java.util.Locale.ROOT).startsWith("multipart/")) {
+            log.warn("Multipart request could not be parsed", ex);
+        }
         return body(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Nieprawidłowe parametry żądania.", null, request);
     }
 
