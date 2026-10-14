@@ -75,6 +75,12 @@ eureka:
 management:
   server:
     port: 9090
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      maximum-expected-value:
+        http.server.requests: 10m
   endpoints:
     web:
       exposure:

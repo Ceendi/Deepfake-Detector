@@ -197,11 +197,4 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
             @Param("dispatchCutoff") Instant dispatchCutoff, @Param("queueCutoff") Instant queueCutoff,
             @Param("ageCutoff") Instant ageCutoff, @Param("now") Instant now);
 
-    // Native + literal statuses so the planner can use the partial index idx_analysis_active
-    // (WHERE status IN ('PENDING','PROCESSING')); a bound IN list wouldn't match the index predicate.
-    @Query(value = """
-            SELECT id FROM analysis
-            WHERE status IN ('PENDING', 'PROCESSING') AND updated_at < :cutoff
-            """, nativeQuery = true)
-    List<UUID> findStuckIds(@Param("cutoff") Instant cutoff);
 }

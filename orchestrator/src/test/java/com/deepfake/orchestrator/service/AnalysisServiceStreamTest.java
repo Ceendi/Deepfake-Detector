@@ -79,7 +79,6 @@ class AnalysisServiceStreamTest {
         assertThat(result).isSameAs(emitter);
         verify(streams).register(id, "alice");
         verify(streams, never()).sendResult(any(), any());
-        verify(streams, never()).complete(any());
     }
 
     @Test

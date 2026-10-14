@@ -7,7 +7,7 @@ Ground rules:
 
 - **PostgreSQL is the authority** for admission, source acceptance and terminal state.
 - **RabbitMQ delivery is at least once** everywhere. Every consumer tolerates duplicates.
-- **Redis only carries hints** (cache, dedup, progress snapshot, cancel flag). Every Redis call
+- **Redis only carries hints** (cache, dedup, cancel flag). Every Redis call
   in the orchestrator and detectors fails open; correctness never depends on these hints.
   Gateway upload quotas deliberately fail closed (`503`); other gateway routes fail open.
 - **Side effects run after commit** (cache eviction, SSE, Redis markers), so a rollback leaves none.
@@ -201,6 +201,30 @@ History always uses `createdAt DESC, id DESC` with a page size capped at 100, ig
 client sort parameters. Regression tests: both `HttpExceptionContractTest` and correlation
 filter tests, `SecurityConfigIntegrationTest`, `AnalysisServiceListTest`,
 `AnalysisErrorContractTest`, `AnalysisFileResolutionIntegrationTest`.
+
+## Operator defaults and monitoring
+
+The root `.env.example` keeps tracing export disabled and runs one file-service
+replica. Set `OTEL_TRACING_EXPORT_ENABLED=true` only with Tempo available.
+Windows/WSL2 memory limits and the lighter 16 GB setup are described in
+[SETUP.md](../SETUP.md#windows--wsl2-memory).
+
+Compose now forwards the existing stuck-job idle/scan/initial-delay, idempotency,
+file-service lookup and backpressure retry variables. Defaults are unchanged;
+`RELIABILITY_STUCK_JOB_INITIAL_DELAY` follows the idle threshold when unset.
+Histogram finite ranges cover 2 h for analysis and 10 min for HTTP; these are metric
+bounds, not execution deadlines. The dashboard uses p95 for those durations and
+adds existing detector metrics. Prometheus evaluates DLQ/stuck/backlog and scrape
+availability alerts; see [observability](observability.md#alerts). There is no
+outbound alert transport. No new application metric or recovery policy is added.
+
+Both Keycloak realm variants disable self-service password reset until SMTP is
+configured. Password history and refresh-token rotation remain unconfigured;
+[Keycloak documentation](../infra/keycloak/README.md) describes the actual policy.
+Persistent database and RabbitMQ administrator credentials must be rotated
+administratively on existing volumes; changing bootstrap environment values alone
+does not update stored accounts. Application broker passwords are reconciled by
+`rabbitmq-init` on each run, as described [above](#broker-users-and-internal-storage-apis).
 
 ## Creating an analysis
 
@@ -472,6 +496,10 @@ Tests: `AnalysisResultAcceptanceIntegrationTest`, `AudioScoreContractIntegration
 generated temporary media with real ffmpeg/ffprobe), `detector-runtime/tests/test_delivery.py`
 and frontend result/failure regressions.
 
+| Variable | Default | Meaning |
+|---|---|---|
+| `RELIABILITY_IDEMPOTENCY_TTL_SECONDS` | `900` | Post-commit per-source Redis dedup hint TTL |
+
 ## Listener retries, DLQs and quarantine
 
 Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `ConfirmedMessageRecoverer`,
@@ -485,7 +513,7 @@ Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `Confirmed
   `ClassCastException` and `NumberFormatException` bypass these retries and go directly
   through the confirmed results DLQ recoverer. Payload validation runs before dedup/SQL.
 - **Progress** is advisory: 3 attempts (100 ms, 200 ms), then logged and ACKed. It never fails an
-  analysis. The `PROCESSING` heartbeat commits before cache eviction, Redis snapshot and SSE.
+  analysis. The `PROCESSING` heartbeat commits before cache eviction and SSE.
 - **DLQs** (`analysis.results.dlq`, `analysis.video.dlq`, `analysis.audio.dlq`): fail an active
   analysis only for an expected, unaccepted source (task DLQs take the source from the queue).
   Permanent data failures get 3 attempts (250 ms, 500 ms). Poison messages and exhausted failures go to
@@ -574,6 +602,14 @@ idle and absolute deadlines plus rollback/commit ordering of all FAILED stop hin
 `StuckJobRecoverySchedulingTest` exercises the real scheduler's startup delay;
 `FlywayMigrationIntegrationTest` upgrades populated V6 data to V7.
 
+| Variable | Default | Meaning |
+|---|---|---|
+| `RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS` | `600` | Started source idle allowance |
+| `RELIABILITY_STUCK_JOB_QUEUE_TIMEOUT_SECONDS` | `1800` | Dispatched source pickup allowance |
+| `RELIABILITY_STUCK_JOB_MAX_AGE_SECONDS` | `7200` | Absolute active analysis age allowance |
+| `RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS` | `300000` | Delay between recovery scans |
+| `RELIABILITY_STUCK_JOB_INITIAL_DELAY` | idle threshold as a duration (`600s`) | Initial scan delay after process start |
+
 ## Cancellation
 
 Every successful status CAS to `FAILED` or `CANCELLED` sets Redis `cancel:{id}` (TTL 2 h) after
@@ -581,8 +617,11 @@ commit through the shared terminal path. This covers stuck recovery, DLQs, sourc
 `DELETE /api/analysis/{id}` (user cancel). Rollbacks and losing CAS attempts set no stop flag;
 COMPLETED sets none. `DELETE /api/analysis/{id}/record` keeps the flag: after the delete commits it
 sets or refreshes `cancel:{id}` (TTL 2 h) for a FAILED or CANCELLED analysis, because tasks queued
-before the delete still need the stop signal. It removes only the cache, `dedup:` and `progress:`
-keys. The delete is conditional (`id`, owner, terminal status), so a concurrent duplicate gets
+before the delete still need the stop signal. It removes the cache and `dedup:` keys,
+plus legacy `progress:` keys from older
+versions. Numeric progress is delivered only over SSE; reconnects use the database
+status, and the backend no longer writes unused Redis progress snapshots. The delete
+is conditional (`id`, owner, terminal status), so a concurrent duplicate gets
 `404` and does not enqueue artifact cleanup again. Detectors check the flag when they take a
 task, on each progress tick and before publishing a successful result; on a hit they ACK without a result. Cancellation is not an
 AMQP message. If Redis is down the worker finishes and its late result is rejected by the status
@@ -615,7 +654,7 @@ Code: `OptionalRedisOperations` (orchestrator), `ProtectiveRedisRateLimiter` and
 
 - **Orchestrator:** after an actual Redis failure, optional operations return their fallback
   without calling Redis for `REDIS_DEGRADED_BYPASS`; then Redis is tried again. Fallbacks: cache →
-  database, dedup → database guard, progress snapshot → skipped, cancel flag → worker finishes.
+  database, dedup → database guard, cancel flag → worker finishes.
   Each process start and each failure switches to a new cache namespace, so a cache entry that
   missed its eviction is never served again (old entries expire with their 60 s TTL). This assumes
   the single orchestrator instance.

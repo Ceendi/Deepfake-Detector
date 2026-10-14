@@ -1,0 +1,29 @@
+groups:
+  - name: deepfake-reliability
+    rules:
+      - alert: AnalysisDeadLettered
+        expr: increase(analyses_dlq_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Analiza zakończona błędem po dead-lettering.
+      - alert: AnalysisStuckRecovered
+        expr: increase(analyses_stuck_recovered_total[5m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Recovery przerwało analizę po przekroczeniu czasu.
+      - alert: AnalysisDeadLetterBacklog
+        expr: rabbitmq_queue_messages_ready{queue=~"analysis\\..*\\.dlq|analysis\\.backend\\.quarantine"} > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Wiadomości oczekują w DLQ lub kwarantannie.
+      - alert: ScrapeTargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus nie może zebrać metryk usługi.

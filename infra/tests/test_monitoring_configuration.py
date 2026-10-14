@@ -60,12 +60,17 @@ class MonitoringValidationTest(unittest.TestCase):
                         arguments[-1] += config_path
                     else:
                         arguments.append(config_path)
+                    rule_mount = ([
+                        '--mount', 'type=bind,src=' + str(ROOT / 'infra/prometheus/alerts.yml')
+                        + ',dst=/etc/prometheus/alerts.yml,readonly',
+                    ] if name == 'prometheus' else [])
                     result = subprocess.run([
                         'docker', 'run', '--rm', '--network', 'none',
                         '--security-opt', 'no-new-privileges:true', '--cap-drop', 'ALL',
                         '--memory', str(MEMORY_MIB[name]) + 'm', '--pids-limit', '300',
                         '--env', 'ALLOY_COMPOSE_PROJECT=monitoring-validation',
                         '--mount', f'type=bind,src={source},dst={config_path},readonly',
+                        *rule_mount,
                         '--entrypoint', entrypoint, services[name]['image'], *arguments,
                     ], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
                     if expected == 0:

@@ -66,6 +66,12 @@ media:
 upload:
   max-concurrent: ${UPLOAD_MAX_CONCURRENT:4}
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      maximum-expected-value:
+        http.server.requests: 10m
   endpoints:
     web:
       exposure:

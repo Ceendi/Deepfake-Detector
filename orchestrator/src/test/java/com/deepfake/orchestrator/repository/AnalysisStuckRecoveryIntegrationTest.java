@@ -25,8 +25,7 @@ import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 
 /**
- * Against the migrated schema: findStuckIds returns only old active rows (not fresh, not terminal),
- * and recordProgress flips PENDING->PROCESSING, heartbeats updated_at, and ignores terminal rows.
+ * Progress updates preserve per-source recovery clocks and ignore terminal rows.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
@@ -46,19 +45,6 @@ class AnalysisStuckRecoveryIntegrationTest {
 
     @Autowired AnalysisRepository repository;
     @Autowired TestEntityManager em;
-
-    @Test
-    void findStuckIdsReturnsOnlyOldActiveRows() {
-        Instant old = Instant.now().minus(20, ChronoUnit.MINUTES);
-        UUID stuckPending = persist(AnalysisStatus.PENDING, old);
-        UUID stuckProcessing = persist(AnalysisStatus.PROCESSING, old);
-        persist(AnalysisStatus.PROCESSING, Instant.now());   // fresh — still working
-        persist(AnalysisStatus.COMPLETED, old);              // terminal — already done
-
-        var stuck = repository.findStuckIds(Instant.now().minus(10, ChronoUnit.MINUTES));
-
-        assertThat(stuck).containsExactlyInAnyOrder(stuckPending, stuckProcessing);
-    }
 
     @Test
     void expiredAnalysisStoresNeutralTimeoutMessage() {

@@ -497,8 +497,6 @@ public class AnalysisService {
             // Advisory effects cannot change acknowledgement after the database already committed.
             try { cache.evictById(id); }
             catch (RuntimeException failure) { log.warn("Progress cache eviction failed for {}", id, failure); }
-            try { snapshotProgress(id, progress); }
-            catch (RuntimeException failure) { log.warn("Progress snapshot failed for {}", id, failure); }
             try { streams.sendProgress(id, event); }
             catch (RuntimeException failure) { log.warn("Progress delivery failed for {}", id, failure); }
         };
@@ -509,13 +507,6 @@ public class AnalysisService {
         } else {
             publish.run();
         }
-    }
-
-    // Redis snapshot for catch-up (GET / reconnect). Fail-open so a Redis outage degrades the
-    // snapshot only — the live SSE push (the primary path) still runs.
-    private void snapshotProgress(UUID id, Integer progress) {
-        optionalRedis.run("progress snapshot", () ->
-                redis.opsForValue().set("progress:" + id, progress.toString(), Duration.ofHours(1)));
     }
 
     // Push the terminal result after commit, so a rollback can't leak a state the DB discards. Build

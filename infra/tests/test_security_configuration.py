@@ -10,6 +10,12 @@ JAVA_SERVICES = ('gateway', 'eureka-server', 'orchestrator', 'file-service')
 
 
 class SecurityConfigurationTest(unittest.TestCase):
+    def test_password_reset_is_disabled_until_smtp_is_configured(self):
+        for variant in ('realm-export.json', 'dev/realm-export.json'):
+            with self.subTest(variant=variant):
+                realm = json.loads((ROOT / 'infra/keycloak' / variant).read_text())
+                self.assertFalse(realm['resetPasswordAllowed'])
+
     def test_default_realm_has_no_fixture_users_or_service_accounts(self):
         realm = json.loads((ROOT / 'infra/keycloak/realm-export.json').read_text())
         self.assertFalse(realm.get('users'))

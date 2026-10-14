@@ -72,10 +72,6 @@ public class AnalysisCache {
         }
     }
 
-    public void putById(AnalysisResponse a) {
-        putById(a, beginFill(a.id()));
-    }
-
     public void putById(AnalysisResponse a, FillToken token) {
         if (!enabled) return;
         try {

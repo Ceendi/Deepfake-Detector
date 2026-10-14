@@ -50,7 +50,8 @@ PENDING ──► PROCESSING ──► COMPLETED
   releases the in-flight slot, and notifies the client over SSE.
 - DLQ consumer: a valid task or terminal result dead letter fails only an expected,
   unaccepted source of an active analysis. Accepted FULL sources and cancelled/terminal
-  analyses are preserved; poison and exhausted database failures are durably quarantined.
+  analyses are preserved; poison and permanent data failures are durably quarantined, while
+  database outages requeue the dead letter and pause the listener until recovery.
 
 ## Paths to `FAILED`
 

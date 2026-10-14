@@ -307,8 +307,12 @@ analysis, one gets `204` and the other `404`.
 Distinct route from cancel on purpose: `DELETE /api/analysis/{id}` soft-stops a *running* analysis
 (and is idempotent on an already-`CANCELLED` one), whereas this removes a *finished* one — the two
 map to different UI affordances and must not collide. The analysis's Grad-CAM objects in
-`analysis-artifacts` **are** reclaimed (best-effort, after the row delete commits — a failed object
-delete just leaves an orphan for a later bucket sweep, never a `5xx`). The uploaded file in
+`analysis-artifacts` **are** reclaimed through the durable `artifact_cleanup` queue:
+recorded keys are enqueued in the same database transaction as the row delete.
+A background worker deletes from S3 after commit and retries failures with bounded
+exponential backoff and no attempt limit; missing objects count as deleted. An S3
+outage does not block the HTTP delete. Orphan discovery also durably queues eligible
+unreferenced objects; see [artifact cleanup](../reliability.md#grad-cam-artifacts). The uploaded file in
 `deepfake-uploads` is **not** removed: it lives in another service/bucket the Orchestrator cannot
 touch and may be shared by other analyses — its lifecycle is the file service's (see
 [`object-storage.md`](./object-storage.md)).

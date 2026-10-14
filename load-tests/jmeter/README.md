@@ -34,7 +34,8 @@ docker compose --profile core --profile auth up -d --build
 ```
 
 Wait for warmup, then **verify** before measuring:
-- `http://localhost:8761` → exactly **1** `FILE-SERVICE` instance.
+- `docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps`
+  → exactly **1** `FILE-SERVICE` instance (Eureka has no published host port).
 - One manual upload returns **200** (not 422/401/429) — e.g. via the runner with `-Threads 1 -Duration 5`.
 
 ```powershell
@@ -49,7 +50,8 @@ docker compose --profile core --profile auth up -d
 ```
 
 **Wait ~45–60s** (Eureka registration + Gateway LB cache), then verify:
-- `http://localhost:8761` → **2** `FILE-SERVICE` instances (distinct IPs).
+- `docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps`
+  → **2** `FILE-SERVICE` instances (distinct IPs).
 - A few warmup uploads hit **both** replicas: `docker compose logs file-service | Select-String "/api/files/upload"` shows two container IDs.
 
 ```powershell

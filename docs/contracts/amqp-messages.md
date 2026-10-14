@@ -314,24 +314,26 @@ Contract:
 
 ## Reliability (D6)
 
-- **Retry:** permanent `analysis.results` processing failures use property-based retry
-  (4 attempts, exponential backoff 1s/4s/15s). Malformed payloads, invalid IDs/scores,
-  class casts, number parsing and message conversion bypass retry, straight to the confirmed
-  recoverer. Transient database failures instead requeue and pause the affected result/DLQ
-  listener with 1s/2s/4s restart delays capped at 30s until processing succeeds.
-  Progress keeps its separate advisory retry policy.
-- **Dead-lettering:** detector task queues (`analysis.video` / `analysis.audio`) use broker
-  DLX → `*.dlq`. Result/progress failures are instead republished by a
-  `RepublishMessageRecoverer` to `analysis.results.dlq` (with `x-exception-*` headers), so
-  `analysis.results` needs no DLX args (see Topology).
-- **DLQ consumer:** one AUTO listener drains `results/video/audio.dlq`
-  → analysis `FAILED` + SSE notify + in-flight slot released. A missing/unparseable
-  `analysis_id` is confirmed into quarantine without changing an analysis. Identifiable
-  malformed terminal results fail the expected, unaccepted source before quarantining a copy.
-  Transient database failures leave the original requeued on its DLQ until recovery.
-- **Manual ack:** literal `MANUAL` on the detectors. The DLQ and main
-  result/progress listeners use `AUTO` = container ack **after** the `@Transactional`
-  handler commits (not RabbitMQ auto-ack), which is what lets retry + recoverer compose.
+- **Results retry:** permanent `analysis.results` processing failures use 4 attempts with
+  1s/4s/15s backoff. Malformed payloads, invalid IDs/scores, class casts, number parsing and
+  message conversion bypass retry and go straight to the confirmed recoverer.
+- **Database outages:** transient database failures (connection loss, server restart,
+  timeouts) on results and terminal DLQs requeue the original and pause only that listener,
+  restarting after 1s/2s/4s up to 30s with no attempt limit. They never reach a DLQ or quarantine.
+- **Progress retry:** advisory progress uses 3 attempts (100ms/200ms), then log + ACK.
+  Exhausted progress never fails an analysis or enters the result DLQ.
+- **Dead-lettering:** detector task queues use broker DLX → `*.dlq`. Result failures
+  use `ConfirmedMessageRecoverer` to publish persistently and mandatorily to
+  `analysis.results.dlq`, with `x-exception-*` headers and confirmation before ACK.
+- **DLQ consumer:** one AUTO listener drains `results/video/audio.dlq`. It fails an active
+  analysis only for an expected, unaccepted source, then sends SSE after commit.
+  A missing/unparseable `analysis_id` and permanent data failures (3 attempts, 250ms/500ms)
+  are sent to `analysis.backend.quarantine` for manual inspection with confirmed publication;
+  identifiable malformed terminal results first fail the expected source.
+  A recovery publication failure requeues the original and pauses the listener with
+  backoff (5s → 60s); see [reliability](../reliability.md#listener-retries-dlqs-and-quarantine).
+- **Acknowledgement:** detectors use MANUAL; result/progress and terminal DLQ listeners
+  use AUTO = container ACK after the transactional handler commits, not broker auto-ack.
 - **Detector redelivery:** each non-cancelled delivery is computed, including concurrent
   copies. Detectors do not use Redis processing claims or completion markers. Old
   `processing:{analysis_id}:{source}` keys are ignored without deletion or TTL waits.
@@ -356,12 +358,13 @@ Contract:
   retryable and does not set a marker. Terminal transitions and capacity changes commit
   together; duplicates of terminal analyses do not release capacity again.
   See [result acceptance](../reliability.md#result-acceptance-and-idempotence).
-- **Stuck-job recovery:** a scheduled scan fails analyses left `PENDING` / `PROCESSING`
-  past a threshold (default 600s) → `FAILED` + PostgreSQL capacity freed + SSE.
-  PR07 adds a separate 120-second deadline for any unsent outbox source; the final
-  recovery transaction rechecks state and time after locking the analysis.
+- **Stuck-job recovery:** a scheduled scan fails active analyses for an unsent outbox
+  task older than 120s, an unstarted dispatched source waiting over 1800s, a started
+  source idle over 600s, or an absolute analysis age over 7200s. The final transaction
+  locks and rechecks eligibility before FAILED, PostgreSQL capacity release and SSE.
+  See [recovery](../reliability.md#stuck-job-recovery) for per-source clocks and scan timing.
 - **Redis degradation:** every Redis touch fails open (cache → DB, dedup → DB guard,
-  progress snapshot → skipped, cancel flag → detector finishes). Redis is an accelerator,
+  cancel flag → detector finishes). Redis is an accelerator,
   not the source of truth.
 
 

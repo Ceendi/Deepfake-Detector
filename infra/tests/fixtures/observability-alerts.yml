@@ -1,0 +1,96 @@
+rule_files:
+  - /etc/prometheus/alerts.yml
+evaluation_interval: 1m
+tests:
+  - name: failure events and persistent outages fire
+    interval: 1m
+    input_series:
+      - series: analyses_dlq_total
+        values: 0+0x10 1+0x9
+      - series: analyses_stuck_recovered_total
+        values: 0+0x10 1+0x9
+      - series: up{job="orchestrator",instance="orchestrator:8082"}
+        values: 0+0x20
+      - series: rabbitmq_queue_messages_ready{queue="analysis.results.dlq"}
+        values: 1+0x20
+      - series: rabbitmq_queue_messages_ready{queue="analysis.backend.quarantine"}
+        values: 1+0x20
+    alert_rule_test:
+      - eval_time: 11m
+        alertname: AnalysisDeadLettered
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: Analiza zakończona błędem po dead-lettering.}
+      - eval_time: 11m
+        alertname: AnalysisStuckRecovered
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: Recovery przerwało analizę po przekroczeniu czasu.}
+      - eval_time: 1m
+        alertname: ScrapeTargetDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ScrapeTargetDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: orchestrator, instance: 'orchestrator:8082'}
+            exp_annotations: {summary: Prometheus nie może zebrać metryk usługi.}
+      - eval_time: 1m
+        alertname: AnalysisDeadLetterBacklog
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: AnalysisDeadLetterBacklog
+        exp_alerts:
+          - exp_labels: {severity: warning, queue: analysis.results.dlq}
+            exp_annotations: {summary: Wiadomości oczekują w DLQ lub kwarantannie.}
+          - exp_labels: {severity: warning, queue: analysis.backend.quarantine}
+            exp_annotations: {summary: Wiadomości oczekują w DLQ lub kwarantannie.}
+  - name: healthy targets, counter restarts and brief outages do not fire
+    interval: 1m
+    input_series:
+      - series: analyses_dlq_total
+        values: 5 5 0+0x18
+      - series: analyses_stuck_recovered_total
+        values: 5 5 0+0x18
+      - series: up{job="orchestrator",instance="orchestrator:8082"}
+        values: 1 0 1+0x18
+      - series: rabbitmq_queue_messages_ready{queue="analysis.results.dlq"}
+        values: 0 1 0+0x18
+      - series: rabbitmq_queue_messages_ready{queue="analysis.video"}
+        values: 1+0x20
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AnalysisDeadLettered
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AnalysisStuckRecovered
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: ScrapeTargetDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AnalysisDeadLetterBacklog
+        exp_alerts: []
+  - name: alerts resolve after recovery
+    interval: 1m
+    input_series:
+      - series: analyses_dlq_total
+        values: 0 1+0x10
+      - series: analyses_stuck_recovered_total
+        values: 0 1+0x10
+      - series: up{job="orchestrator",instance="orchestrator:8082"}
+        values: 0+0x3 1+0x7
+      - series: rabbitmq_queue_messages_ready{queue="analysis.audio.dlq"}
+        values: 1+0x3 0+0x7
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: AnalysisDeadLettered
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AnalysisStuckRecovered
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ScrapeTargetDown
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AnalysisDeadLetterBacklog
+        exp_alerts: []

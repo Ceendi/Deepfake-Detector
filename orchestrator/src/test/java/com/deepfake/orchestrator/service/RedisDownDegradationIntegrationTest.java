@@ -134,7 +134,7 @@ class RedisDownDegradationIntegrationTest {
         assertThat(restartedCache.getById(id)).as("a restarted process cannot reuse an old PENDING cache namespace").isEmpty();
         UUID healthy = createVideo();
         service.handleProgress(progress(healthy));
-        assertThat(template.opsForValue().get("progress:" + healthy)).isEqualTo("50");
+        assertThat(template.opsForValue().get("progress:" + healthy)).isNull();
         service.handleResult(result(healthy));
         assertThat(template.hasKey("dedup:" + healthy + ":video")).isTrue();
         UUID cancelled = createVideo();

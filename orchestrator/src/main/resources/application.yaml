@@ -131,6 +131,14 @@ reliability:
     scan-interval-ms: ${RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS:300000}
     initial-delay: ${RELIABILITY_STUCK_JOB_INITIAL_DELAY:${reliability.stuck-job.threshold-seconds}s}
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        analysis.duration: true
+      maximum-expected-value:
+        http.server.requests: 10m
+        analysis.duration: 2h
   endpoints:
     web:
       exposure:

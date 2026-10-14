@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,7 +26,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent;
@@ -77,9 +75,6 @@ class AnalysisServiceSsePushTest {
     @Test
     void handleProgressPushesProgressEvent() {
         when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(), eq("video"))).thenReturn(1);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
-        when(redis.opsForValue()).thenReturn(ops);
 
         service.handleProgress(Map.of(
                 "analysis_id", id.toString(), "source", "video",
@@ -133,7 +128,6 @@ class AnalysisServiceSsePushTest {
 
         verify(repository, never()).complete(any(), any(), any(), any(), any(), any());
         verify(streams, never()).sendResult(any(), any());
-        verify(streams, never()).complete(any());
     }
 
     // The CAS write/complete is mocked, so seed the probs the post-write fresh read would observe.
