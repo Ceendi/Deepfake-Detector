@@ -5,6 +5,9 @@ declared by application code at startup (Spring AMQP `@Bean` in the Orchestrator
 `pika channel.queue_declare(...)` in detectors). This document is the single
 source of truth: every publisher and consumer must declare with **exactly the
 same arguments**, otherwise RabbitMQ will reject with `PRECONDITION_FAILED`.
+`rabbitmq-init` also declares both exchanges and `analysis.video`/`analysis.audio` with the
+same arguments before granting permissions (see [Broker users](#broker-users)); keep its
+arguments in sync with these declarations.
 
 ## Topology
 
@@ -62,6 +65,19 @@ the original. Publication failure pauses the affected listener, requeues the ori
 and resumes automatically with a delay increasing from 5s to a 60s cap. Readiness
 is DOWN until processing succeeds. See
 [listener retries, DLQs and quarantine](../reliability.md#listener-retries-dlqs-and-quarantine).
+
+## Broker users
+
+Applications connect as least-privilege users, never as the administrator. Any change to the
+topology, publishers or consumers must update `infra/rabbitmq/provision_users.py` as well.
+
+| User | Declares (configure) | Consumes (read) | Publishes |
+|---|---|---|---|
+| `orchestrator` | both exchanges and all eight queues | `analysis.results`, `analysis.progress`, `analysis.{video,audio,results}.dlq` | `analysis.exchange` with keys `analysis.video`/`analysis.audio` only; `analysis.dlx` |
+| `detector` | both exchanges, `analysis.{video,audio}` (+ `.dlq`), `analysis.results`, `analysis.progress` | `analysis.video`, `analysis.audio` | `analysis.exchange` with keys `analysis.results`/`analysis.progress` only |
+
+Binding keys on `analysis.exchange` are limited to the four routing keys above. Neither user may
+use the default exchange.
 
 ## Message formats
 
@@ -206,9 +222,21 @@ frames are the ones that most convinced the model of authenticity. Every `metada
 field is source-specific and optional — consumers must not require a field published
 by the other detector.
 
-Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no decodable
-frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
-`PROCESSING_ERROR` (generic fallback, shared with audio). Audio publishes
+Known `error.code` values from the video detector, each with a fixed neutral Polish
+message (diagnostic details stay in logs):
+
+| Code | When | Message |
+|---|---|---|
+| `VIDEO_DECODE_FAILED` | no decodable frames | “Nie udało się odczytać obrazu z pliku. Plik może być uszkodzony.” |
+| `NO_FACE_DETECTED` | face found in fewer than the minimum sampled frames | “Nie wykryto twarzy w nagraniu. Wgraj materiał, na którym widać twarz.” |
+| `MEDIA_TOO_LONG` | frame count/FPS or decoded frames exceed `MEDIA_MAX_DURATION_SECONDS` | “Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.” |
+| `MEDIA_RESOLUTION_TOO_HIGH` | `width*height` (metadata or a decoded frame) exceeds `MEDIA_MAX_PIXELS` (default 8 294 400 = 3840×2160, either orientation) | “Rozdzielczość nagrania jest za wysoka (maks. 4K).” |
+| `MODEL_UNAVAILABLE` | inference models failed to load | “Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie później.” |
+| `PROCESSING_ERROR` | generic fallback (shared with audio), including a non-finite model logit | “Nie udało się przetworzyć materiału. Spróbuj ponownie.” |
+
+Both detectors serialize messages with strict JSON (`allow_nan=False`): a result
+containing NaN, infinity or a value that is not JSON-serializable is published as
+`FAILED/PROCESSING_ERROR` instead of an unparseable body or endless redelivery. Audio publishes
 `MEDIA_TOO_LONG` when the input container or decoded waveform exceeds
 `MEDIA_MAX_DURATION_SECONDS` (default 1800 seconds), with the localized message
 “Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.” This fails both
@@ -218,9 +246,14 @@ threshold, and `NO_AUDIO_TRACK` when a successful ffprobe audio-stream query
 returns an empty stream list. Failed, timed-out or invalid probes and failed audio
 extraction remain `PROCESSING_ERROR`; they must not be interpreted as missing audio.
 `NO_AUDIO_TRACK` carries the neutral localized message “Materiał nie zawiera ścieżki
-audio.” Generic processing failures use a neutral message without exception text or
-local file paths; full exceptions remain in internal logs. Existing domain codes
-retain their deliberate messages.
+audio.” Generic processing failures use `PROCESSING_ERROR` with the neutral message
+“Nie udało się przetworzyć materiału. Spróbuj ponownie.” without exception text or
+local file paths; full exceptions remain in internal logs. Only detector domain errors
+(the shared runtime's `DetectorError`) publish their own code and deliberate message;
+any other exception, even one carrying a `code` attribute, is `PROCESSING_ERROR`.
+`MODEL_UNAVAILABLE` (both detectors) carries “Usługa analizy jest chwilowo niedostępna.
+Spróbuj ponownie później.” Transient object storage failures publish no result: the
+task is redelivered (see `docs/reliability.md`).
 
 AUDIO remains FAILED for either `NO_SPEECH` or `NO_AUDIO_TRACK`. For FULL, only these
 exact audio codes may be accepted as a durable `details.audio` marker with `status:

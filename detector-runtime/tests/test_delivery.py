@@ -204,7 +204,9 @@ class TestPublicationFailure:
 
 @pytest.mark.parametrize("code", ["VIDEO_DECODE_FAILED", "NO_FACE_DETECTED", "MODEL_UNAVAILABLE"])
 def test_domain_error_code_reaches_the_contract(runtime, code):
-    class PipelineError(RuntimeError):
+    from detector_runtime import DetectorError
+
+    class PipelineError(DetectorError):
         pass
 
     error = PipelineError("controlled domain error")
@@ -218,7 +220,8 @@ def test_domain_error_code_reaches_the_contract(runtime, code):
     ch.basic_ack.assert_called_once_with(delivery_tag=7)
 
 
-@pytest.mark.parametrize("body", [b"{", b"{}", b"null", b"[]"])
+@pytest.mark.parametrize("body", [b"{", b"{}", b"null", b"[]", b"\xff\xfe{}", b'"id"',
+                                  b"[" * 100_000 + b"]" * 100_000])
 def test_malformed_task_goes_to_dlq_without_work(runtime, body):
     ch = MagicMock()
     runtime.handle_message(ch, MagicMock(delivery_tag=7), MagicMock(headers={}), body)
@@ -278,5 +281,29 @@ def test_generic_failure_does_not_publish_private_paths(runtime, source):
                            json.dumps(_task_msg()).encode())
     payload = json.loads(channel.basic_publish.call_args.kwargs["body"])
     assert payload["error"] == {"code": "PROCESSING_ERROR",
-                                "message": "Nie udało się przetworzyć materiału."}
+                                "message": "Nie udało się przetworzyć materiału. Spróbuj ponownie."}
     channel.basic_ack.assert_called_once_with(delivery_tag=7)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_result_fails_with_strict_json(runtime, value):
+    def reject_constant(name):
+        raise AssertionError(f"non-standard JSON constant {name}")
+
+    runtime.process_task.return_value = {"prob_fake": value, "verdict": "FAKE",
+                                         "metadata": {"fps": value}}
+    channel = MagicMock()
+    runtime.handle_message(channel, MagicMock(delivery_tag=7), MagicMock(headers={}),
+                           json.dumps(_task_msg()).encode())
+    payload = json.loads(channel.basic_publish.call_args.kwargs["body"],
+                         parse_constant=reject_constant)
+    assert payload["status"] == "FAILED"
+    assert payload["result"] is None
+    assert payload["error"]["code"] == "PROCESSING_ERROR"
+    channel.basic_ack.assert_called_once_with(delivery_tag=7)
+    runtime.record_outcome.assert_called_once_with("failed", None)
+
+
+def test_publish_refuses_non_finite_numbers(runtime):
+    with pytest.raises(ValueError):
+        runtime.publish(MagicMock(), "analysis.progress", {"progress": float("nan")})

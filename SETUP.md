@@ -167,7 +167,7 @@ You can create an account (open registration) and upload a video or audio file f
 |---|---|---|
 | App (frontend) | <http://localhost:5173> | create an account in the app |
 | Keycloak (admin console) | <http://localhost:8180> | `admin` / `changeme_dev` |
-| RabbitMQ UI | <http://localhost:15672> | `deepfake` / `changeme_dev` |
+| RabbitMQ UI | <http://localhost:15672> | `deepfake` / `changeme_dev` (administrator; services use the `orchestrator`/`detector` users) |
 | Grafana (`monitoring` profile) | <http://localhost:3000> | `admin` / `admin` |
 
 All published ports are bound to `127.0.0.1` (reachable only from this machine).

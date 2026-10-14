@@ -3,7 +3,7 @@ import { Fragment, useState } from 'react'
 import { Video, AudioLines, Check, Circle, LoaderCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 
-import { cancelAnalysis } from '@/api/analysis'
+import { CANCEL_FAILED_MESSAGE, cancelAndSettle } from '@/api/cancel-analysis'
 import type { Analysis } from '@/api/types'
 import { Button } from '@/components/ui/Button/Button'
 import { Alert } from '@/components/ui/Alert/Alert'
@@ -32,8 +32,14 @@ export function LiveProgress({
   onSettled: (analysis?: Analysis) => void
 }) {
   const [connectionError, setConnectionError] = useState(false)
-  const bySource = useAnalysisStream(analysis.id, onSettled, () => setConnectionError(true))
+  const bySource = useAnalysisStream(
+    analysis.id,
+    onSettled,
+    () => setConnectionError(true),
+    analysis.createdAt,
+  )
   const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   const sources = sourcesForType(analysis.type)
   const isSplit = sources.length > 1
@@ -45,12 +51,18 @@ export function LiveProgress({
 
   async function handleCancel() {
     setCancelling(true)
+    setCancelError(null)
     try {
-      await cancelAnalysis(analysis.id) // DELETE → CANCELLED; 409 = już skończona (ignoruj)
+      // 200 → CANCELLED, 409 → już zakończona: oba przełączają stronę na właściwy ekran.
+      const settled = await cancelAndSettle(analysis.id)
+      if (settled) {
+        onSettled(settled)
+        return
+      }
     } catch {
-      /* idempotentne / już terminalna */
+      setCancelError(CANCEL_FAILED_MESSAGE) // strumień zostaje otwarty, analiza dalej śledzona
     }
-    onSettled() // refetch → strona pokaże ekran „anulowana"
+    setCancelling(false)
   }
 
   if (connectionError) {
@@ -95,6 +107,12 @@ export function LiveProgress({
           </Fragment>
         ))}
       </div>
+
+      {cancelError && (
+        <Alert variant="danger" title="Anulowanie nie powiodło się">
+          {cancelError}
+        </Alert>
+      )}
 
       <div className={styles.liveActions}>
         <Button variant="ghost" size="md" onClick={handleCancel} isLoading={cancelling}>

@@ -51,11 +51,11 @@ class Worker:
         self.log.close()
 
 
-def connect():
+def connect(user="test", password="test"):
     return pika.BlockingConnection(pika.ConnectionParameters(
         host=os.getenv("RABBITMQ_HOST", "localhost"),
         port=int(os.environ["RABBITMQ_PORT"]),
-        credentials=pika.PlainCredentials("test", "test"),
+        credentials=pika.PlainCredentials(user, password),
         connection_attempts=60, retry_delay=0.25,
     ))
 

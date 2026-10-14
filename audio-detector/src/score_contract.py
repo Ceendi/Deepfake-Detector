@@ -2,10 +2,12 @@
 
 import math
 
+from detector_runtime import DetectorError
+
 SCORE_CONTRACT = "audio-threshold-v1"
 
 
-class NoSpeechError(Exception):
+class NoSpeechError(DetectorError):
     """No audio window passed the existing energy gate to model inference."""
 
     code = "NO_SPEECH"

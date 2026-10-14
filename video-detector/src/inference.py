@@ -40,6 +40,7 @@ from .utils import (
     IMAGENET_STD,
     IMG_SIZE,
     NoFaceError,
+    ResolutionTooHighError,
     VideoDecodeError,
     derive_outputs,
     normalize_clip,
@@ -64,6 +65,16 @@ if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <
 # Without usable FPS metadata, assume a high frame rate: the frame budget still bounds decoding
 # without rejecting ordinary 24-60 fps clips that fit the duration limit.
 FALLBACK_FPS = 60.0
+# Inflated FPS metadata (e.g. 90000) must not inflate the decoding budget.
+MAX_BUDGET_FPS = 240.0
+# Orientation-independent width*height limit (default 3840x2160).
+MEDIA_MAX_PIXELS = int(os.getenv("MEDIA_MAX_PIXELS", "8294400"))
+if MEDIA_MAX_PIXELS <= 0:
+    raise ValueError("Media pixel limit must be positive")
+# Sampled frames are held until face detection; bound their memory (DET_SIZE is far smaller).
+MAX_FRAME_SIDE = 1920
+# Decoding long or high-resolution clips can exceed the stuck-job idle budget without ticks.
+DECODE_PROGRESS_INTERVAL_SECONDS = 5.0
 
 # Prog decyzyjny z ewaluacji (training/eval.py); 0.5 = brak przesuniecia.
 # Wkalibrowany w prob_fake, zeby Orchestrator (sztywne 0.5) mowil tym samym jezykiem.
@@ -88,6 +99,27 @@ MODEL_LOAD_TIME = Gauge(
     "video_model_load_duration_seconds",
     "Time taken to load the video models into memory",
 )
+
+
+def _check_resolution(width: float, height: float) -> None:
+    pixels = width * height
+    # Missing (0) or non-finite metadata falls through to the per-frame check.
+    if math.isfinite(pixels) and pixels > MEDIA_MAX_PIXELS:
+        log.warning("media_resolution_too_high", width=width, height=height,
+                    max_pixels=MEDIA_MAX_PIXELS)
+        raise ResolutionTooHighError()
+
+
+def _bounded_frame(frame: np.ndarray) -> np.ndarray:
+    height, width = frame.shape[:2]
+    # Container metadata can understate the decoded size.
+    _check_resolution(width, height)
+    longest = max(width, height)
+    if longest <= MAX_FRAME_SIDE:
+        return frame
+    scale = MAX_FRAME_SIDE / longest
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
 
 class VideoInference:
@@ -122,7 +154,8 @@ class VideoInference:
 
     # ------------------------------------------------------------------ frames
 
-    def _read_frames(self, video_path: str) -> tuple[list[tuple[float, np.ndarray]], float, float]:
+    def _read_frames(self, video_path: str, progress_callback=None
+                     ) -> tuple[list[tuple[float, np.ndarray]], float, float]:
         """-> ([(timestamp_s, frame_bgr)], duration_s, fps). Sekwencyjny grab()
         zamiast seekowania — szybsze i odporne na zepsute indeksy (jak prep_cache)."""
         cap = cv2.VideoCapture(video_path)
@@ -130,16 +163,21 @@ class VideoInference:
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
             fps = fps if math.isfinite(fps) and fps > 0 else 0.0
+            width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0.0
+            height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0.0
             duration = total / fps if fps > 0 else 0.0
             if math.isfinite(duration) and duration > MEDIA_MAX_DURATION_SECONDS:
                 raise MediaTooLongError()
+            _check_resolution(width, height)
             if total <= 0:
-                raise VideoDecodeError(f"no decodable frames in {os.path.basename(video_path)}")
+                log.warning("video_decode_failed", reason="no_frame_count")
+                raise VideoDecodeError()
             # Only the guard uses the fallback; result timestamps keep fps 0.
-            budget_fps = fps or FALLBACK_FPS
+            budget_fps = min(fps or FALLBACK_FPS, MAX_BUDGET_FPS)
             wanted = set(sample_indices(total, fps, FRAME_STRATEGY).tolist())
             frames = []
             i = 0
+            last_tick = time.monotonic()
             # Read to EOF: an understated frame count must not bypass the duration guard.
             while cap.grab():
                 if (i + 1) / budget_fps > MEDIA_MAX_DURATION_SECONDS:
@@ -147,12 +185,19 @@ class VideoInference:
                 if i in wanted:
                     ok, frame = cap.retrieve()
                     if ok:
-                        frames.append((i / fps if fps > 0 else 0.0, frame))
+                        frames.append((i / fps if fps > 0 else 0.0, _bounded_frame(frame)))
                 i += 1
+                now = time.monotonic()
+                if progress_callback and now - last_tick >= DECODE_PROGRESS_INTERVAL_SECONDS:
+                    # The runtime callback also raises AnalysisCancelled for cancelled analyses.
+                    progress_callback(10 + min(4, 5 * i // total), "PREPROCESSING",
+                                      {"step": "extract_frames", "frame": i})
+                    last_tick = now
         finally:
             cap.release()
         if not frames:
-            raise VideoDecodeError(f"failed to decode sampled frames from {os.path.basename(video_path)}")
+            log.warning("video_decode_failed", reason="no_sampled_frames", frames_read=i)
+            raise VideoDecodeError()
         return frames, duration, fps
 
     def _crop_faces(self, frames, progress_callback=None):
@@ -227,15 +272,15 @@ class VideoInference:
                 progress_callback(pct, stage, details)
 
         cb(10, "PREPROCESSING", {"step": "extract_frames"})
-        frames, duration, fps = self._read_frames(file_path)
+        frames, duration, fps = self._read_frames(file_path, progress_callback)
 
         with STAGE_DURATION.labels("face_detection").time():
             crops, timestamps = self._crop_faces(frames, progress_callback)
         faces_detected = len(crops)
         if faces_detected < MIN_FACES:
-            raise NoFaceError(
-                f"detected a face in only {faces_detected}/{len(frames)} sampled frames "
-                f"(minimum {MIN_FACES})")
+            log.warning("no_face_detected", faces_detected=faces_detected,
+                        frames_sampled=len(frames), min_faces=MIN_FACES)
+            raise NoFaceError()
         crops, timestamps = pad_crops(crops, timestamps)
 
         clip = normalize_clip([cv2.cvtColor(c, cv2.COLOR_BGR2RGB) for c in crops])
@@ -260,7 +305,7 @@ class VideoInference:
             attention = attention.detach()[0].numpy()                     # (16,)
 
         prob_fake, verdict, confidence = derive_outputs(logit, DECISION_THRESHOLD)
-        top_idx = top_attention_frames(attention, GRADCAM_TOPK)
+        top_idx = top_attention_frames(attention, GRADCAM_TOPK, faces_detected)
 
         cb(85, "POSTPROCESSING", {"step": "gradcam"})
         gradcam_paths: list[tuple[str, int]] = []

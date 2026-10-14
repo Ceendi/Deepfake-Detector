@@ -106,7 +106,10 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 - Każdy endpoint z zasobem użytkownika sprawdza `resource.user_id == jwt.sub` i zwraca **404**, nie 403.
 - Upload: magic bytes → ffprobe → whitelist MIME, nigdy samo rozszerzenie.
 - Osobne poświadczenia S3: file-service RW na `deepfake-uploads`, detektory R na uploads i RW na
-  `analysis-artifacts` (`infra/seaweedfs/s3.json.tmpl`). RabbitMQ nigdy `guest/guest`.
+  `analysis-artifacts` (`infra/seaweedfs/s3.json.tmpl`); wewnętrzne API SeaweedFS tylko na
+  loopbacku + klucze JWT. RabbitMQ nigdy `guest/guest`; serwisy łączą się jako
+  `orchestrator`/`detector` z uprawnieniami z `infra/rabbitmq/provision_users.py` (zmiana
+  topologii → zmiana uprawnień), admin tylko do operacji ręcznych.
 - Security primitives (`JwtRoleConverter`, `AuthenticatedUser`, `@CurrentUser`, `SecurityConfig`,
   `CorrelationIdFilter`, `GlobalExceptionHandler`, `ErrorResponse`) są **świadomie zduplikowane** między
   orchestratorem a file-service. Zmieniasz jeden — zsynchronizuj drugi; nie wydzielaj wspólnego modułu.
