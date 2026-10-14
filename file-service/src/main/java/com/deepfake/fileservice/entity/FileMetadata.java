@@ -30,7 +30,7 @@ public class FileMetadata {
     @Column(name = "user_id", nullable = false)
     private String userId;
 
-    @Column(name = "original_name")
+    @Column(name = "original_name", length = 512)
     private String originalName;
 
     @Column(nullable = false)
@@ -44,6 +44,9 @@ public class FileMetadata {
 
     @Column(name = "deleted_at")
     private Instant deletedAt;
+
+    @Column(name = "analyzed_at")
+    private Instant analyzedAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

@@ -188,7 +188,7 @@ headers without JSON negotiation or warning logs.
 
 The gateway validates `X-Correlation-ID` against `^[A-Za-z0-9-]{1,64}$`, replacing invalid
 or absent values with a UUID and echoing the downstream ID. Both servlet services apply
-the same rule to direct requests. Metadata lookup forwards the request's MDC correlation ID.
+the same rule to direct requests. The file claim call forwards the request's MDC correlation ID.
 
 Security's CORS filter answers permitted preflights before JWT authentication. Origin
 configuration has one source in the gateway, so routing cannot duplicate CORS headers.
@@ -208,7 +208,7 @@ filter tests, `SecurityConfigIntegrationTest`, `AnalysisServiceListTest`,
 
 **1. Input resolution** (`AnalysisCreationService`, `FileMetadataClient`). Runs outside any
 transaction (`Propagation.NEVER`). The orchestrator calls file-service
-`GET /api/files/{id}/metadata` with the caller's verified JWT and uses only the returned
+`POST /api/files/{id}/claim` with the caller's verified JWT and uses only the returned
 `objectKey` as the analysis `fileKey` and the task `file_key`; a `fileKey` sent by the client is
 ignored. Foreign, missing or soft-deleted files → `404`. Timeout, connection failure, any other
 status or invalid metadata → `503`. Nothing is persisted on failure. The lookup has one deadline
@@ -251,7 +251,7 @@ makes that safe. A confirmed dispatch bumps the analysis `updated_at`.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `FILE_SERVICE_BASE_URL` | `http://file-service:8081` | Metadata lookup target |
+| `FILE_SERVICE_BASE_URL` | `http://file-service:8081` | File claim target |
 | `FILE_SERVICE_LOOKUP_TIMEOUT` | `2s` | Whole lookup deadline |
 | `BACKPRESSURE_MAX_INFLIGHT` | `20` | Active analyses limit |
 | `BACKPRESSURE_MAX_INFLIGHT_PER_USER` | `3` | Active analyses limit per authenticated user |
@@ -735,3 +735,54 @@ retain their existing error behavior. The upload limit is 500 MB.
 
 Tests need `ffmpeg` and `ffprobe` installed: `FfprobeMediaProbeIntegrationTest`,
 `FfprobeMediaProbeProcessTest`, `FfprobeMediaProbeFailureTest`.
+
+## Upload admission and unused retention
+
+Upload admission has three bounds: the gateway token bucket (five/minute, burst five),
+a servlet filter before multipart parsing (four concurrent uploads per replica), and
+a PostgreSQL per-owner quota (5 GiB). Gateway Redis outages retain their existing
+fail-closed 503 policy; reads retain fail-open behavior. Replica saturation returns
+503 with Retry-After: 5 and no body. The filter covers every multipart request,
+including unknown routes, other methods and mixed-case content types: MVC parses
+multipart before selecting a handler. The slot is released after successful or failed
+request processing. Upload spool uses a dedicated directory; transferTo(File) moves
+Tomcat's disk part for validation and S3, and the file is removed in finally. ffprobe
+allows only the file protocol and checks each stream's pixel product against 4K.
+
+FileStorageService opens a READ_COMMITTED transaction, takes
+pg_advisory_xact_lock(114546, hashtext(user_id)), sums size_bytes of all stored rows and
+rejects quota overflow with 409 STORAGE_QUOTA_EXCEEDED before S3. Exact quota fits.
+The lock lasts through S3 and the metadata commit, so replicas cannot spend the same
+space concurrently. S3 failure rolls back admission; a failed metadata commit leaves
+an invisible orphan for the existing cleanup sweep. Hash collisions only serialize
+unrelated owners. Soft-deleted files keep counting until the purge removes the object
+and row (72 h by default), so delete-and-reupload cannot exceed the quota on disk.
+
+Creation resolves input through POST /api/files/{id}/claim with the verified JWT.
+The atomic update sets analyzed_at only when absent and requires the owner and an
+active row. Cleanup atomically soft-deletes rows with analyzed_at IS NULL older
+than seven days, then uses the existing 72-hour purge. These updates serialize on
+the file row: a committed claim excludes expiry; expiry makes a later claim 404.
+Atomic explicit soft-delete also avoids overwriting a concurrent claim timestamp.
+Claim commits before orchestrator admission: later 429, failure or a timed-out
+response can leave a file claimed without an analysis. There is no cross-service
+transaction. Historical rows are conservatively marked used by migration V3 to
+protect existing analysis references; unused retention applies to new uploads.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `STORAGE_QUOTA_BYTES` | `5368709120` | Active uploaded bytes per user (5 GiB) |
+| `UPLOAD_UNUSED_RETENTION` | `7d` | Age before an unclaimed upload is soft-deleted |
+| `UPLOAD_MAX_CONCURRENT` | `4` | Upload requests per replica, including multipart parsing |
+| `UPLOAD_SPOOL_DIRECTORY` | `${java.io.tmpdir}/deepfake-uploads` (Compose: `/tmp/deepfake-uploads`) | Dedicated multipart and validation spool |
+| `MEDIA_MAX_PIXELS` | `8294400` | Maximum width×height of each video stream (4K) |
+| `UPLOAD_RL_REPLENISH` | `1` | Upload tokens replenished per second |
+| `UPLOAD_RL_BURST` | `60` | Upload bucket token capacity |
+| `UPLOAD_RL_REQUESTED_TOKENS` | `12` | Tokens spent per upload (5/minute, burst 5) |
+
+Tests: UploadLifecycleIntegrationTest (real PostgreSQL, concurrent quota admission,
+rollback, owner-scoped idempotent claim, expiry), UploadSpoolIntegrationTest (real
+Tomcat disk part, one copy and admission before parsing), FileUploadControllerSecurityTest
+(names and 409 body), FileValidatorTest/FfprobeMediaProbeProcessTest (4K and pixel
+arithmetic), GatewayRateLimitIntegrationTest (real Redis), and
+AnalysisFileResolutionIntegrationTest (authenticated POST claim before analysis TX).

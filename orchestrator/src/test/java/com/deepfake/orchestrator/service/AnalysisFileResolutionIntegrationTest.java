@@ -59,6 +59,7 @@ class AnalysisFileResolutionIntegrationTest {
     static volatile String body;
     static volatile boolean slowHeaders;
     static volatile boolean slowBody;
+    static volatile String method;
     static volatile String authorization;
     static volatile String correlation;
     static volatile String identityHeader;
@@ -68,7 +69,8 @@ class AnalysisFileResolutionIntegrationTest {
         try {
             var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-            server.createContext("/api/files/" + FILE + "/metadata", exchange -> {
+            server.createContext("/api/files/" + FILE + "/claim", exchange -> {
+                method = exchange.getRequestMethod();
                 authorization = exchange.getRequestHeaders().getFirst("Authorization");
                 correlation = exchange.getRequestHeaders().getFirst("X-Correlation-ID");
                 identityHeader = exchange.getRequestHeaders().getFirst("X-User-ID");
@@ -140,6 +142,7 @@ class AnalysisFileResolutionIntegrationTest {
         });
         verifyNoInteractions(rabbit);
         assertThat(authorization).isEqualTo("Bearer verified-token");
+        assertThat(method).isEqualTo("POST");
         assertThat(identityHeader).isNull();
     }
 

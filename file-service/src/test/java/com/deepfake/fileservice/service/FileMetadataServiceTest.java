@@ -10,7 +10,6 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -71,33 +70,17 @@ class FileMetadataServiceTest {
     }
 
     @Test
-    void softDeleteStampsDeletedAtForOwner() {
-        FileMetadata m = FileMetadata.builder().fileId(id).userId("alice").objectKey("k").build();
-        when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(m));
-
+    void softDeleteUsesOwnerScopedAtomicUpdate() {
+        when(repository.softDeleteOwned(org.mockito.ArgumentMatchers.eq(id),
+                org.mockito.ArgumentMatchers.eq("alice"), org.mockito.ArgumentMatchers.any())).thenReturn(1);
         service.softDelete(id, "alice");
-
-        ArgumentCaptor<FileMetadata> saved = ArgumentCaptor.forClass(FileMetadata.class);
-        verify(repository).save(saved.capture());
-        assertThat(saved.getValue().getDeletedAt()).isNotNull();
+        verify(repository).softDeleteOwned(org.mockito.ArgumentMatchers.eq(id),
+                org.mockito.ArgumentMatchers.eq("alice"), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void softDeleteRejectsCrossUserAs404() {
-        FileMetadata m = FileMetadata.builder().fileId(id).userId("alice").build();
-        when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.of(m));
-
+    void softDeleteMissingOrForeignReturns404() {
         assertThatThrownBy(() -> service.softDelete(id, "bob"))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
-    }
-
-    // A second delete of an already soft-deleted file: the active-only lookup misses -> 404.
-    @Test
-    void softDeleteMissingReturns404() {
-        when(repository.findByFileIdAndDeletedAtIsNull(id)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.softDelete(id, "alice"))
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
     }
