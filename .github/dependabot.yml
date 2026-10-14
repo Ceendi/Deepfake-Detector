@@ -118,10 +118,11 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    # An Ubuntu release changes the system Python the detectors run on; migrate it deliberately.
+    # An Ubuntu release changes the system Python the detectors run on, and 24.10-style tags are
+    # short-lived non-LTS releases; move between LTS versions deliberately.
     ignore:
       - dependency-name: "ubuntu"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "build(deps)"
     labels: [dependencies, infra]
