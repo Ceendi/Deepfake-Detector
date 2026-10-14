@@ -122,9 +122,9 @@ class TempoIntegrationTest(unittest.TestCase):
         self.eventually(assert_trace)
         # Allow the live store to move the idle trace to its persistent WAL.
         time.sleep(15)
-        # Tempo drains for backend_worker.finish_on_shutdown_timeout (30s). A stop timeout equal
-        # to it races SIGKILL, and Docker may then return before reaping the container, turning
-        # the following start into a no-op.
+        # Keep the stop timeout well above Tempo's shutdown drain (finish_on_shutdown_timeout): a
+        # timeout equal to it races SIGKILL, and Docker may then return before reaping the
+        # container, turning the following start into a no-op.
         self.compose("stop", "--timeout", "90", "tempo")
         stopped = self.container_state()
         self.assertEqual(("exited", 0), (stopped["Status"], stopped["ExitCode"]))
