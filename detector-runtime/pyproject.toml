@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pika==1.4.*",
     "structlog==25.*",
-    "boto3==1.42.*",
+    "boto3>=1.42,<1.44",
     "redis",
     "opentelemetry-api>=1.30",
 ]
