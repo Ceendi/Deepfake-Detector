@@ -158,6 +158,11 @@ class MonitoringIntegrationTest(unittest.TestCase):
             self.assertNotIn('excluded-' + project, lines)
 
         self.eventually(collected)
+        # Observe beyond Docker discovery's 60 s refresh so delayed foreign logs cannot pass.
+        deadline = time.monotonic() + 65
+        while time.monotonic() < deadline:
+            collected()
+            time.sleep(2)
 
     def eventually(self, check):
         deadline = time.monotonic() + 120
