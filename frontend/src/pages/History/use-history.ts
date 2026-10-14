@@ -43,5 +43,12 @@ async function fetchAllAnalyses(signal: AbortSignal): Promise<AnalysisSummary[]>
   const rest = await Promise.all(
     Array.from({ length: totalPages - 1 }, (_, i) => listAnalyses(i + 1, FETCH_PAGE_SIZE, signal)),
   )
-  return [first.content, ...rest.map((page) => page.content)].flat()
+  // Strony pobierane równolegle mogą się nakładać, gdy w międzyczasie przybędzie analiz
+  // (przesunięcie stronicowania) — zostawiamy pierwsze wystąpienie każdego id.
+  return dedupeById([first.content, ...rest.map((page) => page.content)].flat())
+}
+
+export function dedupeById(items: AnalysisSummary[]): AnalysisSummary[] {
+  const seen = new Set<string>()
+  return items.filter((it) => !seen.has(it.id) && seen.add(it.id))
 }

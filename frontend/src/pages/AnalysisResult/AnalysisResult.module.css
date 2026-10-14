@@ -93,24 +93,17 @@
   flex-shrink: 0;
 }
 
-/* ===== Przycisk PDF z plakietką „V2" ===== */
+/* ===== Przycisk PDF + komunikat błędu pobierania ===== */
 .pdfWrap {
-  position: relative;
   display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-1);
 }
-.v2Badge {
-  position: absolute;
-  top: calc(-1 * var(--spacing-2));
-  right: calc(-1 * var(--spacing-1));
-  padding: 0 var(--spacing-1);
-  border-radius: var(--radius-full);
-  background: var(--color-accent);
-  color: var(--color-on-accent);
-  font-family: var(--font-family-mono);
-  font-size: 0.625rem;
-  font-weight: var(--font-weight-bold);
-  line-height: 1.5;
-  pointer-events: none;
+.pdfError {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
 }
 
 /* ===== Hero werdyktu ===== */
