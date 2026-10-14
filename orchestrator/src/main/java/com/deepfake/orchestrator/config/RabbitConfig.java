@@ -16,6 +16,7 @@ import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.amqp.autoconfigure.SimpleRabbitListenerContainerFactoryConfigurer;
+import org.springframework.boot.amqp.autoconfigure.RabbitListenerRetrySettingsCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.retry.RetryPolicy;
@@ -91,6 +92,15 @@ public class RabbitConfig {
 
     // The result factory retains Boot's configured finite retry policy and metric customizers.
     @Bean
+    RabbitListenerRetrySettingsCustomizer terminalFailureRetryPolicy() {
+        return settings -> {
+            var existing = settings.getExceptionPredicate();
+            settings.setExceptionPredicate(failure -> AmqpFailurePolicy.retryInProcess(failure)
+                    && (existing == null || existing.test(failure)));
+        };
+    }
+
+    @Bean
     MessageRecoverer republishRecoverer(RabbitTemplate template, AmqpRecoveryControl recovery,
             @Value("${reliability.amqp.confirm-timeout:2s}") Duration timeout) {
         return new ConfirmedMessageRecoverer(template, Q_RESULTS_DLQ, timeout.toMillis(), recovery, RESULTS_LISTENER);
@@ -124,7 +134,8 @@ public class RabbitConfig {
         factory.setAdviceChain(RetryInterceptorBuilder.stateless()
                 .retryPolicy(RetryPolicy.builder().maxRetries(2).delay(Duration.ofMillis(250))
                         .multiplier(2).maxDelay(Duration.ofSeconds(1))
-                        .excludes(PoisonDeadLetterException.class).build())
+                        .excludes(PoisonDeadLetterException.class)
+                        .predicate(AmqpFailurePolicy::retryInProcess).build())
                 .recoverer(new ConfirmedMessageRecoverer(template, Q_QUARANTINE,
                         timeout.toMillis(), recovery, DLQ_LISTENER)).build());
         return factory;

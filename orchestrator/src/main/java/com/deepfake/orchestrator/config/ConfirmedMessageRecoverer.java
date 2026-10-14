@@ -26,6 +26,14 @@ public final class ConfirmedMessageRecoverer implements MessageRecoverer {
 
     @Override
     public void recover(Message message, Throwable cause) {
+        if (AmqpFailurePolicy.databaseUnavailable(cause)) {
+            try {
+                recovery.databaseFailed(listenerId);
+            } catch (RuntimeException stopFailure) {
+                cause.addSuppressed(stopFailure);
+            }
+            throw new ImmediateRequeueAmqpException("Database unavailable; retain original delivery", cause);
+        }
         try {
             message.getMessageProperties().setDeliveryMode(MessageDeliveryMode.PERSISTENT);
             delegate.recover(message, cause);

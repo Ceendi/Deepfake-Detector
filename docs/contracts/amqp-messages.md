@@ -51,7 +51,8 @@ arguments (no DLX).
 
 `analysis.results.dlq` is bound to `analysis.dlx` with a routing key equal to the
 queue name, but it is **not** reached by broker dead-lettering — it is fed by the
-Orchestrator's confirmed recoverer after the result listener exhausts its retries.
+Orchestrator's confirmed recoverer after permanent result processing failures exhaust retries,
+or immediately for malformed result data.
 Progress has an independent advisory policy and never enters this terminal DLQ. `analysis.results` therefore keeps **no** DLX arguments, so the detectors
 that also declare it don't hit `PRECONDITION_FAILED`. Only the Orchestrator declares
 and consumes `analysis.results.dlq`.
@@ -60,7 +61,7 @@ Terminal DLQs use AUTO acknowledgements after the source-specific database commi
 Their HTTP-visible analysis failure message is always
 `[DEAD_LETTERED] Nie udało się zakończyć analizy.`; `x-exception-message` is diagnostic
 information logged with `analysis_id`, never persisted in the user-visible message.
-Poison payloads and exhausted terminal database retries are durably parked in the
+Poison payloads and exhausted permanent terminal data failures are durably parked in the
 backend-owned `analysis.backend.quarantine`, bound to `analysis.dlx` with the same
 routing key. That queue has no automatic consumer. Every recovery publication is
 mandatory and awaits correlated publisher confirmation/returns before acknowledging
@@ -68,6 +69,12 @@ the original. Publication failure pauses the affected listener, requeues the ori
 and resumes automatically with a delay increasing from 5s to a 60s cap. Readiness
 is DOWN until processing succeeds. See
 [listener retries, DLQs and quarantine](../reliability.md#listener-retries-dlqs-and-quarantine).
+
+Transient database failures in results and terminal DLQ listeners retain the original message
+by requeueing and pausing only the affected listener, with restart delays 1s/2s/4s up to 30s.
+They never trigger results DLQ/quarantine publication. A `COMPLETED` dead letter missing its
+result object still fails an active, expected, unaccepted source when the ID/source are valid,
+then retains a confirmed quarantine copy. Malformed IDs cannot identify an analysis to fail.
 
 ## Broker users
 
@@ -307,17 +314,22 @@ Contract:
 
 ## Reliability (D6)
 
-- **Retry:** the Orchestrator's `analysis.results` / `analysis.progress` listeners use
-  property-based retry (4 attempts, exponential backoff 1s/4s/15s). Message-conversion
-  errors are fatal — no retry, straight to the recoverer.
+- **Retry:** permanent `analysis.results` processing failures use property-based retry
+  (4 attempts, exponential backoff 1s/4s/15s). Malformed payloads, invalid IDs/scores,
+  class casts, number parsing and message conversion bypass retry, straight to the confirmed
+  recoverer. Transient database failures instead requeue and pause the affected result/DLQ
+  listener with 1s/2s/4s restart delays capped at 30s until processing succeeds.
+  Progress keeps its separate advisory retry policy.
 - **Dead-lettering:** detector task queues (`analysis.video` / `analysis.audio`) use broker
   DLX → `*.dlq`. Result/progress failures are instead republished by a
   `RepublishMessageRecoverer` to `analysis.results.dlq` (with `x-exception-*` headers), so
   `analysis.results` needs no DLX args (see Topology).
-- **DLQ consumer:** one `@RabbitListener(ackMode="MANUAL")` drains `results/video/audio.dlq`
+- **DLQ consumer:** one AUTO listener drains `results/video/audio.dlq`
   → analysis `FAILED` + SSE notify + in-flight slot released. A missing/unparseable
-  `analysis_id` is dropped (nack, no requeue); messages are never requeued onto a DLQ.
-- **Manual ack:** literal `MANUAL` on the detectors and the DLQ consumer. The main
+  `analysis_id` is confirmed into quarantine without changing an analysis. Identifiable
+  malformed terminal results fail the expected, unaccepted source before quarantining a copy.
+  Transient database failures leave the original requeued on its DLQ until recovery.
+- **Manual ack:** literal `MANUAL` on the detectors. The DLQ and main
   result/progress listeners use `AUTO` = container ack **after** the `@Transactional`
   handler commits (not RabbitMQ auto-ack), which is what lets retry + recoverer compose.
 - **Detector redelivery:** each non-cancelled delivery is computed, including concurrent

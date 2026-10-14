@@ -477,15 +477,36 @@ and frontend result/failure regressions.
 Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `ConfirmedMessageRecoverer`,
 `AmqpRecoveryControl`. Queue arguments: [AMQP contract](contracts/amqp-messages.md).
 
-- **Results** (`analysis.results`, AUTO ack after commit): 4 attempts with 1 s / 4 s / 15 s delays
+- **Results** (`analysis.results`, AUTO ack after commit): permanent processing failures get
+  4 attempts with 1 s / 4 s / 15 s delays
   (`spring.rabbitmq.listener.simple.retry`, `max-retries: 3`), then confirmed republish to
   `analysis.results.dlq`.
+  Invalid `analysis_id`, missing/malformed `result.prob_fake`, invalid scores,
+  `ClassCastException` and `NumberFormatException` bypass these retries and go directly
+  through the confirmed results DLQ recoverer. Payload validation runs before dedup/SQL.
 - **Progress** is advisory: 3 attempts (100 ms, 200 ms), then logged and ACKed. It never fails an
   analysis. The `PROCESSING` heartbeat commits before cache eviction, Redis snapshot and SSE.
 - **DLQs** (`analysis.results.dlq`, `analysis.video.dlq`, `analysis.audio.dlq`): fail an active
   analysis only for an expected, unaccepted source (task DLQs take the source from the queue).
-  Database failures get 3 attempts (250 ms, 500 ms). Poison messages and exhausted failures go to
+  Permanent data failures get 3 attempts (250 ms, 500 ms). Poison messages and exhausted failures go to
   `analysis.backend.quarantine`, which has no consumer and is for manual inspection.
+  A `COMPLETED` result without a result object, but with a valid analysis ID and source,
+  first commits the source-specific failure, then parks a confirmed copy in quarantine.
+  Unidentifiable payloads and legacy advisory progress are quarantined without failing an analysis.
+  Terminal failures expose only `[DEAD_LETTERED] Nie udało się zakończyć analizy.`;
+  exception details remain in logs and diagnostic AMQP headers.
+- **Database outages** on results and terminal DLQs are not exhausted into a recovery queue.
+  `CannotCreateTransactionException`, `CannotGetJdbcConnectionException`,
+  `DataAccessResourceFailureException`, `TransientDataAccessException`, `QueryTimeoutException`
+  and SQLState `08xxx`/`57P01`–`57P03` (connection lost, server shutdown or restart) anywhere in
+  the cause chain bypass in-process retry. The original delivery is requeued,
+  its listener is stopped, and restart waits for shutdown completion with 1 s / 2 s / 4 s
+  exponential delays capped at 30 s, without an attempt limit. Successful processing resets
+  the backoff. Results and DLQs pause independently; progress retains its advisory policy.
+  Recovery does not extend analysis deadlines: a long outage can still make an active analysis
+  eligible for stuck recovery after PostgreSQL returns. Whichever terminal CAS commits first
+  wins; a retained late result cannot revive FAILED/CANCELLED records. On return, the next
+  restart may take up to 30 s plus DB connection acquisition and transaction time.
 - **Recovery publications** (results DLQ, quarantine) are persistent, mandatory and confirmed. If
   confirmation fails, the original is requeued, the affected listener is stopped and restarted
   after a delay doubling from `AMQP_RECOVERY_DELAY` to `AMQP_MAX_RECOVERY_DELAY`, with no attempt
@@ -499,7 +520,12 @@ Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `Confirmed
 | `AMQP_RECOVERY_DELAY` | `5s` | First listener restart delay |
 | `AMQP_MAX_RECOVERY_DELAY` | `60s` | Restart delay cap |
 
-Tests: `DeadLetterListenerIntegrationTest`, `AmqpRecoveryControlTest`.
+Tests: `AmqpProgressCommitIntegrationTest` stops PostgreSQL for more than 40 s and verifies
+that results and terminal DLQs survive until database recovery; it also covers malformed
+success → one result attempt → source failure + quarantine. `AnalysisResultRetryIntegrationTest`
+verifies no in-process retry for deterministic exceptions while keeping retry metrics intact.
+Also: `ResultPayloadValidationTest`, `AmqpFailurePolicyTest`, `DeadLetterListenerIntegrationTest`,
+`AmqpRecoveryControlTest`.
 
 ## Stuck-job recovery
 

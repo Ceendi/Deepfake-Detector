@@ -208,7 +208,8 @@ class WorkerRedeliveryIntegrationTest {
         }
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
                 assertThat(stored(id).get("status")).isEqualTo("FAILED"));
-        assertThat(stored(id).get("error_message").toString()).isEqualTo("[DEAD_LETTERED] Nie udało się zakończyć analizy.");
+        assertThat(stored(id).get("error_message").toString())
+                .isEqualTo("[DEAD_LETTERED] Nie udało się zakończyć analizy.");
         assertThat(redis.opsForValue().get("cancel:" + id)).isEqualTo("1");
         String sibling = source.equals("video") ? "audio" : "video";
         Process skipped = start(sibling, "skipped-sibling", "unused", "0.8", false);
