@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.config;
 
 import com.deepfake.orchestrator.listener.InvalidResultException;
 import com.deepfake.orchestrator.listener.PoisonDeadLetterException;
+import java.sql.SQLException;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.dao.TransientDataAccessException;
@@ -17,9 +18,17 @@ public final class AmqpFailurePolicy {
                     || cause instanceof CannotGetJdbcConnectionException
                     || cause instanceof DataAccessResourceFailureException
                     || cause instanceof TransientDataAccessException
-                    || cause instanceof QueryTimeoutException) return true;
+                    || cause instanceof QueryTimeoutException
+                    || cause instanceof SQLException sql && connectionLost(sql.getSQLState())) return true;
         }
         return false;
+    }
+
+    // A server shutdown/restart kills open sessions with 57P01-57P03, which Hibernate reports as a
+    // generic JDBC error rather than a resource failure.
+    private static boolean connectionLost(String sqlState) {
+        return sqlState != null && (sqlState.startsWith("08")
+                || sqlState.equals("57P01") || sqlState.equals("57P02") || sqlState.equals("57P03"));
     }
 
     public static boolean retryInProcess(Throwable failure) {

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
+import java.sql.SQLException;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.params.ParameterizedTest;
@@ -17,6 +18,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.QueryTimeoutException;
 import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
+import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.transaction.CannotCreateTransactionException;
 
 class AmqpFailurePolicyTest {
@@ -24,7 +26,10 @@ class AmqpFailurePolicyTest {
         return Stream.of(new CannotCreateTransactionException("offline"),
                 new CannotGetJdbcConnectionException("offline"),
                 new DataAccessResourceFailureException("offline"),
-                new TransientDataAccessResourceException("offline"), new QueryTimeoutException("offline"));
+                new TransientDataAccessResourceException("offline"), new QueryTimeoutException("offline"),
+                new JpaSystemException(new RuntimeException(
+                        new SQLException("terminating connection due to administrator command", "57P01"))),
+                new JpaSystemException(new RuntimeException(new SQLException("connection failure", "08006"))));
     }
 
     @ParameterizedTest
@@ -43,5 +48,7 @@ class AmqpFailurePolicyTest {
         verifyNoInteractions(rabbit);
         assertThat(AmqpFailurePolicy.databaseUnavailable(new DataIntegrityViolationException("invalid data"))).isFalse();
         assertThat(AmqpFailurePolicy.retryInProcess(new DataIntegrityViolationException("invalid data"))).isTrue();
+        var constraint = new JpaSystemException(new RuntimeException(new SQLException("duplicate key", "23505")));
+        assertThat(AmqpFailurePolicy.databaseUnavailable(constraint)).isFalse();
     }
 }
