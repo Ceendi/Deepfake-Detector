@@ -174,6 +174,25 @@ describe('useAnalysisFlow', () => {
     expect((result.current.state as { message: string }).message).toBe('Nie znaleziono analizy.')
   })
 
+  it.each([401, 403])(
+    'watch rejection (%s) links to the existing analysis instead of a re-upload',
+    async (status) => {
+      vi.mocked(streamAnalysis).mockImplementationOnce(() =>
+        Promise.reject(new ApiError({ status, message: 'denied' })),
+      )
+      const { result } = renderFlow()
+      await startUntilAnalyzing(result)
+      await waitFor(() =>
+        expect(result.current.state).toEqual({
+          name: 'stillRunning',
+          analysisId: 'an-1',
+          watching: false,
+        }),
+      )
+      expect(uploadFileWithProgress).toHaveBeenCalledTimes(1)
+    },
+  )
+
   it.each(['eof', 'error'])(
     'recovers a terminal result after %s without an SSE result',
     async (ending) => {

@@ -4,7 +4,7 @@ import { uploadFileWithProgress } from '@/api/files'
 import { startAnalysis, cancelAnalysis } from '@/api/analysis'
 import { CANCEL_FAILED_MESSAGE, cancelAndSettle } from '@/api/cancel-analysis'
 import { ApiError } from '@/api/errors'
-import { AnalysisStillRunningError, watchAnalysis } from '@/api/watch-analysis'
+import { watchAnalysis } from '@/api/watch-analysis'
 import type { Analysis, AnalysisProgressEvent, AnalysisStatus } from '@/api/types'
 
 import { isAbortError, messageForError, pickAnalysisType } from './upload-utils'
@@ -131,7 +131,8 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
       },
     ).catch((err) => {
       if (signal.aborted || isAbortError(err)) return
-      if (err instanceof AnalysisStillRunningError) {
+      // The analysis exists: unless it is gone, link to it instead of offering a re-upload.
+      if (!(err instanceof ApiError && err.isNotFound)) {
         return setState({ name: 'stillRunning', analysisId, watching: false })
       }
       setState({ name: 'failed', message: messageForError(err), retry: 'reset' })
