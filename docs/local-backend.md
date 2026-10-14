@@ -64,11 +64,18 @@ reconfigure a running SeaweedFS: after changing credentials, recreate `seaweedfs
 to apply a credential change. `python3 infra/tests/test_s3_configuration.py` checks the
 renderer and real signed access per identity in an isolated project.
 
+The same init writes `security.toml` with fresh JWT signing keys on every run, and SeaweedFS
+exposes only the S3 API to other containers; master, volume and filer listen on loopback. See
+[broker users and internal storage APIs](reliability.md#broker-users-and-internal-storage-apis).
+
 ## Messaging
 
 RabbitMQ exchanges, queues, bindings and message formats are documented in the
 [AMQP contract](contracts/amqp-messages.md). Application code declares the topology at
-startup; the broker needs no definitions file.
+startup; the broker needs no definitions file. `rabbitmq-init` creates the least-privilege
+`orchestrator` and `detector` users (`RABBITMQ_ORCHESTRATOR_PASSWORD`,
+`RABBITMQ_DETECTOR_PASSWORD`); `RABBITMQ_USER` is the administrator for manual operations only.
+See [broker users and internal storage APIs](reliability.md#broker-users-and-internal-storage-apis).
 
 ## Locally built infrastructure images
 

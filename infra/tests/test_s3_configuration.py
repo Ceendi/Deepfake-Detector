@@ -18,6 +18,21 @@ import uuid
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
+GRPCURL_IMAGE = ("fullstorydev/grpcurl:v1.9.3@sha256:"
+                 "085e183ca334eb4e81ca81ee12cbb2b2737505d1d77f5e33dabc5d066593d998")
+# Everything but S3 (8333) and its JWT-protected gRPC port (18333) must stay loopback-only.
+INTERNAL_PORTS = (8888, 18888, 9333, 19333, 8080, 18080, 8181, 9101)
+PORT_PROBE = """
+import json, socket, sys
+result = {}
+for port in map(int, sys.argv[1:]):
+    try:
+        socket.create_connection(("seaweedfs", port), timeout=3).close()
+        result[port] = "open"
+    except OSError:
+        result[port] = "closed"
+print(json.dumps(result))
+"""
 PREFIXES = {
     "admin": "S3_ADMIN", "file-service": "S3_FILE_SERVICE",
     "orchestrator": "S3_ORCHESTRATOR", "detector": "S3_DETECTOR",
@@ -75,6 +90,13 @@ class S3ConfigurationTest(unittest.TestCase):
             "target": "/s3_renderer_cases.py", "read_only": True,
         })
         services["renderer-tests"] = probe
+        # Stand-ins for any other container on the network, e.g. a compromised detector.
+        network_probe = json.loads(json.dumps(services["seaweedfs-init"]))
+        network_probe.pop("volumes")
+        network_probe["entrypoint"] = ["python3", "-I", "-c", PORT_PROBE]
+        services["network-probe"] = network_probe
+        services["grpc-probe"] = {"image": GRPCURL_IMAGE, "networks": ["deepfake"],
+                                  "security_opt": ["no-new-privileges:true"], "cap_drop": ["ALL"]}
         self.values = {}
         for identity, prefix in PREFIXES.items():
             # ASCII access keys work in the SigV4 Authorization header. The
@@ -96,9 +118,9 @@ class S3ConfigurationTest(unittest.TestCase):
         self.addCleanup(self.compose, "down", "--volumes", "--remove-orphans")
         self.compose("config", "--quiet")
 
-    def signed(self, identity, method, path, body=b"", query="", secret=None):
-        prefix = PREFIXES[identity]
-        key = self.values[prefix + "_KEY"]
+    def signed(self, identity, method, path, body=b"", query="", secret=None, key=None):
+        prefix = PREFIXES.get(identity)
+        key = key if key is not None else self.values[prefix + "_KEY"]
         secret = secret if secret is not None else self.values[prefix + "_SECRET"]
         now = datetime.now(timezone.utc)
         date = now.strftime("%Y%m%d")
@@ -177,6 +199,39 @@ class S3ConfigurationTest(unittest.TestCase):
         # A near-miss secret must fail, proving the server authenticates the
         # exact special-character value rather than accepting unsigned calls.
         self.assert_status("admin", "GET", "/", 403, secret=self.values["S3_ADMIN_SECRET"] + "wrong")
+
+    def test_internal_apis_reject_anonymous_access(self):
+        self.compose("up", "-d", "seaweedfs-bucket-init")
+        self.wait_for_buckets()
+        self.assert_status("admin", "PUT", "/deepfake-uploads/private", 200, body=b"private")
+        # Filer, master and volume APIs bypass S3 identities; other containers cannot reach them.
+        result = self.compose("run", "--rm", "--no-deps", "network-probe",
+                              *map(str, (8333, 18333, *INTERNAL_PORTS)))
+        ports = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertEqual("open", ports["8333"])
+        for port in INTERNAL_PORTS:
+            self.assertEqual("closed", ports[str(port)], f"SeaweedFS port {port} reachable from the network")
+        # The S3 IAM gRPC API is reachable but refuses unsigned identity changes.
+        evil = {"identity": {"name": "anonymous-admin", "actions": ["Admin"], "credentials": [
+            {"access_key": "anonymousadminkey", "secret_key": "anonymous-admin-secret", "status": "Active"}]}}
+        for method, body in (("messaging_pb.SeaweedS3IamCache/PutIdentity", evil),
+                             ("s3_lifecycle_pb.SeaweedS3LifecycleInternal/LifecycleDelete", {})):
+            result = self.compose("run", "--rm", "--no-deps", "grpc-probe", "-plaintext",
+                                  "-d", json.dumps(body), "seaweedfs:18333", method, check=False)
+            self.assertNotEqual(0, result.returncode, f"anonymous {method} accepted")
+            # Reflection is anonymous, so this is the method's own authorization check.
+            self.assertIn("Unauthenticated", result.stdout + result.stderr)
+            self.assertIn("missing authorization metadata", result.stdout + result.stderr)
+        self.assert_status("admin", "GET", "/", 403, key="anonymousadminkey", secret="anonymous-admin-secret")
+        # Defense in depth: even on loopback the filer HTTP API requires a signed JWT.
+        for args in (("http://127.0.0.1:8888/buckets/deepfake-uploads/private",),
+                     ("http://127.0.0.1:8888/buckets/deepfake-uploads/",),
+                     ("--post-data=overwrite", "http://127.0.0.1:8888/buckets/deepfake-uploads/private")):
+            result = self.compose("exec", "-T", "seaweedfs", "wget", "-S", "-O", "/dev/null", *args, check=False)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("401 Unauthorized", result.stderr)
+        body = self.assert_status("admin", "GET", "/deepfake-uploads/private", 200)
+        self.assertTrue(body == b"private", "S3 object changed through an internal API")
 
     def test_production_image_renderer_regressions(self):
         result = self.compose("run", "--rm", "--no-deps", "renderer-tests", check=False)

@@ -123,6 +123,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 infra/tests/test_s3_configuration.py
 
+  rabbitmq-users:
+    name: Least-privilege RabbitMQ users
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 infra/tests/test_rabbitmq_users.py
+
   orchestrator-verify:
     name: Manual orchestrator fault acceptance
     if: github.event_name == 'workflow_dispatch'
