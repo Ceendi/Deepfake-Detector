@@ -141,7 +141,7 @@ class DetectorRuntime:
         self.propagator.inject(carrier=headers)
         ch.basic_publish(
             exchange=EXCHANGE, routing_key=routing_key,
-            body=json.dumps(payload).encode(),
+            body=json.dumps(payload, allow_nan=False).encode(),
             properties=pika.BasicProperties(content_type="application/json", delivery_mode=2,
                                             headers=headers or None),
             mandatory=True,
@@ -209,6 +209,9 @@ class DetectorRuntime:
                         result = self.process_task(msg, progress_callback=progress_callback)
                     if self.is_cancelled(analysis_id):
                         raise AnalysisCancelled()
+                    # Non-finite or non-JSON values would make the result unpublishable and
+                    # redeliver it until DLQ; fail the task with PROCESSING_ERROR instead.
+                    json.dumps(result, allow_nan=False)
                     payload = {
                         "analysis_id": analysis_id, "correlation_id": correlation_id,
                         "source": self.source, "status": "COMPLETED", "result": result,

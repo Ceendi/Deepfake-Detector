@@ -201,6 +201,7 @@ def test_unroutable_publication_reconnects_and_redelivers_without_failed_result(
     assert broker.basic_get("analysis.results", auto_ack=True)[0] is None
 
 
+
 def test_unavailable_model_consumes_and_confirms_failed_without_input(source, broker, rds, workers):
     analysis_id = str(uuid.uuid4())
     worker = workers(source, MODEL_UNAVAILABLE="true", BLOCK_AT="confirmed")
