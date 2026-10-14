@@ -20,6 +20,7 @@ import org.springframework.dao.TransientDataAccessResourceException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.orm.jpa.JpaSystemException;
 import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionSystemException;
 
 class AmqpFailurePolicyTest {
     static Stream<RuntimeException> databaseFailures() {
@@ -29,7 +30,20 @@ class AmqpFailurePolicyTest {
                 new TransientDataAccessResourceException("offline"), new QueryTimeoutException("offline"),
                 new JpaSystemException(new RuntimeException(
                         new SQLException("terminating connection due to administrator command", "57P01"))),
-                new JpaSystemException(new RuntimeException(new SQLException("connection failure", "08006"))));
+                new JpaSystemException(new RuntimeException(new SQLException("connection failure", "08006"))),
+                new TransactionSystemException("Could not roll back JPA transaction",
+                        new IllegalStateException(new SQLException("Connection is closed"))),
+                // Observed when PostgreSQL kills the session mid-update: the rollback failure wins.
+                new JpaSystemException(new org.hibernate.TransactionException(
+                        "Unable to rollback against JDBC Connection", new SQLException("Connection is closed"))),
+                rollbackOverriding(new JpaSystemException(new RuntimeException(
+                        new SQLException("terminating connection due to administrator command", "57P01")))));
+    }
+
+    private static TransactionSystemException rollbackOverriding(RuntimeException original) {
+        var rollback = new TransactionSystemException("Rollback failed");
+        rollback.initApplicationException(original);
+        return rollback;
     }
 
     @ParameterizedTest
@@ -50,5 +64,11 @@ class AmqpFailurePolicyTest {
         assertThat(AmqpFailurePolicy.retryInProcess(new DataIntegrityViolationException("invalid data"))).isTrue();
         var constraint = new JpaSystemException(new RuntimeException(new SQLException("duplicate key", "23505")));
         assertThat(AmqpFailurePolicy.databaseUnavailable(constraint)).isFalse();
+        // A failed commit (e.g. a deferred constraint) stays a data failure with finite retries.
+        var commit = new TransactionSystemException("Could not commit JPA transaction",
+                new IllegalStateException("deferred constraint violated"));
+        assertThat(AmqpFailurePolicy.databaseUnavailable(commit)).isFalse();
+        assertThat(AmqpFailurePolicy.databaseUnavailable(rollbackOverriding(
+                new DataIntegrityViolationException("invalid data")))).isFalse();
     }
 }

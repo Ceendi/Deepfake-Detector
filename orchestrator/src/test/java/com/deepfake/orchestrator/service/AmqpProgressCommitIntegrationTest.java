@@ -149,6 +149,22 @@ class AmqpProgressCommitIntegrationTest {
         verify(streams, timeout(2000).times(1)).sendResult(eq(deadId), any());
     }
 
+    @Test void sessionKilledMidStatementPausesInsteadOfDeadLettering() {
+        UUID id = seed(AnalysisType.VIDEO);
+        // The first four result writes lose their session as on a PostgreSQL shutdown (57P01), which
+        // also makes the rollback fail; finite in-process retries would dead-letter the valid result.
+        jdbc.execute("CREATE SEQUENCE amqp_failure_attempts");
+        jdbc.execute("CREATE FUNCTION amqp_commit_fault() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN "
+                + "IF NEW.video_prob IS NOT NULL AND nextval('amqp_failure_attempts') <= 4 THEN "
+                + "PERFORM pg_terminate_backend(pg_backend_pid()); PERFORM pg_sleep(5); END IF; RETURN NEW; END; $$");
+        jdbc.execute("CREATE TRIGGER amqp_commit_fault BEFORE UPDATE ON analysis FOR EACH ROW "
+                + "EXECUTE FUNCTION amqp_commit_fault()");
+        complete(id, "video");
+        await().atMost(Duration.ofSeconds(45)).untilAsserted(() -> assertThat(status(id)).isEqualTo("COMPLETED"));
+        assertThat(rabbit.receive(RabbitConfig.Q_RESULTS_DLQ, 100)).isNull();
+        assertThat(rabbit.receive(RabbitConfig.Q_QUARANTINE, 100)).isNull();
+    }
+
     @Test void missingResultBypassesRetryFailsSourceAndParksCopy() {
         UUID id = seed(AnalysisType.VIDEO);
         rabbit.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_RESULTS,
