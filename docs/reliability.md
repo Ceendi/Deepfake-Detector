@@ -19,8 +19,20 @@ Compose runs Eureka, gateway, file-service and the single orchestrator instance 
 stopped. An unhealthy healthcheck alone does not restart a container. Java containers use bounded
 `json-file` logs (three 10 MiB files) and memory limits: 512 MiB each for Eureka/gateway, 1 GiB
 each for orchestrator/file-service (per replica). With two file-service replicas, the running
-`core` + `auth` + `ml` services have 14.25 GiB of configured memory limits; allow additional room
-for Docker, the host and optional monitoring services.
+`core` + `auth` + `ml` services have 14.25 GiB of configured memory limits. Monitoring adds
+2 GiB: 512 MiB each for Prometheus, Loki and Tempo, and 256 MiB each for Grafana and Alloy.
+The combined limit is 16.25 GiB (15.25 GiB with one file-service replica), excluding one-shot
+init containers. These are ceilings, not reservations; allow additional room for Docker and
+the host, and use fewer profiles on a 16 GiB machine.
+
+Eureka, gateway, file-service and monitoring drop all capabilities, prevent privilege escalation
+and cap processes at 300. Eureka/gateway and monitoring use read-only root filesystems with a
+64 MiB `/tmp` tmpfs; writable monitoring state lives in named volumes. The root-run monitoring
+services retain only `DAC_OVERRIDE` to write existing volumes owned by root or their image user.
+Grafana uses its image user and a new `grafana-data` volume, preserving its SQLite state across
+recreation; settings in an old container's writable layer are not migrated automatically.
+File-service keeps its writable root filesystem because multipart spooling must use disk:
+charging two copies of a 500 MiB upload to tmpfs would exhaust its 1 GiB memory budget.
 
 Java images set `-XX:MaxRAMPercentage=75` alongside compact object headers. The maximum heap is
 approximately 384 MiB for Eureka/gateway and 768 MiB for orchestrator/file-service, rather than
@@ -32,6 +44,14 @@ The core integration test reads effective JVM flags and heap sizes inside every 
 The orchestrator container probes `/actuator/health/liveness`. The `amqpRecovery` contributor
 remains in readiness, which can stay DOWN after a broker outage until a successful delivery or
 recovery publication. That readiness state must not make a live process an unhealthy container.
+Gateway probes its internal management port (`9090/actuator/health`). RabbitMQ checks both
+`check_running` and `check_port_connectivity`, rather than only Erlang-node reachability.
+
+RabbitMQ's effective memory budget is explicitly `512MB` (512,000,000 bytes) and the quorum WAL is capped at
+64 MiB (`raft.wal_max_size_bytes=67108864`), leaving room for the Erlang runtime. Queue arguments,
+delivery limits and application retry policy stay the same. Redis caps dataset memory at 200 MiB
+inside its 256 MiB container and uses `volatile-lru`: only expiring hints/buckets can be evicted;
+non-expiring keys are kept. The existing Redis outage behavior still applies to command errors.
 
 RabbitMQ uses a stable hostname (`RABBITMQ_HOSTNAME`, default `rabbitmq`) so the node name and
 its storage directory remain the same when Compose recreates the container with `rabbitmqdata`.
@@ -48,6 +68,17 @@ node name before starting RabbitMQ. See [RabbitMQ backup and restore](https://ww
 Tests: `infra/tests/test_core_reliability.py` boots `core` on fresh isolated volumes, kills Java
 processes, recreates RabbitMQ with a persistent message, verifies liveness during failed AMQP
 recovery, and checks real Prometheus scrapes during file-service scaling.
+It also reads the live broker/Redis memory settings. `infra/tests/test_monitoring_configuration.py`
+runs native Prometheus/Loki/Alloy validators against valid and broken configs, checks dashboard JSON,
+boots monitoring on fresh volumes and verifies that Alloy excludes another project's logs.
+
+Alloy filters Docker discovery by `com.docker.compose.project`, using the automatically resolved
+Compose project name (including `--project-name` overrides). Prometheus's HTTP lifecycle/reload
+endpoint is disabled; edit configuration and recreate the container to apply it.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ALLOY_COMPOSE_PROJECT` | resolved Compose project name | Internal Alloy environment value supplied by Compose, not a separate deployment override |
 
 ## Identity, management and image updates
 
@@ -71,6 +102,20 @@ workflow; HIGH findings remain reported under its existing policy. Dependabot up
 the four Java Dockerfiles, and every action in the job with `packages: write` is pinned
 to a verified full commit SHA with its version comment. The publishing workflow remains
 manual. Regression guards run in Infrastructure smoke.
+
+Dependabot also tracks the detector Dockerfiles, all three uv projects, four Maven projects and
+frontend npm dependencies. Spring Boot/Spring Cloud major updates require a deliberate migration.
+Alloy upgrades OpenSSL without pinning an apt revision and asserts both packages are at least
+`3.0.13-0ubuntu3.16`; PostgreSQL installs/upgrades su-exec and asserts at least `0.3-r0`.
+Newer base-image packages are never downgraded. Checksum-based remote `ADD` uses the versioned
+Dockerfile 1.7 frontend rather than depending on the engine's bundled frontend.
+
+Application/detector CI reports every HIGH/CRITICAL finding in JSON artifacts, but blocks only
+findings with a published fix (`ignore-unfixed: true` in the blocking scan). The separate Compose
+security scan keeps its existing CRITICAL gate. CI and infrastructure actions are pinned to full
+SHAs. Superseded PR runs are cancelled; main runs are allowed to finish. Infrastructure smoke now
+covers all monitoring/security configs and the Keycloak theme, including native config validation
+and the regression guards in `infra/tests/test_ci_reliability.py`.
 
 ## Creating an analysis
 

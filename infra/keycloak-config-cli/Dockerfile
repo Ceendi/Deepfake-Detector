@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM maven:3.9.15-eclipse-temurin-21-alpine@sha256:856fe78872c59d3b584a64d07693d5433cbf44e35b5ba1f2c911147f39f54266 AS builder
 WORKDIR /source
 RUN apk add --no-cache python3

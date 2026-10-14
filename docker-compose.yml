@@ -17,6 +17,22 @@ x-logging: &default-logging
 x-security: &default-security
   - no-new-privileges:true
 
+x-runtime-hardening: &runtime-hardening
+  security_opt: *default-security
+  cap_drop: [ALL]
+  pids_limit: 300
+
+x-readonly-runtime: &readonly-runtime
+  <<: *runtime-hardening
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+
+# Existing monitoring volumes may contain files owned by either root or the image user.
+x-monitoring-hardening: &monitoring-hardening
+  <<: *readonly-runtime
+  cap_add: [DAC_OVERRIDE]
+
 # Both PostgreSQL services initialize and run as the image's postgres user.
 # Keep the root filesystem read-only and provide an owned socket directory.
 x-pg-hardening: &pg-hardening
@@ -116,6 +132,10 @@ services:
       - --save
       - "60"
       - "1"
+      - --maxmemory
+      - 200mb
+      - --maxmemory-policy
+      - volatile-lru
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
@@ -173,7 +193,7 @@ services:
       # Per-queue prometheus metrics (queue label).
       - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity"]
       interval: 10s
       timeout: 10s
       retries: 10
@@ -434,6 +454,7 @@ services:
     build: ./eureka-server
     profiles: ["core"]
     restart: unless-stopped
+    <<: *readonly-runtime
     mem_limit: 512m
     logging: *default-logging
     # Registry API and dashboard are reachable only on the Compose network.
@@ -451,6 +472,7 @@ services:
     build: ./gateway
     profiles: ["core"]
     restart: unless-stopped
+    <<: *readonly-runtime
     mem_limit: 512m
     logging: *default-logging
     depends_on:
@@ -470,6 +492,12 @@ services:
       # D4: upload rate-limit, env-tunable (raise for the load test). Defaults = prod values.
       UPLOAD_RL_REPLENISH: ${UPLOAD_RL_REPLENISH:-1}
       UPLOAD_RL_BURST: ${UPLOAD_RL_BURST:-10}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks: [deepfake]
 
   file-service:
@@ -477,6 +505,8 @@ services:
     build: ./file-service
     profiles: ["core"]
     restart: unless-stopped
+    # Multipart spooling needs disk space without charging uploads to the JVM memory budget.
+    <<: *runtime-hardening
     mem_limit: 1g
     logging: *default-logging
     # D4: scale 1<->2 via FILE_SERVICE_REPLICAS. Replicas only work here because the service has no
@@ -488,6 +518,7 @@ services:
         limits:
           cpus: "1.0"
           memory: 1g
+          pids: 300
     depends_on:
       postgres: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
@@ -658,17 +689,21 @@ services:
     networks: [deepfake]
 
   # --- Observability stack (profile: monitoring) ---------------------------------------------
-  # Dev-only: prometheus/loki/tempo/alloy run as root with named volumes (avoids uid/perms juggling
-  # on fresh volumes) — the app/db containers above stay hardened. All ports bound to 127.0.0.1.
+  # Named volumes hold writable state while root filesystems stay read-only.
   prometheus:
     image: prom/prometheus:v3.15.0
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          pids: 300
     user: "0:0"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
-      - --web.enable-lifecycle
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -687,6 +722,12 @@ services:
     image: grafana/loki:3.7.8
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          pids: 300
     user: "0:0"
     command: ["-config.file=/etc/loki/loki-config.yaml"]
     volumes:
@@ -703,6 +744,12 @@ services:
     image: grafana/tempo:3.1.0
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          pids: 300
     user: "0:0"
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
@@ -719,6 +766,12 @@ services:
     image: grafana/grafana:13.2.3
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *readonly-runtime
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          pids: 300
     depends_on:
       prometheus: { condition: service_healthy }
       loki: { condition: service_started }
@@ -730,6 +783,7 @@ services:
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     healthcheck:
@@ -746,7 +800,15 @@ services:
     build: ./infra/alloy
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          pids: 300
     user: "0:0" # reads the root-owned docker socket
+    environment:
+      ALLOY_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
@@ -777,6 +839,7 @@ volumes:
   loki-data:
   tempo-data:
   alloy-data:
+  grafana-data:
 
 networks:
   deepfake:

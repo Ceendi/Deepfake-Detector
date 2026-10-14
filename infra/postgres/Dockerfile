@@ -2,7 +2,10 @@ FROM postgres:18.6-alpine3.24@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c666
 
 # The upstream gosu binary embeds an outdated Go standard library. The official
 # entrypoint only needs its user-switch-and-exec behavior, provided by su-exec.
-RUN apk add --no-cache su-exec=0.3-r0 \
+RUN apk add --no-cache su-exec \
+    && apk upgrade --no-cache su-exec \
+    && su_exec_version="$(apk info -v --installed su-exec)" \
+    && case "$(apk version -t "${su_exec_version#su-exec-}" 0.3-r0)" in '='|'>') ;; *) exit 1 ;; esac \
     && rm /usr/local/bin/gosu \
     && sed -i 's/exec gosu /exec su-exec /g' /usr/local/bin/docker-entrypoint.sh \
     && mkdir -p /var/lib/postgresql/data \
