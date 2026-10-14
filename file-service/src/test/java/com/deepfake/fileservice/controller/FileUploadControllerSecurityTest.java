@@ -105,13 +105,13 @@ class FileUploadControllerSecurityTest {
     @Test
     void quotaReturns409WithNeutralPolishMessageBeforeS3() throws Exception {
         when(fileValidator.validate(any())).thenReturn(new FileValidator.Result("video/mp4", 1.0));
-        when(metadataRepository.activeBytes("user-a")).thenReturn(5368709120L);
+        when(metadataRepository.storedBytes("user-a")).thenReturn(5368709120L);
         mvc.perform(multipart("/api/files/upload").file(sampleFile())
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("STORAGE_QUOTA_EXCEEDED"))
                 .andExpect(jsonPath("$.message").value(
-                        "Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe."));
+                        "Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu."));
         verifyNoInteractions(s3Client);
     }
 

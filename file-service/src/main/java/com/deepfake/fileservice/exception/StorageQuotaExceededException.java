@@ -2,6 +2,6 @@ package com.deepfake.fileservice.exception;
 
 public class StorageQuotaExceededException extends RuntimeException {
     public StorageQuotaExceededException() {
-        super("Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe.");
+        super("Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.");
     }
 }

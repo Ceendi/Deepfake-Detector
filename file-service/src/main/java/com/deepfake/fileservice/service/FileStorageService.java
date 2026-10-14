@@ -46,7 +46,7 @@ public class FileStorageService {
             }
             return null;
         });
-        long used = repository.activeBytes(metadata.getUserId());
+        long used = repository.storedBytes(metadata.getUserId());
         if (metadata.getSizeBytes() < 0 || metadata.getSizeBytes() > quota - used) {
             throw new StorageQuotaExceededException();
         }

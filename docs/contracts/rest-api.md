@@ -30,10 +30,11 @@ Exactly the limit is accepted. Unknown duration remains accepted; the audio dete
 also bounds decoding and checks the decoded WAV before allocating its waveform.
 `422` body uses code `INVALID_FILE`; no S3 object or metadata row is stored.
 
-Owner quota: active (not soft-deleted) `size_bytes` plus the upload may not exceed
+Owner quota: stored `size_bytes` (including soft-deleted files until their physical purge,
+72 h by default) plus the upload may not exceed
 `STORAGE_QUOTA_BYTES` (5368709120 bytes, 5 GiB). Exact equality is accepted.
 Exhaustion returns `409` with code `STORAGE_QUOTA_EXCEEDED` and message
-`Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe.`
+`Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.`
 The check is serialized across replicas per owner before the S3 write.
 The gateway permits 5 uploads/minute with burst 5 by default (429). A full replica
 (`UPLOAD_MAX_CONCURRENT`, default 4) returns 503 with `Retry-After: 5` before multipart parsing.

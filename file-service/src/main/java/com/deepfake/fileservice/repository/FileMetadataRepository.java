@@ -16,8 +16,9 @@ import java.util.UUID;
 
 public interface FileMetadataRepository extends JpaRepository<FileMetadata, UUID> {
 
-    @Query("SELECT COALESCE(SUM(m.sizeBytes), 0) FROM FileMetadata m WHERE m.userId = :user AND m.deletedAt IS NULL")
-    long activeBytes(@Param("user") String userId);
+    // Soft-deleted rows still occupy S3 until the purge, so they count against the quota.
+    @Query("SELECT COALESCE(SUM(m.sizeBytes), 0) FROM FileMetadata m WHERE m.userId = :user")
+    long storedBytes(@Param("user") String userId);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE FileMetadata m SET m.analyzedAt = COALESCE(m.analyzedAt, :now) "

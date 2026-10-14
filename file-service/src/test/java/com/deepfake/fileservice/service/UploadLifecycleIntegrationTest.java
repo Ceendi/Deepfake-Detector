@@ -71,15 +71,23 @@ class UploadLifecycleIntegrationTest {
                 .originalName("clip.mp4").sizeBytes(size).mimetype("video/mp4").build();
     }
 
-    @Test void quotaIncludesOnlyOwnedActiveRowsAndAcceptsExactBoundary() {
-        var removed = repository.save(file("alice", 9));
-        metadata.softDelete(removed.getFileId(), "alice");
+    @Test void quotaIncludesOnlyOwnedRowsAndAcceptsExactBoundary() {
         repository.save(file("bob", 10));
         storage.store(file("alice", 10), media);
-        assertThat(repository.activeBytes("alice")).isEqualTo(10);
+        assertThat(repository.storedBytes("alice")).isEqualTo(10);
         assertThatThrownBy(() -> storage.store(file("alice", 1), media))
                 .isInstanceOf(StorageQuotaExceededException.class);
         verify(s3, times(1)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+    }
+
+    @Test void softDeletedFilesCountUntilPurged() {
+        var removed = repository.save(file("alice", 9));
+        metadata.softDelete(removed.getFileId(), "alice");
+        assertThatThrownBy(() -> storage.store(file("alice", 2), media))
+                .isInstanceOf(StorageQuotaExceededException.class);
+        repository.hardDeleteIfSoftDeleted(removed.getFileId());
+        storage.store(file("alice", 10), media);
+        assertThat(repository.storedBytes("alice")).isEqualTo(10);
     }
 
     @Test void simultaneousUploadsCannotBothSpendTheSameRemainingQuota() throws Exception {
@@ -112,7 +120,7 @@ class UploadLifecycleIntegrationTest {
         } finally {
             release.countDown();
         }
-        assertThat(repository.activeBytes("alice")).isEqualTo(6);
+        assertThat(repository.storedBytes("alice")).isEqualTo(6);
         assertThat(repository.count()).isEqualTo(1);
         verify(s3, times(1)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
     }
@@ -121,10 +129,10 @@ class UploadLifecycleIntegrationTest {
         when(s3.putObject(any(PutObjectRequest.class), any(RequestBody.class)))
                 .thenThrow(new IllegalStateException("storage outage"));
         assertThatThrownBy(() -> storage.store(file("alice", 10), media)).isInstanceOf(IllegalStateException.class);
-        assertThat(repository.activeBytes("alice")).isZero();
+        assertThat(repository.storedBytes("alice")).isZero();
         reset(s3);
         storage.store(file("alice", 10), media);
-        assertThat(repository.activeBytes("alice")).isEqualTo(10);
+        assertThat(repository.storedBytes("alice")).isEqualTo(10);
     }
 
     @Test void claimIsOwnerScopedIdempotentAndPreservesLegacyObjectKey() {

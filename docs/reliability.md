@@ -542,13 +542,13 @@ Tomcat's disk part for validation and S3, and the file is removed in finally. ff
 allows only the file protocol and checks each stream's pixel product against 4K.
 
 FileStorageService opens a READ_COMMITTED transaction, takes
-pg_advisory_xact_lock(114546, hashtext(user_id)), sums non-deleted size_bytes and
+pg_advisory_xact_lock(114546, hashtext(user_id)), sums size_bytes of all stored rows and
 rejects quota overflow with 409 STORAGE_QUOTA_EXCEEDED before S3. Exact quota fits.
 The lock lasts through S3 and the metadata commit, so replicas cannot spend the same
 space concurrently. S3 failure rolls back admission; a failed metadata commit leaves
 an invisible orphan for the existing cleanup sweep. Hash collisions only serialize
-unrelated owners. Deletion frees logical quota immediately, while physical objects
-remain for the existing deleted-file retention window.
+unrelated owners. Soft-deleted files keep counting until the purge removes the object
+and row (72 h by default), so delete-and-reupload cannot exceed the quota on disk.
 
 Creation resolves input through POST /api/files/{id}/claim with the verified JWT.
 The atomic update sets analyzed_at only when absent and requires the owner and an
