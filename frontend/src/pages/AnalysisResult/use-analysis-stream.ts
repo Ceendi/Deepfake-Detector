@@ -12,6 +12,7 @@ export function useAnalysisStream(
   id: string,
   onResult: (analysis: Analysis) => void,
   onError: (error: unknown) => void,
+  createdAt?: string,
 ): ProgressBySource {
   const [bySource, setBySource] = useState<ProgressBySource>({})
   // onResult przez ref — żeby zmiana jego tożsamości nie restartowała strumienia (dep tylko [id]).
@@ -41,12 +42,13 @@ export function useAnalysisStream(
         },
       },
       controller.signal,
+      { createdAt },
     ).catch((err) => {
       if (!controller.signal.aborted) onErrorRef.current(err)
     })
 
     return () => controller.abort()
-  }, [id])
+  }, [id, createdAt])
 
   return bySource
 }

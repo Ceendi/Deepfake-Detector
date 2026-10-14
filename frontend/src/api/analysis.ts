@@ -32,8 +32,8 @@ export function getStats(signal?: AbortSignal): Promise<UserStats> {
 }
 
 // DELETE /api/analysis/{id} → 200 Analysis (CANCELLED). Idempotentne; 409 gdy już skończona.
-export function cancelAnalysis(id: string): Promise<Analysis> {
-  return apiFetch<Analysis>(`/analysis/${id}`, { method: 'DELETE' })
+export function cancelAnalysis(id: string, signal?: AbortSignal): Promise<Analysis> {
+  return apiFetch<Analysis>(`/analysis/${id}`, { method: 'DELETE', signal })
 }
 
 // DELETE /api/analysis/{id}/record → 204. Trwałe (hard) usunięcie ZAKOŃCZONEJ analizy z historii
