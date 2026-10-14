@@ -123,7 +123,7 @@ class DiscoveryIntegrationTest(unittest.TestCase):
         self.compose_file = directory / 'compose.json'
         self.project = project = 'discovery-test-' + uuid.uuid4().hex[:12]
         names = (
-            'postgres', 'redis', 'rabbitmq', 'seaweedfs', 'seaweedfs-init',
+            'postgres', 'redis', 'rabbitmq', 'rabbitmq-init', 'seaweedfs', 'seaweedfs-init',
             'seaweedfs-bucket-init', 'eureka-server', 'gateway', 'file-service',
             'orchestrator', 'keycloak', 'keycloak-db',
         )

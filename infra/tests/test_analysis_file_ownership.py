@@ -55,7 +55,7 @@ class AnalysisFileOwnershipTest(unittest.TestCase):
         self.project = project = 'analysis-ownership-' + uuid.uuid4().hex[:12]
         self.compose_file = directory / 'compose.json'
         config = resolved_compose()
-        names = ('postgres', 'redis', 'rabbitmq', 'seaweedfs', 'seaweedfs-init',
+        names = ('postgres', 'redis', 'rabbitmq', 'rabbitmq-init', 'seaweedfs', 'seaweedfs-init',
                  'seaweedfs-bucket-init', 'file-service', 'orchestrator', 'keycloak', 'keycloak-db')
         services = {name: config['services'][name] for name in names}
         ports = dict(zip(('file-service', 'orchestrator', 'keycloak', 'rabbitmq'), available_test_ports(4)))

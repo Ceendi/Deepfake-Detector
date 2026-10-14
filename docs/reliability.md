@@ -117,6 +117,65 @@ SHAs. Superseded PR runs are cancelled; main runs are allowed to finish. Infrast
 covers all monitoring/security configs and the Keycloak theme, including native config validation
 and the regression guards in `infra/tests/test_ci_reliability.py`.
 
+## Broker users and internal storage APIs
+
+Applications never use the RabbitMQ administrator (`RABBITMQ_USER`), which is kept for manual
+operations (management UI, `rabbitmqctl`). After the broker is healthy, the one-shot
+`rabbitmq-init` service creates two untagged users through the management API, and the
+orchestrator and detectors start only after it succeeds:
+
+- `orchestrator` — declares the whole topology, consumes `analysis.results`, `analysis.progress`
+  and the three `*.dlq` queues, publishes only `analysis.video`/`analysis.audio` on
+  `analysis.exchange` and republishes to `analysis.dlx`.
+- `detector` (shared by both detectors) — declares its own queues, consumes only
+  `analysis.video`/`analysis.audio` and publishes only `analysis.results`/`analysis.progress`.
+
+Topic permissions on `analysis.exchange` restrict publish routing keys, so a compromised detector
+cannot publish tasks, consume results or progress, or publish to or read the backend DLQs and
+quarantine. Neither user has access to the default exchange. Residual risk: both users need
+`configure` and binding rights on what they declare, so a compromised detector can still delete or
+rebind the shared exchange and queues it declares (for example bind `analysis.video.dlq` to task
+routing keys, which fails those tasks). That disrupts processing but does not expose data.
+
+The init declares both exchanges and the two quorum task queues with the application's arguments.
+RabbitMQ requires an existing exchange for topic permissions, and creating a new queue with
+`x-dead-letter-exchange` also needs read on the queue and write on the DLX, which neither user
+gets. If a task queue is deleted, re-run `rabbitmq-init` before the services can recreate it.
+Exact patterns are in `infra/rabbitmq/provision_users.py` and the
+[AMQP contract](contracts/amqp-messages.md#broker-users).
+
+Every run resets the users' passwords, tags and permissions. **Existing volumes:** add
+`RABBITMQ_ORCHESTRATOR_PASSWORD` and `RABBITMQ_DETECTOR_PASSWORD` to `.env` and run
+`docker compose` with every profile you use (`--profile core --profile ml up -d`); the init
+provisions the users on the existing broker and Compose recreates the clients with the new
+credentials. Queues, messages and the administrator are kept. Change a password the same way and
+include `--profile ml`: detectors left running with the old password keep their connection but
+fail on the next reconnect. Empty
+passwords, control characters, an administrator named like an application user, or a non-admin
+`RABBITMQ_USER` make the init fail, and the dependent services do not start.
+
+SeaweedFS runs master, volume, filer and S3 in one process. `seaweedfs-init` also writes
+`security.toml` with fresh random keys for `jwt.signing`, `jwt.signing.read`, `jwt.filer_signing`
+and `jwt.filer_signing.read` on every run, and every component in that process loads the same
+file at start. Without it, the filer HTTP API and the S3 IAM gRPC API (`PutIdentity`) on the
+network accepted anonymous calls that bypass S3 identities. The master gives volume JWTs to any
+caller, so master, volume and filer also listen only on the container's loopback interface. Only
+the S3 API (8333) and its JWT-protected gRPC port (18333) are reachable from other containers.
+The unused Iceberg and Lance endpoints are disabled. Existing data stays readable after the
+upgrade: chunk references use volume IDs, not addresses.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RABBITMQ_ORCHESTRATOR_PASSWORD` | none (required) | Password of the `orchestrator` broker user |
+| `RABBITMQ_DETECTOR_PASSWORD` | none (required) | Password of the `detector` broker user |
+
+Tests: `infra/tests/test_rabbitmq_users.py` provisions a pre-existing broker, checks tags, the
+permission patterns, rotation and failed configurations. `tests/worker_redelivery` runs the real
+detector runtime as `detector`, and its `test_broker_permissions.py` checks that both users are
+refused everything outside their own queues and routing keys. `infra/tests/test_s3_configuration.py`
+checks that internal SeaweedFS ports are unreachable from the network, that anonymous IAM gRPC
+calls fail, and that the filer requires a JWT even on loopback.
+
 ## HTTP errors and request correlation
 
 Orchestrator and file-service explicitly map request binding/negotiation failures to
@@ -575,6 +634,23 @@ and do not log ERROR. A slot is released
 only after the servlet request completes and the writer exits, so a client that stalls a write
 keeps its slot until the peer disconnects. Size the quotas accordingly. The frontend reconciles
 with `GET` after a result, EOF, error or `429`; the database is authoritative.
+
+Frontend watching (`frontend/src/api/watch-analysis.ts`, `stream.ts`):
+
+- A stream with no bytes at all (heartbeats included) for 45 s is treated as half-open and
+  aborted; the client then reconciles as after an error.
+- A stream that stayed open for at least 60 s and ends without a result (normally the
+  `SSE_LIFETIME` close) is followed by one `GET` and an immediate reopen.
+- After a result, or an earlier EOF or error, the client polls `GET` up to 9 times over 91.5 s
+  (longer than the 60 s cache TTL). If the analysis is still `PENDING`/`PROCESSING`, it is not
+  shown as failed:
+  the client reopens SSE with a 5 s → 30 s backoff (opening SSE replays a terminal result from the
+  database) and does one `GET` whenever a reopened stream ends without a result. It stops at a
+  terminal status or at `createdAt + 7200 s`, the absolute limit enforced by stuck recovery.
+- The upload screen switches to "analysis still running" with a link to the result page instead
+  of offering a second upload. Cancel treats `200` and `409` as settled (`409` reads the analysis
+  and routes by its status); other errors and a 10 s timeout are shown in place and the stream
+  stays open.
 
 | Variable | Default | Meaning |
 |---|---|---|

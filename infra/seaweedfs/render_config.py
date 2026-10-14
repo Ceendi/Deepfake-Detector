@@ -4,8 +4,10 @@ import argparse
 import json
 import os
 from pathlib import Path
+import secrets
 import sys
 import tempfile
+import tomllib
 
 IDENTITIES = {
     "admin": "S3_ADMIN",
@@ -13,6 +15,11 @@ IDENTITIES = {
     "orchestrator": "S3_ORCHESTRATOR",
     "detector": "S3_DETECTOR",
 }
+
+
+# Without these keys the filer, volume and S3 IAM gRPC APIs accept anonymous requests.
+JWT_SECTIONS = ("jwt.signing", "jwt.signing.read", "jwt.filer_signing", "jwt.filer_signing.read")
+JWT_EXPIRES_AFTER_SECONDS = 10
 
 
 class ConfigurationError(Exception):
@@ -88,21 +95,19 @@ def render(template, environment):
     return document
 
 
-def publish(document, destination):
+def atomic_write(text, destination, validate):
     temporary = None
     try:
         # Same directory/filesystem as the destination makes replace atomic.
         with tempfile.NamedTemporaryFile(
             mode="w+", encoding="utf-8", dir=destination.parent,
-            prefix=".s3.json-", delete=False,
+            prefix="." + destination.name + "-", delete=False,
         ) as stream:
             temporary = Path(stream.name)
-            json.dump(document, stream, ensure_ascii=False, allow_nan=False, indent=2)
-            stream.write("\n")
+            stream.write(text)
             stream.flush()
             stream.seek(0)
-            if load_json(stream.read()) != document:
-                raise ConfigurationError("rendered S3 JSON failed validation")
+            validate(stream.read())
             # Retain the existing downstream read permissions; incomplete files
             # stay private (0600) until they have been validated.
             os.fchmod(stream.fileno(), 0o644)
@@ -114,14 +119,56 @@ def publish(document, destination):
             temporary.unlink(missing_ok=True)
 
 
+def publish(document, destination):
+    def validate(text):
+        if load_json(text) != document:
+            raise ConfigurationError("rendered S3 JSON failed validation")
+
+    text = json.dumps(document, ensure_ascii=False, allow_nan=False, indent=2) + "\n"
+    atomic_write(text, destination, validate)
+
+
+def render_security():
+    # Fresh keys on every run: tokens live for seconds and every SeaweedFS
+    # component reads them from this file in the same process at start.
+    lines = []
+    for section in JWT_SECTIONS:
+        lines += [f"[{section}]", f'key = "{secrets.token_urlsafe(48)}"',
+                  f"expires_after_seconds = {JWT_EXPIRES_AFTER_SECONDS}", ""]
+    return "\n".join(lines)
+
+
+def validate_security(text):
+    document = tomllib.loads(text)
+    keys = set()
+    for section in JWT_SECTIONS:
+        table = document
+        for part in section.split("."):
+            table = table.get(part) if isinstance(table, dict) else None
+        key = table.get("key") if isinstance(table, dict) else None
+        if not isinstance(key, str) or len(key) < 32:
+            raise ConfigurationError("rendered SeaweedFS security configuration failed validation")
+        keys.add(key)
+    if len(keys) != len(JWT_SECTIONS):
+        raise ConfigurationError("SeaweedFS JWT signing keys must be distinct")
+
+
+def publish_security(destination):
+    atomic_write(render_security(), destination, validate_security)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Render the SeaweedFS S3 identity configuration")
     parser.add_argument("--template", type=Path, default=Path("/s3.json.tmpl"))
     parser.add_argument("--output", type=Path, default=Path("/out/s3.json"))
+    parser.add_argument("--security-output", type=Path,
+                        help="SeaweedFS security.toml (default: next to --output)")
     args = parser.parse_args()
+    security_output = args.security_output or args.output.with_name("security.toml")
     try:
         template = args.template.read_text(encoding="utf-8")
         publish(render(template, os.environ), args.output)
+        publish_security(security_output)
     except ConfigurationError as error:
         print(f"ERROR: SeaweedFS S3 configuration: {error}", file=sys.stderr)
         return 1
@@ -129,7 +176,7 @@ def main():
         # Parser and OS exceptions may include template contents or file names.
         print("ERROR: SeaweedFS S3 configuration could not be rendered, validated or published", file=sys.stderr)
         return 1
-    print("SeaweedFS S3 identity configuration validated and published")
+    print("SeaweedFS S3 identity and JWT signing configuration validated and published")
     return 0
 
 
