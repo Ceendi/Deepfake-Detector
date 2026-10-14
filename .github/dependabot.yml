@@ -134,6 +134,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # CI-only pip file; its `-e ./detector-runtime` is relative to the repo root, not the file.
+    exclude-paths:
+      - "**/requirements-light.txt"
     groups:
       python:
         update-types: ["minor", "patch"]
