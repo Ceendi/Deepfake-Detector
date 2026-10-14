@@ -232,9 +232,21 @@ frames are the ones that most convinced the model of authenticity. Every `metada
 field is source-specific and optional — consumers must not require a field published
 by the other detector.
 
-Known `error.code` values from the video detector: `VIDEO_DECODE_FAILED` (no decodable
-frames), `NO_FACE_DETECTED` (face found in fewer than the minimum sampled frames),
-`PROCESSING_ERROR` (generic fallback, shared with audio). Audio publishes
+Known `error.code` values from the video detector, each with a fixed neutral Polish
+message (diagnostic details stay in logs):
+
+| Code | When | Message |
+|---|---|---|
+| `VIDEO_DECODE_FAILED` | no decodable frames | “Nie udało się odczytać obrazu z pliku. Plik może być uszkodzony.” |
+| `NO_FACE_DETECTED` | face found in fewer than the minimum sampled frames | “Nie wykryto twarzy w nagraniu. Wgraj materiał, na którym widać twarz.” |
+| `MEDIA_TOO_LONG` | frame count/FPS or decoded frames exceed `MEDIA_MAX_DURATION_SECONDS` | “Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.” |
+| `MEDIA_RESOLUTION_TOO_HIGH` | `width*height` (metadata or a decoded frame) exceeds `MEDIA_MAX_PIXELS` (default 8 294 400 = 3840×2160, either orientation) | “Rozdzielczość nagrania jest za wysoka (maks. 4K).” |
+| `MODEL_UNAVAILABLE` | inference models failed to load | “Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie później.” |
+| `PROCESSING_ERROR` | generic fallback (shared with audio), including a non-finite model logit | “Nie udało się przetworzyć materiału. Spróbuj ponownie.” |
+
+Both detectors serialize messages with strict JSON (`allow_nan=False`): a result
+containing NaN, infinity or a value that is not JSON-serializable is published as
+`FAILED/PROCESSING_ERROR` instead of an unparseable body or endless redelivery. Audio publishes
 `MEDIA_TOO_LONG` when the input container or decoded waveform exceeds
 `MEDIA_MAX_DURATION_SECONDS` (default 1800 seconds), with the localized message
 “Materiał przekracza dopuszczalną długość. Wgraj krótsze nagranie.” This fails both
