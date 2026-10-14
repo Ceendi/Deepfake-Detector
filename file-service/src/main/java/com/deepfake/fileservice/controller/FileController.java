@@ -14,6 +14,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,6 +45,14 @@ public class FileController {
     @GetMapping("/{id}/presign")
     public PresignResponse presign(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
         return presignService.presign(id, user.id());
+    }
+
+    @Operation(summary = "Claim an owned upload for analysis (idempotent)")
+    @ApiResponse(responseCode = "200", description = "Same metadata body; first use timestamp retained")
+    @ApiResponse(responseCode = "404", description = "Missing, soft-deleted, or not owned (IDOR)")
+    @PostMapping("/{id}/claim")
+    public FileMetadataResponse claim(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
+        return metadataService.claim(id, user.id());
     }
 
     @Operation(summary = "Soft-delete a file")

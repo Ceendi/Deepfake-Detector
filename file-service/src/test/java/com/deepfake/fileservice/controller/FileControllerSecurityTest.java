@@ -59,6 +59,23 @@ class FileControllerSecurityTest {
     }
 
     @Test
+    void claimRequiresAuthenticationAndReturnsMetadataForOwner() throws Exception {
+        UUID id = UUID.randomUUID();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/files/{id}/claim", id))
+                .andExpect(status().isUnauthorized());
+        when(metadataService.claim(id, "user-a")).thenReturn(new FileMetadataResponse(
+                id.toString(), "clip.mp4", 123L, 4.2, "video/mp4", "legacy/clip.mp4"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/files/{id}/claim", id)
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.objectKey").value("legacy/clip.mp4"));
+        when(metadataService.claim(id, "user-b")).thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/files/{id}/claim", id)
+                        .with(jwt().jwt(j -> j.subject("user-b")).authorities(userRole())))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void metadataWithoutTokenReturns401() throws Exception {
         mvc.perform(get("/api/files/{id}/metadata", UUID.randomUUID()))
                 .andExpect(status().isUnauthorized());

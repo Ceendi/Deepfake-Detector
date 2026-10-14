@@ -24,10 +24,18 @@ public class FileMetadataService {
     }
 
     @Transactional
+    public FileMetadataResponse claim(UUID fileId, String currentUserId) {
+        if (repository.claim(fileId, currentUserId, Instant.now()) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
+        return FileMetadataResponse.from(loadOwned(fileId, currentUserId));
+    }
+
+    @Transactional
     public void softDelete(UUID fileId, String currentUserId) {
-        FileMetadata m = loadOwned(fileId, currentUserId);
-        m.setDeletedAt(Instant.now());
-        repository.save(m);
+        if (repository.softDeleteOwned(fileId, currentUserId, Instant.now()) == 0) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
         // S3 object is kept; S3CleanupService purges it (and this row) after the retention window.
     }
 

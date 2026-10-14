@@ -53,8 +53,8 @@ public class FfprobeMediaProbe implements MediaProbe {
     @Override
     public Optional<ProbeResult> probe(Path file) throws IOException {
         List<String> cmd = new ArrayList<>(commandPrefix);
-        cmd.addAll(List.of("-v", "quiet", "-print_format", "json", "-show_entries",
-                "format=format_name,duration:stream=index", file.toAbsolutePath().toString()));
+        cmd.addAll(List.of("-v", "quiet", "-protocol_whitelist", "file", "-print_format", "json", "-show_entries",
+                "format=format_name,duration:stream=index,codec_type,width,height:stream_disposition=attached_pic", file.toAbsolutePath().toString()));
         Process process = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.DISCARD).start();
         ExecutorService reader = Executors.newSingleThreadExecutor(
                 Thread.ofPlatform().daemon().name("ffprobe-output-" + process.pid()).factory());
@@ -165,7 +165,16 @@ public class FfprobeMediaProbe implements MediaProbe {
                     || out.format().formatName() == null || out.format().formatName().isBlank()) {
                 return Optional.empty();
             }
-            return Optional.of(new ProbeResult(out.format().formatName(), parseDuration(out.format().duration())));
+            long maxPixels = 0;
+            for (var stream : out.streams()) {
+                // Cover art (MP3/M4A attached_pic) is not decoded by the detectors.
+                if (stream == null || !"video".equals(stream.codecType()) || stream.isAttachedPicture()) continue;
+                if (stream.width() != null && stream.height() != null) {
+                    if (stream.width() <= 0 || stream.height() <= 0) return Optional.empty();
+                    maxPixels = Math.max(maxPixels, (long) stream.width() * stream.height());
+                }
+            }
+            return Optional.of(new ProbeResult(out.format().formatName(), parseDuration(out.format().duration()), maxPixels));
         } catch (JacksonException e) {
             return Optional.empty();
         }
@@ -187,7 +196,15 @@ public class FfprobeMediaProbe implements MediaProbe {
     private record FfprobeOutput(
             @JsonProperty("streams") List<Stream> streams,
             @JsonProperty("format") Format format) {
-        private record Stream(@JsonProperty("index") Integer index) {}
+        private record Stream(@JsonProperty("index") Integer index,
+                @JsonProperty("codec_type") String codecType,
+                @JsonProperty("width") Integer width, @JsonProperty("height") Integer height,
+                @JsonProperty("disposition") Disposition disposition) {
+            boolean isAttachedPicture() {
+                return disposition != null && Integer.valueOf(1).equals(disposition.attachedPic());
+            }
+        }
+        private record Disposition(@JsonProperty("attached_pic") Integer attachedPic) {}
         private record Format(
                 @JsonProperty("format_name") String formatName,
                 @JsonProperty("duration") String duration) {}

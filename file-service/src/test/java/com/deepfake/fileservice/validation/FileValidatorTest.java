@@ -46,6 +46,20 @@ class FileValidatorTest {
     }
 
     @Test
+    void rejectsResolutionAbove4kAndAcceptsBothOrientationsAtBoundary() throws IOException {
+        Path file = write("resolution.mp4", MP4_MAGIC);
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", 1.0, 8294401)));
+        assertThatThrownBy(() -> validator().validate(file)).isInstanceOf(InvalidFileException.class)
+                .hasMessage("[MEDIA_RESOLUTION_TOO_HIGH] Rozdzielczość nagrania jest za wysoka (maks. 4K).");
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", 1.0, 3840L * 2160)));
+        assertThat(validator().validate(file)).isNotNull();
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", 1.0, 2160L * 3840)));
+        assertThat(validator().validate(file)).isNotNull();
+        assertThatThrownBy(() -> new FileValidator(mediaProbe, 1800, 100).validate(file))
+                .isInstanceOf(InvalidFileException.class);
+    }
+
+    @Test
     void acceptsRealMediaWhenMagicAndFfprobeAgree() throws IOException {
         Path file = write("clip.mp4", MP4_MAGIC);
         when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mov,mp4,m4a", 12.5)));

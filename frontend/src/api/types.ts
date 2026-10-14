@@ -25,6 +25,10 @@ export interface FileMetadata {
   mimetype: string
 }
 
+// POST /api/files/{id}/claim returns the same metadata as GET /metadata.
+export type FileClaimResponse = FileMetadata
+
+// Upload 409: ErrorResponse.code = STORAGE_QUOTA_EXCEEDED; 422 resolution errors use INVALID_FILE.
 export interface PresignResponse {
   url: string // host osiągalny z przeglądarki, nie wewnętrzny endpoint storage
   expiresAt: string // ISO 8601

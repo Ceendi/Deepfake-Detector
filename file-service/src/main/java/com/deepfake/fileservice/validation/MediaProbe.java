@@ -11,5 +11,9 @@ public interface MediaProbe {
     Optional<ProbeResult> probe(Path file) throws IOException;
 
     /** {@code formatName} is ffprobe's format_name (CSV, e.g. "mov,mp4,m4a"); duration may be null. */
-    record ProbeResult(String formatName, Double durationSeconds) {}
+    record ProbeResult(String formatName, Double durationSeconds, long maxPixels) {
+        public ProbeResult(String formatName, Double durationSeconds) {
+            this(formatName, durationSeconds, 0);
+        }
+    }
 }

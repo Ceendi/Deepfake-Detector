@@ -37,9 +37,9 @@ public class FileMetadataClient {
     }
 
     public String resolve(UUID fileId, String bearerToken) {
-        var builder = HttpRequest.newBuilder(baseUrl.resolve("/api/files/" + fileId + "/metadata"))
+        var builder = HttpRequest.newBuilder(baseUrl.resolve("/api/files/" + fileId + "/claim"))
                 .timeout(timeout).header("Authorization", "Bearer " + bearerToken)
-                .header("Accept", "application/json").GET();
+                .header("Accept", "application/json").POST(HttpRequest.BodyPublishers.noBody());
         String correlationId = MDC.get("correlationId");
         if (correlationId != null) builder.header("X-Correlation-ID", correlationId);
         var request = builder.build();
