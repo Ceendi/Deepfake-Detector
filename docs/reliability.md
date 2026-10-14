@@ -670,6 +670,9 @@ Code: `OptionalRedisOperations` (orchestrator), `ProtectiveRedisRateLimiter` and
   failure opens another window. Concurrent failures do not extend an existing window. A WARN
   is emitted at most once per window, without a user identifier. Each fail-open request, including
   those in the window, increments `gateway_ratelimiter_degraded_total{route}` (uploads do not).
+  On `ApplicationReadyEvent` the gateway runs the limiter script once on a throwaway key
+  (`RateLimiterWarmup`, 5 s, failures only logged). Without it the first scripted calls on a cold
+  JVM exceeded `REDIS_COMMAND_TIMEOUT`, opened the shared window and failed uploads with `503`.
   Rerun `GatewayRateLimitIntegrationTest` after upgrading Spring Cloud Gateway.
 
 | Variable | Default | Meaning |
