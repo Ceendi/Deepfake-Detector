@@ -11,7 +11,7 @@ opencv-python-headless>=4.10
 insightface>=0.7.3
 onnx
 onnxruntime
-pandas>=2.0
+pandas>=3.0.6
 numpy
 tqdm
 wandb
