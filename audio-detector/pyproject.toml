@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "deepfake-detector-runtime",
     "fastapi==0.136.*",
-    "uvicorn[standard]==0.46.*",
+    "uvicorn[standard]>=0.46,<0.55",
     "pika==1.4.*",
     "pydantic==2.13.*",
     "prometheus-client==0.25.*",
