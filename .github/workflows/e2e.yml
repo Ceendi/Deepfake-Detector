@@ -1,0 +1,71 @@
+name: E2E
+
+# Playwright against the real core + auth stack (Keycloak login, gateway, orchestrator,
+# file-service). Detectors need models that are not in the repository, so analyses stay active;
+# the per-user limits are raised for the throwaway stack instead of changing product defaults.
+on:
+  pull_request:
+    paths:
+      - frontend/**
+      - gateway/**
+      - orchestrator/**
+      - file-service/**
+      - eureka-server/**
+      - infra/keycloak/**
+      - infra/keycloak-config-cli/**
+      - docker-compose.yml
+      - .env.example
+      - .github/workflows/e2e.yml
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      COMPOSE: docker compose -p dfd-e2e --env-file e2e.env --profile core --profile auth
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Prepare a disposable environment
+        run: |
+          # Analyses never finish without detectors; uploads come in bursts from parallel tests.
+          sed -e 's/^BACKPRESSURE_MAX_INFLIGHT_PER_USER=.*/BACKPRESSURE_MAX_INFLIGHT_PER_USER=100/' \
+              -e 's|^# KEYCLOAK_REALM_CONFIG=.*|KEYCLOAK_REALM_CONFIG=dev/realm-export.json|' \
+              -e 's/^# UPLOAD_RL_BURST=.*/UPLOAD_RL_BURST=6000/' .env.example > e2e.env
+          grep -qx 'BACKPRESSURE_MAX_INFLIGHT_PER_USER=100' e2e.env
+          grep -qx 'KEYCLOAK_REALM_CONFIG=dev/realm-export.json' e2e.env
+          grep -qx 'UPLOAD_RL_BURST=6000' e2e.env
+      - name: Start core and auth
+        run: $COMPOSE up -d --build --wait --wait-timeout 600
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci && cp .env.example .env
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npx playwright test --project=chromium
+        working-directory: frontend
+      - if: failure()
+        run: $COMPOSE logs --no-color > compose.log
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            compose.log
+          retention-days: 7
+      - if: always()
+        run: $COMPOSE down -v

@@ -8,7 +8,7 @@ from test_discovery import ROOT
 
 class CiReliabilityTest(unittest.TestCase):
     def test_actions_are_pinned_and_main_runs_are_not_cancelled(self):
-        for name in ('ci', 'infra-smoke', 'security-scan'):
+        for name in ('ci', 'infra-smoke', 'security-scan', 'e2e'):
             workflow = (ROOT / f'.github/workflows/{name}.yml').read_text()
             with self.subTest(workflow=name):
                 self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
