@@ -118,6 +118,10 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # An Ubuntu release changes the system Python the detectors run on; migrate it deliberately.
+    ignore:
+      - dependency-name: "ubuntu"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "build(deps)"
     labels: [dependencies, infra]
@@ -130,6 +134,12 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    groups:
+      python:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "build(deps)"
     labels: [dependencies]
@@ -143,11 +153,20 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    groups:
+      maven:
+        update-types: ["minor", "patch"]
+    # Spring Boot minors need a matching Spring Cloud release train and springdoc line, so the
+    # framework moves deliberately in all four services at once; majors are migrations.
     ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "org.springframework.boot:*"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "org.springframework.cloud:*"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "org.springdoc:*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: "build(deps)"
     labels: [dependencies]
@@ -157,6 +176,12 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    groups:
+      frontend:
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "build(frontend)"
     labels: [dependencies]
