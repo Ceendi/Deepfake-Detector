@@ -19,8 +19,20 @@ Compose runs Eureka, gateway, file-service and the single orchestrator instance 
 stopped. An unhealthy healthcheck alone does not restart a container. Java containers use bounded
 `json-file` logs (three 10 MiB files) and memory limits: 512 MiB each for Eureka/gateway, 1 GiB
 each for orchestrator/file-service (per replica). With two file-service replicas, the running
-`core` + `auth` + `ml` services have 14.25 GiB of configured memory limits; allow additional room
-for Docker, the host and optional monitoring services.
+`core` + `auth` + `ml` services have 14.25 GiB of configured memory limits. Monitoring adds
+2 GiB: 512 MiB each for Prometheus, Loki and Tempo, and 256 MiB each for Grafana and Alloy.
+The combined limit is 16.25 GiB (15.25 GiB with one file-service replica), excluding one-shot
+init containers. These are ceilings, not reservations; allow additional room for Docker and
+the host, and use fewer profiles on a 16 GiB machine.
+
+Eureka, gateway, file-service and monitoring drop all capabilities, prevent privilege escalation
+and cap processes at 300. Eureka/gateway and monitoring use read-only root filesystems with a
+64 MiB `/tmp` tmpfs; writable monitoring state lives in named volumes. The root-run monitoring
+services retain only `DAC_OVERRIDE` to write existing volumes owned by root or their image user.
+Grafana uses its image user and a new `grafana-data` volume, preserving its SQLite state across
+recreation; settings in an old container's writable layer are not migrated automatically.
+File-service keeps its writable root filesystem because multipart spooling must use disk:
+charging two copies of a 500 MiB upload to tmpfs would exhaust its 1 GiB memory budget.
 
 Java images set `-XX:MaxRAMPercentage=75` alongside compact object headers. The maximum heap is
 approximately 384 MiB for Eureka/gateway and 768 MiB for orchestrator/file-service, rather than
@@ -32,6 +44,14 @@ The core integration test reads effective JVM flags and heap sizes inside every 
 The orchestrator container probes `/actuator/health/liveness`. The `amqpRecovery` contributor
 remains in readiness, which can stay DOWN after a broker outage until a successful delivery or
 recovery publication. That readiness state must not make a live process an unhealthy container.
+Gateway probes its internal management port (`9090/actuator/health`). RabbitMQ checks both
+`check_running` and `check_port_connectivity`, rather than only Erlang-node reachability.
+
+RabbitMQ's effective memory budget is explicitly `512MB` (512,000,000 bytes) and the quorum WAL is capped at
+64 MiB (`raft.wal_max_size_bytes=67108864`), leaving room for the Erlang runtime. Queue arguments,
+delivery limits and application retry policy stay the same. Redis caps dataset memory at 200 MiB
+inside its 256 MiB container and uses `volatile-lru`: only expiring hints/buckets can be evicted;
+non-expiring keys are kept. The existing Redis outage behavior still applies to command errors.
 
 RabbitMQ uses a stable hostname (`RABBITMQ_HOSTNAME`, default `rabbitmq`) so the node name and
 its storage directory remain the same when Compose recreates the container with `rabbitmqdata`.
@@ -48,6 +68,17 @@ node name before starting RabbitMQ. See [RabbitMQ backup and restore](https://ww
 Tests: `infra/tests/test_core_reliability.py` boots `core` on fresh isolated volumes, kills Java
 processes, recreates RabbitMQ with a persistent message, verifies liveness during failed AMQP
 recovery, and checks real Prometheus scrapes during file-service scaling.
+It also reads the live broker/Redis memory settings. `infra/tests/test_monitoring_configuration.py`
+runs native Prometheus/Loki/Alloy validators against valid and broken configs, checks dashboard JSON,
+boots monitoring on fresh volumes and verifies that Alloy excludes another project's logs.
+
+Alloy filters Docker discovery by `com.docker.compose.project`, using the automatically resolved
+Compose project name (including `--project-name` overrides). Prometheus's HTTP lifecycle/reload
+endpoint is disabled; edit configuration and recreate the container to apply it.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ALLOY_COMPOSE_PROJECT` | resolved Compose project name | Internal Alloy environment value supplied by Compose, not a separate deployment override |
 
 ## Identity, management and image updates
 
@@ -71,6 +102,105 @@ workflow; HIGH findings remain reported under its existing policy. Dependabot up
 the four Java Dockerfiles, and every action in the job with `packages: write` is pinned
 to a verified full commit SHA with its version comment. The publishing workflow remains
 manual. Regression guards run in Infrastructure smoke.
+
+Dependabot also tracks the detector Dockerfiles, all three uv projects, four Maven projects and
+frontend npm dependencies. Spring Boot/Spring Cloud major updates require a deliberate migration.
+Alloy upgrades OpenSSL without pinning an apt revision and asserts both packages are at least
+`3.0.13-0ubuntu3.16`; PostgreSQL installs/upgrades su-exec and asserts at least `0.3-r0`.
+Newer base-image packages are never downgraded. Checksum-based remote `ADD` uses the versioned
+Dockerfile 1.7 frontend rather than depending on the engine's bundled frontend.
+
+Application/detector CI reports every HIGH/CRITICAL finding in JSON artifacts, but blocks only
+findings with a published fix (`ignore-unfixed: true` in the blocking scan). The separate Compose
+security scan keeps its existing CRITICAL gate. CI and infrastructure actions are pinned to full
+SHAs. Superseded PR runs are cancelled; main runs are allowed to finish. Infrastructure smoke now
+covers all monitoring/security configs and the Keycloak theme, including native config validation
+and the regression guards in `infra/tests/test_ci_reliability.py`.
+
+## Broker users and internal storage APIs
+
+Applications never use the RabbitMQ administrator (`RABBITMQ_USER`), which is kept for manual
+operations (management UI, `rabbitmqctl`). After the broker is healthy, the one-shot
+`rabbitmq-init` service creates two untagged users through the management API, and the
+orchestrator and detectors start only after it succeeds:
+
+- `orchestrator` — declares the whole topology, consumes `analysis.results`, `analysis.progress`
+  and the three `*.dlq` queues, publishes only `analysis.video`/`analysis.audio` on
+  `analysis.exchange` and republishes to `analysis.dlx`.
+- `detector` (shared by both detectors) — declares its own queues, consumes only
+  `analysis.video`/`analysis.audio` and publishes only `analysis.results`/`analysis.progress`.
+
+Topic permissions on `analysis.exchange` restrict publish routing keys, so a compromised detector
+cannot publish tasks, consume results or progress, or publish to or read the backend DLQs and
+quarantine. Neither user has access to the default exchange. Residual risk: both users need
+`configure` and binding rights on what they declare, so a compromised detector can still delete or
+rebind the shared exchange and queues it declares (for example bind `analysis.video.dlq` to task
+routing keys, which fails those tasks). That disrupts processing but does not expose data.
+
+The init declares both exchanges and the two quorum task queues with the application's arguments.
+RabbitMQ requires an existing exchange for topic permissions, and creating a new queue with
+`x-dead-letter-exchange` also needs read on the queue and write on the DLX, which neither user
+gets. If a task queue is deleted, re-run `rabbitmq-init` before the services can recreate it.
+Exact patterns are in `infra/rabbitmq/provision_users.py` and the
+[AMQP contract](contracts/amqp-messages.md#broker-users).
+
+Every run resets the users' passwords, tags and permissions. **Existing volumes:** add
+`RABBITMQ_ORCHESTRATOR_PASSWORD` and `RABBITMQ_DETECTOR_PASSWORD` to `.env` and run
+`docker compose` with every profile you use (`--profile core --profile ml up -d`); the init
+provisions the users on the existing broker and Compose recreates the clients with the new
+credentials. Queues, messages and the administrator are kept. Change a password the same way and
+include `--profile ml`: detectors left running with the old password keep their connection but
+fail on the next reconnect. Empty
+passwords, control characters, an administrator named like an application user, or a non-admin
+`RABBITMQ_USER` make the init fail, and the dependent services do not start.
+
+SeaweedFS runs master, volume, filer and S3 in one process. `seaweedfs-init` also writes
+`security.toml` with fresh random keys for `jwt.signing`, `jwt.signing.read`, `jwt.filer_signing`
+and `jwt.filer_signing.read` on every run, and every component in that process loads the same
+file at start. Without it, the filer HTTP API and the S3 IAM gRPC API (`PutIdentity`) on the
+network accepted anonymous calls that bypass S3 identities. The master gives volume JWTs to any
+caller, so master, volume and filer also listen only on the container's loopback interface. Only
+the S3 API (8333) and its JWT-protected gRPC port (18333) are reachable from other containers.
+The unused Iceberg and Lance endpoints are disabled. Existing data stays readable after the
+upgrade: chunk references use volume IDs, not addresses.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RABBITMQ_ORCHESTRATOR_PASSWORD` | none (required) | Password of the `orchestrator` broker user |
+| `RABBITMQ_DETECTOR_PASSWORD` | none (required) | Password of the `detector` broker user |
+
+Tests: `infra/tests/test_rabbitmq_users.py` provisions a pre-existing broker, checks tags, the
+permission patterns, rotation and failed configurations. `tests/worker_redelivery` runs the real
+detector runtime as `detector`, and its `test_broker_permissions.py` checks that both users are
+refused everything outside their own queues and routing keys. `infra/tests/test_s3_configuration.py`
+checks that internal SeaweedFS ports are unreachable from the network, that anonymous IAM gRPC
+calls fail, and that the filer requires a JWT even on loopback.
+
+## HTTP errors and request correlation
+
+Orchestrator and file-service explicitly map request binding/negotiation failures to
+400/405/406/413/415 instead of the unexpected-error handler. Disconnects do not trigger
+another write; async timeouts have no body. Both avoid ERROR logging for those async
+conditions. Unexpected application failures still return a generic 500 and log details.
+Shared error messages are neutral Polish text; technical status-exception reasons
+are not exposed. Clients accepting only SSE/PDF/binary data receive error status and
+headers without JSON negotiation or warning logs.
+
+The gateway validates `X-Correlation-ID` against `^[A-Za-z0-9-]{1,64}$`, replacing invalid
+or absent values with a UUID and echoing the downstream ID. Both servlet services apply
+the same rule to direct requests. Metadata lookup forwards the request's MDC correlation ID.
+
+Security's CORS filter answers permitted preflights before JWT authentication. Origin
+configuration has one source in the gateway, so routing cannot duplicate CORS headers.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GATEWAY_CORS_ORIGINS` | `http://localhost:5173,http://localhost:4173` | Comma-separated frontend origins |
+
+History always uses `createdAt DESC, id DESC` with a page size capped at 100, ignoring
+client sort parameters. Regression tests: both `HttpExceptionContractTest` and correlation
+filter tests, `SecurityConfigIntegrationTest`, `AnalysisServiceListTest`,
+`AnalysisErrorContractTest`, `AnalysisFileResolutionIntegrationTest`.
 
 ## Creating an analysis
 
@@ -166,27 +296,62 @@ connection loop and a single inference thread per process.
   persistent and `mandatory=True` on a confirm channel; the task is ACKed only after the confirm.
   A return, nack, lost connection or failed ACK escapes to the reconnect loop: the connection is
   closed (releasing unacked work to RabbitMQ) and the worker reconnects after 5 s. Transport
-  failures never become an inference FAILED result. Malformed JSON is nacked to the task DLQ.
+  failures never become an inference FAILED result. Malformed JSON, a non-UTF-8 body or
+  excessive nesting is nacked to the task DLQ.
+- **Error classification:** only `DetectorError` subclasses (string `code`, deliberate Polish
+  message) publish their own code and message. Any other exception, including foreign objects
+  with a `code` attribute such as `cv2.error` (`-215`) or libsndfile errors, publishes
+  `PROCESSING_ERROR` with the neutral message; details stay in logs. The `failed` outcome
+  metric is recorded after the ACK, like `completed`.
+- **Object storage outages:** connection errors, timeouts, exhausted transfer retries, 5xx, 429
+  and botocore's retryable throttling/timeout codes (`SlowDown`, `RequestTimeout`, …) while downloading the input or uploading artifacts are treated as transport
+  failures: no result is published, the connection is closed, and RabbitMQ redelivers the task
+  within `x-delivery-limit=5`. Consecutive outages back off the reconnect 5 s → 10 s → 20 s →
+  30 s (reset after the next ACKed task), so roughly two minutes of S3 outage are absorbed before
+  the task dead-letters to FAILED. These warnings carry only the error type: botocore messages
+  include the object URL with the user's file name. Missing or forbidden input (`404`/`NoSuchKey`/`403`) stays
+  `FAILED/PROCESSING_ERROR`; a forbidden artifact upload still only drops that heatmap.
+- **Task watchdog:** a separate thread checks the running attempt once a second. An attempt
+  exceeding `DETECTOR_TASK_HARD_LIMIT_SECONDS` (a hung ffmpeg or native ONNX call cannot be
+  interrupted) marks the consumer DOWN and exits the process with status 1; Compose restarts it
+  (`unless-stopped`) and RabbitMQ redelivers the task, counted toward the delivery limit. Audio
+  ffmpeg extraction additionally runs with `-nostdin` and a timeout of
+  `60 + MEDIA_MAX_DURATION_SECONDS / 10` seconds, which fails the task with `PROCESSING_ERROR`.
+  The default limit is deliberately above the 600 s stuck-job idle threshold, so a legitimate
+  long analysis is never killed; a hung attempt may block the worker up to an hour after
+  stuck recovery has already failed the analysis, and its late result is rejected by the guard.
+- **Credentials:** `RABBITMQ_PASSWORD`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` have no defaults.
+  Missing storage keys stop the import; a missing broker password keeps the API up with
+  `/health` DOWN and logs the reason on every reconnect attempt.
 - **Isolation of duplicates:** each attempt works in a private temp directory, and Grad-CAM keys
   carry an attempt UUID (`{analysisId}/{source}/gradcam_..._{attempt}.png`), so a duplicate never
   overwrites artifacts referenced by the accepted result.
 - **Start ping:** a worker publishes `0/LOADING` before downloading, which flips the analysis to
   `PROCESSING` and records that source's first pickup and latest progress in PostgreSQL.
   Later progress renews only that source's idle clock.
-- **Readiness:** models load once at startup. If loading fails the process stays up, `/health`
+- **Readiness:** models load once at startup. If loading fails, including an import error of the
+  ML stack, the process stays up, `/health`
   returns `503 DOWN`, and each task immediately gets a `FAILED` result with code
   `MODEL_UNAVAILABLE` (no download, progress or inference). `/health` is `UP` only with loaded
   models, a connected consumer and a fresh consumer heartbeat. Fix the model and restart the
   container; there is no automatic reload, and Compose does not restart unhealthy containers.
+
+Cancel checks fail open; after a Redis error the worker skips them for 5 s instead of paying
+the 1 s socket timeout on every progress tick.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DETECTOR_TASK_HARD_LIMIT_SECONDS` | `3600` | Positive finite limit for one attempt before the worker restarts |
 
 Process kill before publishing → RabbitMQ redelivers and another worker recomputes. Kill after
 confirm but before ACK → the result may be published twice. A network loss is detected through
 the 30 s heartbeat (allow about a minute) plus the 5 s reconnect delay; this must fit inside the
 stuck-job idle budget below.
 
-Tests: `detector-runtime/tests/` (shared delivery guards), `tests/worker_redelivery/`
+Tests: `detector-runtime/tests/` (shared delivery guards, `test_failures.py` for error
+classification, storage outages and the watchdog), `tests/worker_redelivery/`
 (real worker processes with RabbitMQ and Redis; inference is
-stubbed), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
+stubbed, including S3 outage redelivery and the DLQ after the delivery limit), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
 
 ## Media duration and audio progress
 
@@ -464,6 +629,13 @@ Tests: `RedisDownDegradationIntegrationTest`, `GatewayRateLimitIntegrationTest`,
 forwarding to a stub backend, immediate bypass responses and the Prometheus counter, then verifies
 `429` returns after recovery. Unit tests cover the sentinel, timeouts and shared window expiry.
 
+DLQ failures persist `[DEAD_LETTERED] Nie udało się zakończyć analizy.`;
+stuck recovery persists `[ANALYSIS_TIMEOUT] Analiza trwała zbyt długo i została przerwana.`
+Exception headers remain only in logs with `analysis_id`; recovery thresholds and
+source-specific CAS guards are unchanged. Regression tests:
+`AnalysisServiceFailFromDlqTest`, `WorkerRedeliveryIntegrationTest`,
+`AnalysisStuckRecoveryIntegrationTest`.
+
 ## SSE delivery
 
 Code: `AnalysisStreamRegistry`, `SseMvcLifecycle`, `SseLimits`.
@@ -480,10 +652,30 @@ The dedicated `sse-watchdog` runs heartbeat and observation tasks with independe
 guards. A failed tick logs WARN and later ticks continue instead of being cancelled by
 `scheduleAtFixedRate`.
 
-Quotas count physical connections; over quota → `429` with `Retry-After: 5`. A slot is released
+Quotas count physical connections; over quota → `429` with `Retry-After: 5` and no body.
+Missing/foreign subscriptions return an empty `404` without WARN, including callers
+accepting only `text/event-stream`. Async disconnects/timeouts write no error body
+and do not log ERROR. A slot is released
 only after the servlet request completes and the writer exits, so a client that stalls a write
 keeps its slot until the peer disconnects. Size the quotas accordingly. The frontend reconciles
 with `GET` after a result, EOF, error or `429`; the database is authoritative.
+
+Frontend watching (`frontend/src/api/watch-analysis.ts`, `stream.ts`):
+
+- A stream with no bytes at all (heartbeats included) for 45 s is treated as half-open and
+  aborted; the client then reconciles as after an error.
+- A stream that stayed open for at least 60 s and ends without a result (normally the
+  `SSE_LIFETIME` close) is followed by one `GET` and an immediate reopen.
+- After a result, or an earlier EOF or error, the client polls `GET` up to 9 times over 91.5 s
+  (longer than the 60 s cache TTL). If the analysis is still `PENDING`/`PROCESSING`, it is not
+  shown as failed:
+  the client reopens SSE with a 5 s → 30 s backoff (opening SSE replays a terminal result from the
+  database) and does one `GET` whenever a reopened stream ends without a result. It stops at a
+  terminal status or at `createdAt + 7200 s`, the absolute limit enforced by stuck recovery.
+- The upload screen switches to "analysis still running" with a link to the result page instead
+  of offering a second upload. Cancel treats `200` and `409` as settled (`409` reads the analysis
+  and routes by its status); other errors and a 10 s timeout are shown in place and the stream
+  stays open.
 
 | Variable | Default | Meaning |
 |---|---|---|

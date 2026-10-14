@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 
 import { currentUser, keycloak, login, logout, register, type AuthUser } from '@/auth/keycloak'
 import { initAuth } from '@/auth/initKeycloak'
+import { createTokenRefresher } from '@/auth/token-refresh'
 
 import { AuthContext, type AuthState } from './auth-context'
 
@@ -36,13 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Reakcja na zdarzenia keycloak-js: idle-refresh tokena oraz utrata sesji.
   // (Aktywne żądania i tak odświeżają token przez getToken() w client.ts.)
+  // Chwilowy błąd odświeżenia → ponowienie z backoffem; wylogowanie tylko przy końcu sesji.
   useEffect(() => {
-    keycloak.onTokenExpired = () => {
-      void keycloak.updateToken(30).catch(() => {
-        setIsAuthenticated(false)
-        setUser(null)
-      })
-    }
+    const refresher = createTokenRefresher(keycloak, () => {
+      setIsAuthenticated(false)
+      setUser(null)
+    })
+    keycloak.onTokenExpired = refresher.refresh
     keycloak.onAuthSuccess = () => {
       setIsAuthenticated(true)
       setUser(currentUser())
@@ -52,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null)
     }
     return () => {
+      refresher.stop()
       keycloak.onTokenExpired = undefined
       keycloak.onAuthSuccess = undefined
       keycloak.onAuthLogout = undefined

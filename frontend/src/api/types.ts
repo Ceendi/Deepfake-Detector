@@ -79,6 +79,7 @@ export interface Analysis {
   videoProb: number | null // 0..1; null gdy źródło nieanalizowane
   audioProb: number | null // 0..1; null gdy źródło nieanalizowane
   details: AnalysisDetails | null // null dopóki żaden detektor nie zaraportował
+  // Backend recovery/DLQ use [ANALYSIS_TIMEOUT] / [DEAD_LETTERED] with neutral Polish messages.
   errorMessage: string | null // null gdy status != FAILED
   createdAt: string // ISO 8601
   updatedAt: string
@@ -121,7 +122,7 @@ export interface UserStats {
   lastAnalysisAt: string | null // ISO 8601 createdAt najnowszej; null dla świeżego usera
 }
 
-// Spring PagedModel — opakowanie listy z metadanymi paginacji.
+// Spring PagedModel — opakowanie listy; size ≤ 100, createdAt DESC + id DESC, sort ignorowany.
 export interface Paged<T> {
   content: T[]
   page: {
@@ -141,6 +142,7 @@ export interface BackpressureInfo {
 }
 
 // --- SSE (realtime, KROK 10) -------------------------------------------------
+// GET /api/analysis/{id}/stream: 404 i 429 mają puste body; 429 ma Retry-After: 5.
 // Zdarzenia z GET /api/analysis/{id}/stream. Tu tylko typy; klient SSE powstaje w KROK 10.
 // Nazwy z prefiksem Analysis, by nie kolidować z wbudowanym DOM-owym `ProgressEvent`.
 export interface AnalysisProgressEvent {

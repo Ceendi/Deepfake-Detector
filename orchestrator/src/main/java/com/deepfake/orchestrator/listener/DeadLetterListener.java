@@ -68,7 +68,6 @@ public class DeadLetterListener {
         if (correlation != null) MDC.put("correlationId", correlation.toString());
         try {
             Object reason = message.getMessageProperties().getHeaders().get("x-exception-message");
-            log.warn("Terminal dead letter for analysis_id={} source={}: {}", id, source, reason);
             analysisService.failFromDlq(id, source, reason == null ? "dead-lettered" : reason.toString());
             Object status = payload.get("status");
             if (RabbitConfig.Q_RESULTS_DLQ.equals(message.getMessageProperties().getConsumerQueue())

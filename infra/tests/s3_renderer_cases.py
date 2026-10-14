@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
@@ -36,7 +37,13 @@ class RendererTest(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory(prefix="s3-renderer-")
         self.addCleanup(self.directory.cleanup)
         self.output = Path(self.directory.name) / "s3.json"
+        self.security = Path(self.directory.name) / "security.toml"
         self.template = Path("/s3.json.tmpl")
+
+    def jwt_keys(self):
+        document = tomllib.loads(self.security.read_text(encoding="utf-8"))
+        return [document["jwt"]["signing"]["key"], document["jwt"]["signing"]["read"]["key"],
+                document["jwt"]["filer_signing"]["key"], document["jwt"]["filer_signing"]["read"]["key"]]
 
     def run_init(self, values, template=None):
         return subprocess.run(
@@ -63,14 +70,24 @@ class RendererTest(unittest.TestCase):
         self.assertFalse(list(self.output.parent.glob(".s3.json-*")))
         logs = result.stdout + result.stderr
         self.assertTrue(all(value not in logs for value in values.values()), "init disclosed a credential")
+        # Every SeaweedFS JWT section gets its own fresh key; none is logged.
+        keys = self.jwt_keys()
+        self.assertEqual(4, len(set(keys)))
+        self.assertTrue(all(len(key) >= 32 for key in keys), "weak JWT signing key")
+        self.assertTrue(all(key not in logs for key in keys), "init disclosed a JWT signing key")
+        self.assertEqual(0o644, self.security.stat().st_mode & 0o777)
+        self.assertFalse(list(self.security.parent.glob(".security.toml-*")))
+        return keys
 
     def assert_failure_preserves(self, values, template=None):
         previous = self.output.read_bytes()
         previous_stat = self.output.stat()
+        previous_security = self.security.read_bytes()
         result = self.run_init(values, template)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("ERROR: SeaweedFS S3 configuration", result.stderr)
         self.assertTrue(previous == self.output.read_bytes(), "failed init replaced the previous configuration")
+        self.assertTrue(previous_security == self.security.read_bytes(), "failed init replaced the JWT keys")
         self.assertEqual(previous_stat.st_ino, self.output.stat().st_ino)
         self.assertEqual(0o644, self.output.stat().st_mode & 0o777)
         self.assertFalse(list(self.output.parent.glob(".s3.json-*")))
@@ -113,10 +130,24 @@ class RendererTest(unittest.TestCase):
         corrupt.unlink()
         self.assert_failure_preserves(values, corrupt)
 
+    def test_jwt_keys_are_regenerated_and_validated(self):
+        first = self.assert_success(credentials())
+        second = self.assert_success(credentials())
+        self.assertFalse(set(first) & set(second), "JWT signing keys were reused across runs")
+        valid = RENDERER.render_security()
+        RENDERER.validate_security(valid)
+        key = tomllib.loads(valid)["jwt"]["signing"]["key"]
+        for text in ("", valid.replace("[jwt.filer_signing.read]", "[jwt.other]"),
+                     valid.replace(key, "short"),
+                     valid.replace(tomllib.loads(valid)["jwt"]["signing"]["read"]["key"], key)):
+            with self.assertRaises(RENDERER.ConfigurationError):
+                RENDERER.validate_security(text)
+
     def test_empty_bootstrap_failure_leaves_no_destination(self):
         result = self.run_init({**credentials(), "S3_ADMIN_SECRET": ""})
         self.assertNotEqual(0, result.returncode)
         self.assertFalse(self.output.exists())
+        self.assertFalse(self.security.exists())
         self.assertFalse(list(self.output.parent.glob(".s3.json-*")))
 
     def test_atomic_publication_and_validation_write_rename_failures(self):

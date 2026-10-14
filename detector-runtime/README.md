@@ -9,6 +9,11 @@ pika I/O and updates health. Channel calls use `add_callback_threadsafe` and wai
 for completion, so a confirmed result still precedes the task ACK. If the connection
 fails, pending calls are released and late calls from that attempt are rejected.
 The old attempt is drained before reconnecting to avoid concurrent model calls.
+Only `DetectorError` subclasses publish their own error code and message; other
+exceptions become `PROCESSING_ERROR`. Transient S3 failures redeliver the task with
+a growing reconnect backoff, and a watchdog restarts a process whose task exceeds
+`DETECTOR_TASK_HARD_LIMIT_SECONDS` (see `docs/reliability.md`). `RABBITMQ_PASSWORD`,
+`S3_ACCESS_KEY` and `S3_SECRET_KEY` have no defaults; the test suites set dummy values.
 
 From the repository root, install the lightweight test environment:
 

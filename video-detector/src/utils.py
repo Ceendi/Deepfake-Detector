@@ -9,6 +9,7 @@ training/prep_cache.py) — model widzial crop 224x224, RGB, ImageNet mean/std.
 import math
 
 import numpy as np
+from detector_runtime import DetectorError
 
 SEQ_LEN = 16
 IMG_SIZE = 224
@@ -16,7 +17,7 @@ IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
-class InferenceError(RuntimeError):
+class InferenceError(DetectorError):
     """Blad pipeline'u z kodem publikowanym w `error.code` (analysis.results)."""
 
     code = "PROCESSING_ERROR"

@@ -5,6 +5,9 @@ declared by application code at startup (Spring AMQP `@Bean` in the Orchestrator
 `pika channel.queue_declare(...)` in detectors). This document is the single
 source of truth: every publisher and consumer must declare with **exactly the
 same arguments**, otherwise RabbitMQ will reject with `PRECONDITION_FAILED`.
+`rabbitmq-init` also declares both exchanges and `analysis.video`/`analysis.audio` with the
+same arguments before granting permissions (see [Broker users](#broker-users)); keep its
+arguments in sync with these declarations.
 
 ## Topology
 
@@ -55,6 +58,9 @@ that also declare it don't hit `PRECONDITION_FAILED`. Only the Orchestrator decl
 and consumes `analysis.results.dlq`.
 
 Terminal DLQs use AUTO acknowledgements after the source-specific database commit.
+Their HTTP-visible analysis failure message is always
+`[DEAD_LETTERED] Nie udało się zakończyć analizy.`; `x-exception-message` is diagnostic
+information logged with `analysis_id`, never persisted in the user-visible message.
 Poison payloads and exhausted permanent terminal data failures are durably parked in the
 backend-owned `analysis.backend.quarantine`, bound to `analysis.dlx` with the same
 routing key. That queue has no automatic consumer. Every recovery publication is
@@ -69,6 +75,19 @@ by requeueing and pausing only the affected listener, with restart delays 1s/2s/
 They never trigger results DLQ/quarantine publication. A `COMPLETED` dead letter missing its
 result object still fails an active, expected, unaccepted source when the ID/source are valid,
 then retains a confirmed quarantine copy. Malformed IDs cannot identify an analysis to fail.
+
+## Broker users
+
+Applications connect as least-privilege users, never as the administrator. Any change to the
+topology, publishers or consumers must update `infra/rabbitmq/provision_users.py` as well.
+
+| User | Declares (configure) | Consumes (read) | Publishes |
+|---|---|---|---|
+| `orchestrator` | both exchanges and all eight queues | `analysis.results`, `analysis.progress`, `analysis.{video,audio,results}.dlq` | `analysis.exchange` with keys `analysis.video`/`analysis.audio` only; `analysis.dlx` |
+| `detector` | both exchanges, `analysis.{video,audio}` (+ `.dlq`), `analysis.results`, `analysis.progress` | `analysis.video`, `analysis.audio` | `analysis.exchange` with keys `analysis.results`/`analysis.progress` only |
+
+Binding keys on `analysis.exchange` are limited to the four routing keys above. Neither user may
+use the default exchange.
 
 ## Message formats
 
@@ -225,9 +244,14 @@ threshold, and `NO_AUDIO_TRACK` when a successful ffprobe audio-stream query
 returns an empty stream list. Failed, timed-out or invalid probes and failed audio
 extraction remain `PROCESSING_ERROR`; they must not be interpreted as missing audio.
 `NO_AUDIO_TRACK` carries the neutral localized message “Materiał nie zawiera ścieżki
-audio.” Generic processing failures use a neutral message without exception text or
-local file paths; full exceptions remain in internal logs. Existing domain codes
-retain their deliberate messages.
+audio.” Generic processing failures use `PROCESSING_ERROR` with the neutral message
+“Nie udało się przetworzyć materiału. Spróbuj ponownie.” without exception text or
+local file paths; full exceptions remain in internal logs. Only detector domain errors
+(the shared runtime's `DetectorError`) publish their own code and deliberate message;
+any other exception, even one carrying a `code` attribute, is `PROCESSING_ERROR`.
+`MODEL_UNAVAILABLE` (both detectors) carries “Usługa analizy jest chwilowo niedostępna.
+Spróbuj ponownie później.” Transient object storage failures publish no result: the
+task is redelivered (see `docs/reliability.md`).
 
 AUDIO remains FAILED for either `NO_SPEECH` or `NO_AUDIO_TRACK`. For FULL, only these
 exact audio codes may be accepted as a durable `details.audio` marker with `status:

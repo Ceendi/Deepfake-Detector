@@ -1,6 +1,7 @@
 package com.deepfake.gateway.filter;
 
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
@@ -18,12 +19,14 @@ import reactor.core.publisher.Mono;
 @Component
 class CorrelationIdGlobalFilter implements GlobalFilter, Ordered {
 
+    private static final Pattern VALID_ID = Pattern.compile("^[A-Za-z0-9-]{1,64}$");
+
     static final String HEADER = "X-Correlation-ID";
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String existing = exchange.getRequest().getHeaders().getFirst(HEADER);
-        String correlationId = (existing == null || existing.isBlank())
+        String correlationId = (existing == null || !VALID_ID.matcher(existing).matches())
                 ? UUID.randomUUID().toString() : existing;
 
         ServerWebExchange mutated = exchange.mutate()
