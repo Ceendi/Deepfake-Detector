@@ -53,6 +53,35 @@ class CoreReliabilityConfigurationTest(unittest.TestCase):
         self.assertIn('http://localhost:8082/actuator/health/liveness',
                       service['healthcheck']['test'])
 
+    def test_gateway_probe_and_broker_resource_configuration(self):
+        services = resolved_compose()['services']
+        self.assertIn('http://localhost:9090/actuator/health',
+                      services['gateway'].get('healthcheck', {}).get('test', []))
+        probe = services['rabbitmq']['healthcheck']['test']
+        self.assertEqual('CMD-SHELL', probe[0])
+        self.assertIn('check_running && rabbitmq-diagnostics -q check_port_connectivity', probe[1])
+        config = (ROOT / 'infra/rabbitmq/rabbitmq.conf').read_text()
+        self.assertIn('total_memory_available_override_value = 512MB', config)
+        self.assertIn('raft.wal_max_size_bytes = 67108864', config)
+
+    def test_java_containers_cannot_escalate_or_create_unbounded_processes(self):
+        services = resolved_compose()['services']
+        for name in ('eureka-server', 'gateway', 'file-service'):
+            with self.subTest(service=name):
+                service = services[name]
+                self.assertIn('no-new-privileges:true', service.get('security_opt', []))
+                self.assertEqual(['ALL'], service.get('cap_drop'))
+                self.assertEqual(300, service.get('pids_limit'))
+        for name in ('eureka-server', 'gateway'):
+            self.assertTrue(services[name].get('read_only'))
+            self.assertTrue(any(mount.startswith('/tmp:') for mount in services[name]['tmpfs']))
+
+    def test_redis_reserves_container_headroom_and_only_evicts_expiring_hints(self):
+        arguments = resolved_compose()['services']['redis']['command']
+        self.assertIn('--maxmemory', arguments)
+        self.assertEqual('200mb', arguments[arguments.index('--maxmemory') + 1])
+        self.assertEqual('volatile-lru', arguments[arguments.index('--maxmemory-policy') + 1])
+
 
 class CoreReliabilityIntegrationTest(unittest.TestCase):
     @classmethod
@@ -199,6 +228,22 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
                     self.assertLessEqual(heap, limit * 0.75)
                     print(f'{name}: max heap {heap // 1024**2} MiB / '
                           f'container {limit // 1024**2} MiB', flush=True)
+
+    def test_broker_and_redis_apply_the_configured_memory_budgets(self):
+        memory = self.compose('exec', '-T', 'rabbitmq', 'rabbitmqctl', 'eval',
+                              'vm_memory_monitor:get_total_memory().')
+        self.assertEqual(512_000_000, int(memory))
+        wal = self.compose('exec', '-T', 'rabbitmq', 'rabbitmqctl', 'eval',
+                           'application:get_env(ra, wal_max_size_bytes).')
+        self.assertEqual('{ok,67108864}', wal)
+        for setting, expected in (('maxmemory', '209715200'),
+                                  ('maxmemory-policy', 'volatile-lru')):
+            values = self.compose(
+                'exec', '-T', 'redis', 'redis-cli', '-a',
+                resolved_compose()['services']['redis']['command'][2],
+                '--no-auth-warning', '--raw', 'CONFIG', 'GET', setting,
+            )
+            self.assertEqual([setting, expected], values.splitlines())
 
     def test_java_process_exits_restart_with_bounded_memory_and_logs(self):
         originals = {}

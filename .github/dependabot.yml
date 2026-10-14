@@ -37,7 +37,7 @@ updates:
       # Locally built images (bases are tracked in their Dockerfiles) do not exist on Docker Hub.
       - dependency-name: "deepfake-*"
     commit-message:
-      prefix: "infra"
+      prefix: "build(infra)"
     labels:
       - "dependencies"
       - "infra"
@@ -106,7 +106,57 @@ updates:
       - dependency-name: "eclipse-temurin"
         update-types: ["version-update:semver-major"]
     commit-message:
-      prefix: "infra"
+      prefix: "build(infra)"
     labels:
       - "dependencies"
       - "infra"
+
+  - package-ecosystem: docker
+    directories:
+      - /video-detector
+      - /audio-detector
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(deps)"
+    labels: [dependencies, infra]
+
+  - package-ecosystem: uv
+    directories:
+      - /video-detector
+      - /audio-detector
+      - /detector-runtime
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(deps)"
+    labels: [dependencies]
+
+  - package-ecosystem: maven
+    directories:
+      - /gateway
+      - /eureka-server
+      - /orchestrator
+      - /file-service
+    schedule:
+      interval: weekly
+      day: monday
+    ignore:
+      - dependency-name: "org.springframework.boot:*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.springframework.cloud:*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "build(deps)"
+    labels: [dependencies]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(frontend)"
+    labels: [dependencies]

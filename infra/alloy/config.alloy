@@ -3,6 +3,11 @@
 
 discovery.docker "containers" {
 	host = "unix:///var/run/docker.sock"
+
+	filter {
+		name = "label"
+		values = ["com.docker.compose.project=" + sys.env("ALLOY_COMPOSE_PROJECT")]
+	}
 }
 
 // Label each stream with its compose service name (low cardinality) — this is what

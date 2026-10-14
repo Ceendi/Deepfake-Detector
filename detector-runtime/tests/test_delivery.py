@@ -204,7 +204,9 @@ class TestPublicationFailure:
 
 @pytest.mark.parametrize("code", ["VIDEO_DECODE_FAILED", "NO_FACE_DETECTED", "MODEL_UNAVAILABLE"])
 def test_domain_error_code_reaches_the_contract(runtime, code):
-    class PipelineError(RuntimeError):
+    from detector_runtime import DetectorError
+
+    class PipelineError(DetectorError):
         pass
 
     error = PipelineError("controlled domain error")
@@ -218,7 +220,8 @@ def test_domain_error_code_reaches_the_contract(runtime, code):
     ch.basic_ack.assert_called_once_with(delivery_tag=7)
 
 
-@pytest.mark.parametrize("body", [b"{", b"{}", b"null", b"[]"])
+@pytest.mark.parametrize("body", [b"{", b"{}", b"null", b"[]", b"\xff\xfe{}", b'"id"',
+                                  b"[" * 100_000 + b"]" * 100_000])
 def test_malformed_task_goes_to_dlq_without_work(runtime, body):
     ch = MagicMock()
     runtime.handle_message(ch, MagicMock(delivery_tag=7), MagicMock(headers={}), body)

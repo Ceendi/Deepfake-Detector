@@ -50,15 +50,14 @@ def _record_outcome(outcome, result):
 
 def process(msg: dict, progress_callback=None) -> dict:
     return runtime.process(
-        msg, model=video_inference,
-        unavailable_message="Usługa analizy jest chwilowo niedostępna. Spróbuj ponownie później.",
-        analyze=_analyze, artifacts=_artifacts, progress_callback=progress_callback,
+        msg, model=video_inference, analyze=_analyze, artifacts=_artifacts,
+        progress_callback=progress_callback,
     )
 
 
 runtime = DetectorRuntime(
     source=SOURCE, queue=QUEUE, log=log, tracer=tracer,
-    s3_client=create_s3_client("http://localhost:8333", "", ""),
+    s3_client=create_s3_client("http://localhost:8333"),
     redis_client=create_redis_client(),
     process_task=lambda msg, progress_callback: process(msg, progress_callback=progress_callback),
     record_outcome=_record_outcome,
