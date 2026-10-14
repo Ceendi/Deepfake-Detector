@@ -1,10 +1,8 @@
 package com.deepfake.orchestrator.service;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -24,9 +22,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
@@ -62,29 +58,12 @@ class AnalysisServiceProcessingTransitionTest {
     void activeProgressEvictsAndPushes() {
         when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class), eq("video")))
                 .thenReturn(1);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
-        when(redis.opsForValue()).thenReturn(ops);
 
         service.handleProgress(progress());
 
         verify(cache).evictById(id);
         verify(streams).sendProgress(eq(id), any());
-    }
-
-    @Test
-    void snapshotFailureStillPushesProgress() {
-        when(repository.recordProgress(eq(id), eq(AnalysisStatus.PROCESSING), any(), any(Instant.class), eq("video")))
-                .thenReturn(1);
-        @SuppressWarnings("unchecked")
-        ValueOperations<String, String> ops = mock(ValueOperations.class);
-        when(redis.opsForValue()).thenReturn(ops);
-        doThrow(new RedisConnectionFailureException("down"))
-                .when(ops).set(anyString(), anyString(), any(Duration.class));
-
-        service.handleProgress(progress());
-
-        verify(streams).sendProgress(eq(id), any()); // live push survives the snapshot write failing
+        verifyNoInteractions(redis);
     }
 
     @Test
