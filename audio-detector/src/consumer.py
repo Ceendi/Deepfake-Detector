@@ -5,7 +5,6 @@ from detector_runtime import Artifact, DetectorRuntime, create_redis_client, cre
 from opentelemetry import trace
 from prometheus_client import Counter
 
-from .inference import AudioInference
 from .tracing import init_tracing
 
 QUEUE = os.getenv("QUEUE_NAME", "analysis.audio")
@@ -21,6 +20,9 @@ PROCESSED_AUDIO_TOTAL = Counter(
 )
 
 try:
+    # Import inside the guard: a broken ML stack yields MODEL_UNAVAILABLE, not a crash loop.
+    from .inference import AudioInference
+
     audio_inference = AudioInference()
 except Exception as e:
     log.exception("failed_to_load_audio_inference", error=str(e))
@@ -46,15 +48,14 @@ def _record_outcome(outcome, result):
 
 def process(msg: dict, progress_callback=None) -> dict:
     return runtime.process(
-        msg, model=audio_inference, unavailable_message="Audio inference model is unavailable.",
-        analyze=_analyze, artifacts=_artifacts, progress_callback=progress_callback,
-        download_fields={"mode": msg.get("mode", "accurate")},
+        msg, model=audio_inference, analyze=_analyze, artifacts=_artifacts,
+        progress_callback=progress_callback, download_fields={"mode": msg.get("mode", "accurate")},
     )
 
 
 runtime = DetectorRuntime(
     source=SOURCE, queue=QUEUE, log=log, tracer=tracer,
-    s3_client=create_s3_client("http://localhost:9000", "minioadmin", "minioadmin"),
+    s3_client=create_s3_client("http://localhost:9000"),
     redis_client=create_redis_client(),
     process_task=lambda msg, progress_callback: process(msg, progress_callback=progress_callback),
     record_outcome=_record_outcome,

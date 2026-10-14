@@ -212,7 +212,8 @@ def test_unavailable_model_consumes_and_confirms_failed_without_input(source, br
     assert payload == {"analysis_id": analysis_id, "correlation_id": "pr06", "source": source,
                        "status": "FAILED", "result": None,
                        "error": {"code": "MODEL_UNAVAILABLE",
-                                 "message": f"{source.title()} inference model is unavailable."}}
+                                 "message": "Usługa analizy jest chwilowo niedostępna. "
+                                            "Spróbuj ponownie później."}}
     worker.release()
     worker.wait("acked")
     for operation in ("download", "inference", "upload"):
@@ -268,3 +269,64 @@ def test_repeated_worker_crashes_reach_dlq_and_release_the_queue(source, broker,
     publish(broker, source, healthy_id)
     healthy.wait("acked")
     assert result(broker)["analysis_id"] == healthy_id
+
+
+def events_of(worker):
+    return [json.loads(line) for line in (worker.directory / "events.jsonl").read_text().splitlines()]
+
+
+def test_storage_outage_redelivers_and_completes(source, broker, rds, workers):
+    analysis_id = str(uuid.uuid4())
+    worker = workers(source, S3_DOWNLOAD_OUTAGES="2", TEST_RECONNECT_SECONDS="0.2")
+    publish(broker, source, analysis_id)
+    payload = result(broker)
+    assert (payload["analysis_id"], payload["status"]) == (analysis_id, "COMPLETED")
+    worker.wait("acked")
+    events = events_of(worker)
+    claims = [entry for entry in events if entry["event"] == "claimed"]
+    assert [entry["delivery_count"] for entry in claims] == [0, 1, 2]
+    assert [entry["status"] for entry in events if entry["event"] == "confirmed"] == ["COMPLETED"]
+    assert broker.basic_get("analysis.results", auto_ack=True)[0] is None
+
+
+def test_missing_input_fails_without_redelivery(source, broker, rds, workers):
+    analysis_id = str(uuid.uuid4())
+    worker = workers(source, S3_DOWNLOAD_MISSING="true")
+    publish(broker, source, analysis_id)
+    payload = result(broker)
+    assert payload["status"] == "FAILED"
+    assert payload["error"] == {"code": "PROCESSING_ERROR",
+                                "message": "Nie udało się przetworzyć materiału. Spróbuj ponownie."}
+    worker.wait("acked")
+    assert len([entry for entry in events_of(worker) if entry["event"] == "claimed"]) == 1
+
+
+def test_persistent_storage_outage_reaches_dlq_without_failed_result(source, broker, rds, workers):
+    analysis_id = str(uuid.uuid4())
+    worker = workers(source, S3_DOWNLOAD_OUTAGES="100", TEST_RECONNECT_SECONDS="0.2")
+    publish(broker, source, analysis_id)
+
+    def dead_letter():
+        method, properties, body = broker.basic_get(f"analysis.{source}.dlq", auto_ack=True)
+        return (properties, json.loads(body)) if method else None
+
+    properties, payload = wait_for(dead_letter, timeout=60)
+    assert payload["analysis_id"] == analysis_id
+    assert properties.headers["x-first-death-reason"] == "delivery_limit"
+    assert len([entry for entry in events_of(worker) if entry["event"] == "claimed"]) == 6
+    assert broker.basic_get("analysis.results", auto_ack=True)[0] is None
+
+
+def test_hung_task_exits_the_worker_and_is_redelivered(source, broker, rds, workers):
+    analysis_id = str(uuid.uuid4())
+    hung = workers(source, BLOCK_AT="inference", DETECTOR_TASK_HARD_LIMIT_SECONDS="2")
+    publish(broker, source, analysis_id)
+    hung.wait("inference")
+    assert hung.process.wait(timeout=15) == 1  # Never released: the watchdog must fire.
+    assert "task_hard_limit_exceeded" in (hung.directory / "worker.log").read_text()
+    assert not (hung.directory / "confirmed").exists()
+    replacement = workers(source)
+    claimed = replacement.wait("claimed")
+    assert claimed["redelivered"] is True and claimed["delivery_count"] == 1
+    replacement.wait("acked")
+    assert result(broker)["status"] == "COMPLETED"

@@ -221,6 +221,7 @@ def test_missing_model_task_fails_before_io_and_retains_transport_guards(monkeyp
         assert payloads == [{"analysis_id": "missing-model", "correlation_id": "",
                              "source": "audio", "status": "FAILED", "result": None,
                              "error": {"code": "MODEL_UNAVAILABLE",
-                                       "message": "Audio inference model is unavailable."}}]
+                                       "message": "Usługa analizy jest chwilowo niedostępna. "
+                                                  "Spróbuj ponownie później."}}]
     s3.download_file.assert_not_called()
     s3.upload_file.assert_not_called()

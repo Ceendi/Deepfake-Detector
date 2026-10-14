@@ -17,6 +17,22 @@ x-logging: &default-logging
 x-security: &default-security
   - no-new-privileges:true
 
+x-runtime-hardening: &runtime-hardening
+  security_opt: *default-security
+  cap_drop: [ALL]
+  pids_limit: 300
+
+x-readonly-runtime: &readonly-runtime
+  <<: *runtime-hardening
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+
+# Existing monitoring volumes may contain files owned by either root or the image user.
+x-monitoring-hardening: &monitoring-hardening
+  <<: *readonly-runtime
+  cap_add: [DAC_OVERRIDE]
+
 # Both PostgreSQL services initialize and run as the image's postgres user.
 # Keep the root filesystem read-only and provide an owned socket directory.
 x-pg-hardening: &pg-hardening
@@ -116,6 +132,10 @@ services:
       - --save
       - "60"
       - "1"
+      - --maxmemory
+      - 200mb
+      - --maxmemory-policy
+      - volatile-lru
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
@@ -160,6 +180,8 @@ services:
           pids: 500
     logging: *default-logging
     environment:
+      # Administrator for manual operations only (UI, CLI); applications use the
+      # least-privilege users that rabbitmq-init provisions.
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
@@ -173,11 +195,40 @@ services:
       # Per-queue prometheus metrics (queue label).
       - ./infra/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_connectivity"]
       interval: 10s
       timeout: 10s
       retries: 10
       start_period: 30s
+    networks: [deepfake]
+
+  rabbitmq-init:
+    # Post-healthy, idempotent: (re)creates the `orchestrator` and `detector` users with
+    # permissions limited to their own queues and routing keys. Every run resets their
+    # passwords, so it also migrates an existing broker volume and rotates credentials.
+    image: python:3.14.8-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
+    profiles: ["core"]
+    security_opt: *default-security
+    cap_drop: [ALL]
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: "0.25"
+          pids: 50
+    logging: *default-logging
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+    environment:
+      RABBITMQ_MANAGEMENT_URL: http://rabbitmq:15672
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_USER}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_ORCHESTRATOR_PASSWORD: ${RABBITMQ_ORCHESTRATOR_PASSWORD}
+      RABBITMQ_DETECTOR_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}
+    entrypoint: ["python3", "-I", "/provision_users.py"]
+    volumes:
+      - ./infra/rabbitmq/provision_users.py:/provision_users.py:ro
     networks: [deepfake]
 
   seaweedfs:
@@ -216,13 +267,18 @@ services:
       # 0 = auto-derive max volume count from available disk size (SeaweedFS 4.x).
       # This is the documented "use whatever the disk allows" mode for dev.
       - -volume.max=0
-      # Bind to all interfaces; without this `weed server` listens only on
-      # the eth0 IP and the in-container healthcheck on localhost gets
-      # ECONNREFUSED. Required for `wget http://localhost:8333/` to work.
-      - -ip.bind=0.0.0.0
+      # Master/volume/filer (9333/8080/8888 + gRPC) live in this one process, so they
+      # bind loopback only: the master hands out volume read/write JWTs to any caller.
+      # Only the S3 gateway (and its gRPC port, JWT-protected via security.toml)
+      # listens on the docker network.
+      - -ip=127.0.0.1
+      - -ip.bind=127.0.0.1
+      - -s3.ip.bind=0.0.0.0
+      # Unused catalog endpoints that would otherwise listen next to S3.
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
     ports:
-      # 8333 = S3 API (only port apps need). Master/volume/filer (9333/8080/8888)
-      # stay internal to the docker network.
+      # 8333 = S3 API, the only port apps need.
       - "127.0.0.1:${S3_PORT:-8333}:8333"
     volumes:
       - seaweeddata:/data
@@ -243,7 +299,8 @@ services:
 
   seaweedfs-init:
     # Phase 1 (pre-start): renders /etc/seaweedfs/s3.json from the template
-    # using env vars, populated into the shared `seaweedconfig` volume.
+    # using env vars, and security.toml with fresh JWT signing keys, into the
+    # shared `seaweedconfig` volume.
     # Runs before the main seaweedfs service starts (via depends_on).
     # Runs as root: the seaweedfs image entrypoint also runs as root, so a
     # 0644 file written here is readable downstream regardless of ownership.
@@ -434,6 +491,7 @@ services:
     build: ./eureka-server
     profiles: ["core"]
     restart: unless-stopped
+    <<: *readonly-runtime
     mem_limit: 512m
     logging: *default-logging
     # Registry API and dashboard are reachable only on the Compose network.
@@ -451,6 +509,7 @@ services:
     build: ./gateway
     profiles: ["core"]
     restart: unless-stopped
+    <<: *readonly-runtime
     mem_limit: 512m
     logging: *default-logging
     depends_on:
@@ -470,6 +529,12 @@ services:
       # D4: upload rate-limit, env-tunable (raise for the load test). Defaults = prod values.
       UPLOAD_RL_REPLENISH: ${UPLOAD_RL_REPLENISH:-1}
       UPLOAD_RL_BURST: ${UPLOAD_RL_BURST:-10}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks: [deepfake]
 
   file-service:
@@ -477,6 +542,8 @@ services:
     build: ./file-service
     profiles: ["core"]
     restart: unless-stopped
+    # Multipart spooling needs disk space without charging uploads to the JVM memory budget.
+    <<: *runtime-hardening
     mem_limit: 1g
     logging: *default-logging
     # D4: scale 1<->2 via FILE_SERVICE_REPLICAS. Replicas only work here because the service has no
@@ -488,6 +555,7 @@ services:
         limits:
           cpus: "1.0"
           memory: 1g
+          pids: 300
     depends_on:
       postgres: { condition: service_healthy }
       eureka-server: { condition: service_healthy }
@@ -522,6 +590,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      rabbitmq-init: { condition: service_completed_successfully }
       eureka-server: { condition: service_healthy }
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
@@ -531,8 +600,9 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-250ms}
       REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-250ms}
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Least-privilege broker user created by rabbitmq-init (not the administrator).
+      RABBITMQ_USER: orchestrator
+      RABBITMQ_PASSWORD: ${RABBITMQ_ORCHESTRATOR_PASSWORD}
       S3_ORCHESTRATOR_KEY: ${S3_ORCHESTRATOR_KEY}
       S3_ORCHESTRATOR_SECRET: ${S3_ORCHESTRATOR_SECRET}
       SSE_GLOBAL_CONNECTIONS: ${SSE_GLOBAL_CONNECTIONS:-128}
@@ -597,16 +667,18 @@ services:
     logging: *default-logging
     depends_on:
       rabbitmq: { condition: service_healthy }
+      rabbitmq-init: { condition: service_completed_successfully }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     environment:
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_USER: detector
+      RABBITMQ_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}
       QUEUE_NAME: analysis.video
       SOURCE_LABEL: video
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
+      DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
       # Python OTel: same gate + endpoint values as the Java *otel-env anchor, but under the
       # standard OTel SDK env name the Python OTLP exporter reads directly.
       OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
@@ -636,14 +708,16 @@ services:
     logging: *default-logging
     depends_on:
       rabbitmq: { condition: service_healthy }
+      rabbitmq-init: { condition: service_completed_successfully }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     environment:
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
+      DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_USER: detector
+      RABBITMQ_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}
       QUEUE_NAME: analysis.audio
       SOURCE_LABEL: audio
       # Python OTel — see video-detector for the rationale.
@@ -658,17 +732,21 @@ services:
     networks: [deepfake]
 
   # --- Observability stack (profile: monitoring) ---------------------------------------------
-  # Dev-only: prometheus/loki/tempo/alloy run as root with named volumes (avoids uid/perms juggling
-  # on fresh volumes) — the app/db containers above stay hardened. All ports bound to 127.0.0.1.
+  # Named volumes hold writable state while root filesystems stay read-only.
   prometheus:
     image: prom/prometheus:v3.15.0
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          pids: 300
     user: "0:0"
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
-      - --web.enable-lifecycle
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -687,6 +765,12 @@ services:
     image: grafana/loki:3.7.8
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          pids: 300
     user: "0:0"
     command: ["-config.file=/etc/loki/loki-config.yaml"]
     volumes:
@@ -703,6 +787,12 @@ services:
     image: grafana/tempo:3.1.0
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          pids: 300
     user: "0:0"
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
@@ -719,6 +809,12 @@ services:
     image: grafana/grafana:13.2.3
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *readonly-runtime
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          pids: 300
     depends_on:
       prometheus: { condition: service_healthy }
       loki: { condition: service_started }
@@ -730,6 +826,7 @@ services:
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     healthcheck:
@@ -746,7 +843,15 @@ services:
     build: ./infra/alloy
     profiles: ["monitoring"]
     restart: unless-stopped
+    <<: *monitoring-hardening
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          pids: 300
     user: "0:0" # reads the root-owned docker socket
+    environment:
+      ALLOY_COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
     command:
       - run
       - --server.http.listen-addr=0.0.0.0:12345
@@ -777,6 +882,7 @@ volumes:
   loki-data:
   tempo-data:
   alloy-data:
+  grafana-data:
 
 networks:
   deepfake:
