@@ -133,7 +133,6 @@ class AnalysisServiceSsePushTest {
 
         verify(repository, never()).complete(any(), any(), any(), any(), any(), any());
         verify(streams, never()).sendResult(any(), any());
-        verify(streams, never()).complete(any());
     }
 
     // The CAS write/complete is mocked, so seed the probs the post-write fresh read would observe.

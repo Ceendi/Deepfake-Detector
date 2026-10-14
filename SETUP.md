@@ -22,6 +22,22 @@ building the Docker images.
 - Free host ports: `5432, 5672, 6379, 8080, 8180, 8333, 15672, 15692` and `5173` (frontend);
   with `monitoring` also `3000, 3100, 3200, 9090, 12345`.
 
+### Windows — WSL2 memory
+
+WSL2 defaults to 50% of host RAM, so a 16 GB laptop normally gives Docker only
+8 GB. This can cause OOM kills even when the model files are correct. Create or
+edit `%UserProfile%\.wslconfig` on Windows (outside the Linux filesystem):
+
+```ini
+[wsl2]
+memory=14GB
+```
+
+Apply with `wsl --shutdown` in PowerShell, then restart Docker Desktop. This is a
+ceiling shared by WSL2 distributions; leave room for Windows and close heavy apps.
+On a 16 GB machine keep `FILE_SERVICE_REPLICAS=1` in the root `.env` and omit
+`monitoring`. Start with `core` + `auth`; add `ml` after placing the models.
+
 ---
 
 ## Step 1 — `.env` files
@@ -44,6 +60,16 @@ the app. For local smoke tests with `alice`/`bob` or JMeter, add
 `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` to the root `.env` before starting
 `auth`; see [Keycloak configuration](infra/keycloak/README.md). Keep this option
 unset in deployments.
+
+Database credentials and RabbitMQ bootstrap credentials initialize only on empty
+volumes. Editing passwords in `.env` does not rotate accounts in existing data:
+change the stored credentials through the service's administration tools, then
+update and recreate the clients. Keep persistent data; `down -v` deletes it.
+Keycloak realm policy is synchronized separately by `keycloak-config-cli`.
+
+If you override `KEYCLOAK_PORT`, also set `VITE_KEYCLOAK_URL` in `frontend/.env`
+(e.g. `http://localhost:8280`). For Java services started from an IDE, update
+`JWT_ISSUER_URI` too; Compose derives its issuer from `KEYCLOAK_PORT`.
 
 ---
 

@@ -92,7 +92,6 @@ class AnalysisServicePushAfterCommitTest {
 
         verifyNoInteractions(cache);
         verify(streams, never()).sendResult(any(), any());
-        verify(streams, never()).complete(any());
     }
 
     private void fireAfterCommit() {

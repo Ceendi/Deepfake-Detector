@@ -151,6 +151,8 @@ class KeycloakSecurityTest(unittest.TestCase):
         self.assertEqual([], users, 'Default import must not provision test identities')
         clients = self.request('/admin/realms/deepfake/clients', token=self.admin)
         self.assertNotIn('deepfake-loadtest', {client['clientId'] for client in clients})
+        realm = self.request('/admin/realms/deepfake', token=self.admin)
+        self.assertFalse(realm['resetPasswordAllowed'])
         self.request('/admin/realms/deepfake/users', {
             'username': 'registered-user', 'enabled': True,
         }, method='POST', token=self.admin)
@@ -179,7 +181,7 @@ class KeycloakSecurityTest(unittest.TestCase):
         self.assertIn('USER', claims['realm_access']['roles'])
         realm = self.request('/admin/realms/deepfake', token=self.admin)
         self.assertEqual('deepfake', realm['loginTheme'])
-        self.assertTrue(realm['resetPasswordAllowed'])
+        self.assertFalse(realm['resetPasswordAllowed'])
         self.cookies = http.cookiejar.CookieJar(policy=LocalBrowserCookiePolicy())
         self.browser = build_opener(HTTPCookieProcessor(self.cookies))
         query = urlencode({
@@ -195,6 +197,7 @@ class KeycloakSecurityTest(unittest.TestCase):
         # This only changes the disposable realm, not the repository's theme configuration.
         self.request('/admin/realms/deepfake', {
             'loginTheme': 'keycloak',
+            'resetPasswordAllowed': True,
             'smtpServer': {'host': 'smtp', 'port': '1025', 'from': 'security-test@example.invalid'},
         }, method='PUT', token=self.admin)
         self.cookies = http.cookiejar.CookieJar(policy=LocalBrowserCookiePolicy())

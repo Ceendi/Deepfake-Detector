@@ -106,7 +106,6 @@ public class AnalysisStreamRegistry {
             session.physicalCompletion();
         }
     }
-    public void complete(UUID id) { subscribers(id, true).forEach(Session::close); }
     public void heartbeat() { subscribersSnapshot().forEach(Session::heartbeat); }
     private List<Session> subscribersSnapshot() {
         synchronized (admission) { return byId.values().stream().flatMap(Collection::stream).toList(); }

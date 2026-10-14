@@ -24,7 +24,7 @@ is gated off by default so core-only dev doesn't push to a non-existent collecto
 ## Logs (D2)
 
 Java services log **ECS JSON** in-container (`LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs`, Spring Boot 4
-native — zero deps); detectors log structlog JSON. Alloy reads every container's stdout through
+native — zero deps); detectors log structlog JSON. Alloy reads this Compose project's container stdout through
 `/var/run/docker.sock` (read-only) and pushes to Loki.
 
 - **Labels (low cardinality only):** `service` (compose service name), `level`.
@@ -37,7 +37,9 @@ native — zero deps); detectors log structlog JSON. Alloy reads every container
 
 Names and labels: [contracts/metrics.md](contracts/metrics.md). The business dashboard
 (`infra/grafana/dashboards/deepfake-business.json`) plots throughput, cache hit ratio, in-flight
-depth, analysis-duration p95 and HTTP p95.
+depth, analysis-duration p95 by type, HTTP p95 by service, detector inference p95
+and delivery outcomes. Histograms aggregate replicas before percentile calculation;
+see the contract for timer scopes and labels.
 
 Every Java service needs `micrometer-registry-prometheus` for `/actuator/prometheus` to exist (the
 actuator starter ships only the disabled OTLP registry). Present in gateway/orchestrator/file-service;
@@ -48,6 +50,27 @@ returned for the Compose service becomes a separate target and `instance`, so al
 scraped and scaling/recreation updates the target list. The `job="file-service"` label and
 `/actuator/prometheus` path stay the same. `python3 infra/tests/test_core_reliability.py` verifies
 healthy scrapes of the real replicas during a 2 → 1 → 2 scale cycle.
+
+## Alerts
+
+Prometheus loads `infra/prometheus/alerts.yml` from a read-only Compose mount.
+The rules detect DLQ failures, stuck recovery, persistent DLQ/quarantine backlog
+and unavailable scrape targets. Inspect pending/firing rules at
+`http://localhost:9090/alerts`; no Alertmanager or outbound notification channel
+is configured. ML targets deliberately report DOWN when the `ml` profile is off,
+so their availability alerts are expected in a core-only stack.
+
+DLQ/quarantine backlog calls for inspection of the original message and service
+logs. Stuck recovery means the existing recovery deadlines failed an analysis;
+check detector health, dispatch and per-source progress. `up == 0` indicates a
+scrape failure, not necessarily a stopped process. Counter event alerts clear
+when the event leaves the 5-minute window; persistent-state alerts clear on the
+next healthy evaluation. Recreate Prometheus after changing rules or scrape config.
+
+`python3 infra/tests/test_observability_configuration.py` validates Compose
+operator overrides and dashboard queries, then uses the Compose Prometheus image's
+`promtool check config` and `promtool test rules`. Fixtures prove alert activation,
+the 2-minute hold, resolution, counter resets and short-outage suppression.
 
 ## Traces
 

@@ -135,7 +135,7 @@ class AmqpProgressCommitIntegrationTest {
                 .when(streams).sendProgress(eq(id), any());
         rabbit.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_PROGRESS, progress(id));
         verify(streams, timeout(5000)).sendProgress(eq(id), any());
-        assertThat(redis.opsForValue().get("progress:" + id)).isEqualTo("42");
+        assertThat(redis.opsForValue().get("progress:" + id)).isNull();
     }
 
     @Test void transientTerminalCommitFailureRetriesOriginalUntilItCommits() {

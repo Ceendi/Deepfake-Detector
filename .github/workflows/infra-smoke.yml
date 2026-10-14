@@ -73,6 +73,14 @@ jobs:
       - run: python3 infra/tests/test_ci_reliability.py
       - run: python3 infra/tests/test_monitoring_configuration.py
 
+  observability-configuration:
+    name: Observability overrides, dashboard and alert rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 infra/tests/test_observability_configuration.py
+
   core-reliability:
     name: Core restart, persistence and replica monitoring
     runs-on: ubuntu-latest

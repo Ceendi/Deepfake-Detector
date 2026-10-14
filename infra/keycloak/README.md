@@ -90,7 +90,8 @@ resources will silently disappear on the next sync.
 Compose builds `deepfake-keycloak-config-cli:6.5.1-security` from the pinned
 upstream source with patched dependencies and tests it against Keycloak `26.8.0`.
 The integration test verifies both the default import and the development
-variant, then exercises the password-reset flow. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for
+variant, then verifies reset is disabled without SMTP and exercises the password-reset flow
+with SMTP enabled only in the disposable test realm. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for
 the full risk analysis and upgrade plan.
 
 ## Password policy
@@ -100,7 +101,8 @@ Currently enforced:
 - min length 10
 - not username, not email
 - ≥1 digit, ≥1 uppercase, ≥1 lowercase, ≥1 special char
-- last 3 passwords cannot be reused
+
+Password history is not configured (`passwordHistory` is absent).
 
 Hash algorithm is Argon2id (Keycloak 26 default) — no `hashIterations(...)`
 override needed.
@@ -146,4 +148,14 @@ deployment.
 - `ssoSessionMaxLifespan`: 10 h
 
 These are deliberately short for a project handling biometric (face/voice)
-data; refresh-token rotation handles the UX.
+data. The SPA refreshes access tokens within the session. Refresh-token revocation/rotation
+is not configured (`revokeRefreshToken` defaults to `false`); the README does not
+promise single-use refresh tokens.
+
+## Password reset — DISABLED
+
+Both realm variants set `resetPasswordAllowed: false`, hiding “Forgot password”
+until SMTP is available. Enable it in both JSON variants only after configuring
+SMTP. `infra/tests/test_keycloak.py` verifies the default and development imports
+keep reset disabled, then enables it with a local mail sink to retain the existing
+password-reset security regression.

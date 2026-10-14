@@ -51,7 +51,7 @@ class AnalysisCacheIntegrationTest {
     @Test
     void putThenGetRoundTripsAllFields() {
         AnalysisResponse stored = sample(UUID.randomUUID());
-        cache.putById(stored);
+        cache.putById(stored, cache.beginFill(stored.id()));
 
         Optional<AnalysisResponse> loaded = cache.getById(stored.id());
 
@@ -75,7 +75,7 @@ class AnalysisCacheIntegrationTest {
     @Test
     void evictRemovesEntry() {
         AnalysisResponse stored = sample(UUID.randomUUID());
-        cache.putById(stored);
+        cache.putById(stored, cache.beginFill(stored.id()));
 
         cache.evictById(stored.id());
 

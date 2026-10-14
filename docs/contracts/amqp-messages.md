@@ -307,19 +307,21 @@ Contract:
 
 ## Reliability (D6)
 
-- **Retry:** the Orchestrator's `analysis.results` / `analysis.progress` listeners use
-  property-based retry (4 attempts, exponential backoff 1s/4s/15s). Message-conversion
-  errors are fatal — no retry, straight to the recoverer.
-- **Dead-lettering:** detector task queues (`analysis.video` / `analysis.audio`) use broker
-  DLX → `*.dlq`. Result/progress failures are instead republished by a
-  `RepublishMessageRecoverer` to `analysis.results.dlq` (with `x-exception-*` headers), so
-  `analysis.results` needs no DLX args (see Topology).
-- **DLQ consumer:** one `@RabbitListener(ackMode="MANUAL")` drains `results/video/audio.dlq`
-  → analysis `FAILED` + SSE notify + in-flight slot released. A missing/unparseable
-  `analysis_id` is dropped (nack, no requeue); messages are never requeued onto a DLQ.
-- **Manual ack:** literal `MANUAL` on the detectors and the DLQ consumer. The main
-  result/progress listeners use `AUTO` = container ack **after** the `@Transactional`
-  handler commits (not RabbitMQ auto-ack), which is what lets retry + recoverer compose.
+- **Results retry:** `analysis.results` uses 4 attempts with 1s/4s/15s backoff.
+  Message-conversion errors are fatal and go straight to the recoverer.
+- **Progress retry:** advisory progress uses 3 attempts (100ms/200ms), then log + ACK.
+  Exhausted progress never fails an analysis or enters the result DLQ.
+- **Dead-lettering:** detector task queues use broker DLX → `*.dlq`. Result failures
+  use `ConfirmedMessageRecoverer` to publish persistently and mandatorily to
+  `analysis.results.dlq`, with `x-exception-*` headers and confirmation before ACK.
+- **DLQ consumer:** one AUTO listener drains `results/video/audio.dlq`. It fails an active
+  analysis only for an expected, unaccepted source, then sends SSE after commit.
+  Poison payloads and exhausted database retries (3 attempts, 250ms/500ms) are sent to
+  `analysis.backend.quarantine` for manual inspection with confirmed publication.
+  A recovery publication failure requeues the original and pauses the listener with
+  backoff (5s → 60s); see [reliability](../reliability.md#listener-retries-dlqs-and-quarantine).
+- **Acknowledgement:** detectors use MANUAL; result/progress and terminal DLQ listeners
+  use AUTO = container ACK after the transactional handler commits, not broker auto-ack.
 - **Detector redelivery:** each non-cancelled delivery is computed, including concurrent
   copies. Detectors do not use Redis processing claims or completion markers. Old
   `processing:{analysis_id}:{source}` keys are ignored without deletion or TTL waits.
@@ -344,12 +346,13 @@ Contract:
   retryable and does not set a marker. Terminal transitions and capacity changes commit
   together; duplicates of terminal analyses do not release capacity again.
   See [result acceptance](../reliability.md#result-acceptance-and-idempotence).
-- **Stuck-job recovery:** a scheduled scan fails analyses left `PENDING` / `PROCESSING`
-  past a threshold (default 600s) → `FAILED` + PostgreSQL capacity freed + SSE.
-  PR07 adds a separate 120-second deadline for any unsent outbox source; the final
-  recovery transaction rechecks state and time after locking the analysis.
+- **Stuck-job recovery:** a scheduled scan fails active analyses for an unsent outbox
+  task older than 120s, an unstarted dispatched source waiting over 1800s, a started
+  source idle over 600s, or an absolute analysis age over 7200s. The final transaction
+  locks and rechecks eligibility before FAILED, PostgreSQL capacity release and SSE.
+  See [recovery](../reliability.md#stuck-job-recovery) for per-source clocks and scan timing.
 - **Redis degradation:** every Redis touch fails open (cache → DB, dedup → DB guard,
-  progress snapshot → skipped, cancel flag → detector finishes). Redis is an accelerator,
+  cancel flag → detector finishes). Redis is an accelerator,
   not the source of truth.
 
 

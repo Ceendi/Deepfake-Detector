@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
+
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
@@ -21,6 +24,8 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+
 /**
  * Full-context smoke test: the whole Spring context wires up over real Postgres/Redis/RabbitMQ
  * (Testcontainers), with the JWT decoder mocked (no Keycloak) and Eureka disabled. Needs Docker.
@@ -30,6 +35,7 @@ import org.testcontainers.utility.DockerImageName;
         "spring.data.redis.password="
 })
 @Testcontainers
+@AutoConfigureMetrics
 @AutoConfigureMockMvc
 class OrchestratorApplicationTests {
 
@@ -82,6 +88,29 @@ class OrchestratorApplicationTests {
                 .contains("reason", "limit", "queuePosition", "retryAfterSeconds");
         assertThat(schema.at("/properties/reason/enum").toString()).contains("GLOBAL_LIMIT", "USER_LIMIT");
         assertThat(schema.at("/properties/limit/type").asText()).isEqualTo("integer");
+    }
+
+    @Autowired PrometheusMeterRegistry prometheus;
+
+    @Test
+    void prometheusExportsHttpLatencyBuckets() {
+        var latency = prometheus.timer("http.server.requests", "method", "GET", "uri", "/api/test",
+                "status", "200", "outcome", "SUCCESS", "exception", "none");
+        latency.record(Duration.ofMinutes(1));
+        assertThat(prometheus.scrape()).contains("http_server_requests_seconds_bucket{");
+        assertThat(latency.takeSnapshot().histogramCounts())
+                .filteredOn(bucket -> Double.isFinite(bucket.bucket()))
+                .anySatisfy(bucket -> assertThat(bucket.bucket()).isGreaterThan(Duration.ofMinutes(1).toNanos()));
+    }
+
+    @Test
+    void prometheusExportsAnalysisDurationBuckets() {
+        var duration = prometheus.timer("analysis.duration", "type", "video");
+        duration.record(Duration.ofMinutes(1));
+        assertThat(prometheus.scrape()).contains("analysis_duration_seconds_bucket{");
+        assertThat(duration.takeSnapshot().histogramCounts())
+                .filteredOn(bucket -> Double.isFinite(bucket.bucket()))
+                .anySatisfy(bucket -> assertThat(bucket.bucket()).isGreaterThan(Duration.ofMinutes(1).toNanos()));
     }
 
     @Test

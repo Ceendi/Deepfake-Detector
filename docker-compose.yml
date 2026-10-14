@@ -3,7 +3,7 @@ name: deepfake-detector
 # Profiles:
 #   core       - infrastructure required by every developer (DB, broker, cache, object storage)
 #   auth       - identity provider (Keycloak)
-#   ml         - GPU-bound detector services
+#   ml         - CPU-only detector services
 #   monitoring - Prometheus, Loki, Tempo, Grafana
 
 # Cap container logs so a forgotten dev stack can't fill the disk.
@@ -52,8 +52,8 @@ x-jwt-env: &jwt-env
   JWK_SET_URI: http://keycloak:8080/realms/deepfake/protocol/openid-connect/certs
 
 # Tracing shared by every Java service. The tracer is always on (traceId/spanId in
-# logs = D2); only OTLP *export* is gated, so it stays off until the monitoring
-# profile (Tempo) exists — otherwise the exporter spams a dead tempo:4318.
+# logs = D2); only OTLP *export* is gated, so it stays off unless the monitoring
+# profile (Tempo) is enabled — otherwise the exporter spams a dead tempo:4318.
 x-otel-env: &otel-env
   OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
   OTEL_OTLP_ENDPOINT: ${OTEL_OTLP_ENDPOINT:-http://tempo:4318/v1/traces}
@@ -637,6 +637,9 @@ services:
       ARTIFACT_CLEANUP_MAX_RETRY: ${ARTIFACT_CLEANUP_MAX_RETRY:-1h}
       BACKPRESSURE_MAX_INFLIGHT: ${BACKPRESSURE_MAX_INFLIGHT:-20}
       BACKPRESSURE_MAX_INFLIGHT_PER_USER: ${BACKPRESSURE_MAX_INFLIGHT_PER_USER:-3}
+      BACKPRESSURE_RETRY_AFTER_SECONDS: ${BACKPRESSURE_RETRY_AFTER_SECONDS:-5}
+      FILE_SERVICE_BASE_URL: ${FILE_SERVICE_BASE_URL:-http://file-service:8081}
+      FILE_SERVICE_LOOKUP_TIMEOUT: ${FILE_SERVICE_LOOKUP_TIMEOUT:-2s}
       REDIS_DEGRADED_BYPASS: ${REDIS_DEGRADED_BYPASS:-2s}
       RELIABILITY_OUTBOX_ENABLED: ${RELIABILITY_OUTBOX_ENABLED:-true}
       RELIABILITY_OUTBOX_POLL_INTERVAL_MS: ${RELIABILITY_OUTBOX_POLL_INTERVAL_MS:-1000}
@@ -644,6 +647,10 @@ services:
       RELIABILITY_OUTBOX_RETRY_SECONDS: ${RELIABILITY_OUTBOX_RETRY_SECONDS:-5}
       RELIABILITY_OUTBOX_DISPATCH_TIMEOUT_SECONDS: ${RELIABILITY_OUTBOX_DISPATCH_TIMEOUT_SECONDS:-120}
       RELIABILITY_OUTBOX_BATCH_SIZE: ${RELIABILITY_OUTBOX_BATCH_SIZE:-20}
+      RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS: ${RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS:-600}
+      RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS: ${RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS:-300000}
+      RELIABILITY_STUCK_JOB_INITIAL_DELAY: ${RELIABILITY_STUCK_JOB_INITIAL_DELAY:-${RELIABILITY_STUCK_JOB_THRESHOLD_SECONDS:-600}s}
+      RELIABILITY_IDEMPOTENCY_TTL_SECONDS: ${RELIABILITY_IDEMPOTENCY_TTL_SECONDS:-900}
       RELIABILITY_STUCK_JOB_QUEUE_TIMEOUT_SECONDS: ${RELIABILITY_STUCK_JOB_QUEUE_TIMEOUT_SECONDS:-1800}
       RELIABILITY_STUCK_JOB_MAX_AGE_SECONDS: ${RELIABILITY_STUCK_JOB_MAX_AGE_SECONDS:-7200}
       # MO benchmark knobs (defaults = prod): cache-aside on/off, HikariCP max pool size.
@@ -757,6 +764,7 @@ services:
       - --storage.tsdb.retention.time=15d
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"

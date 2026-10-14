@@ -87,7 +87,9 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
     aktywnej analizy.
   - Detektory: ręczny ACK, prefetch 1, publisher confirms, wynik potwierdzony przed ACK, reconnect co 5 s.
   - Listenery `analysis.results`/`progress` w trybie `AUTO` (ACK po commicie TX — świadomie, dla retry + recoverer);
-    DLQ consumer w trybie `MANUAL`. Retry 4 próby (1 s/4 s/15 s), potem `*.dlq` → FAILED.
+    DLQ consumer w trybie `AUTO` po commicie, z potwierdzoną kwarantanną błędnych wiadomości.
+    Wyniki: 4 próby (1 s/4 s/15 s), potem potwierdzona publikacja do `analysis.results.dlq` → FAILED.
+    Progress: 3 próby (100 ms/200 ms), potem log i ACK; nie powoduje FAILED.
   - Idempotencja per źródło: pierwszy wynik wygrywa w PostgreSQL (warunkowy UPDATE); Redis `dedup:{id}:{source}`
     to tylko podpowiedź ustawiana po commicie.
   - Przejścia terminalne (COMPLETED/FAILED/CANCELLED) tylko przez CAS na statusie; efekty uboczne raz, po commicie.
@@ -98,7 +100,7 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
     Pierwszy skan po starcie czeka 600 s (`RELIABILITY_STUCK_JOB_INITIAL_DELAY`).
   - Zatrzymanie FAILED/CANCELLED: flaga Redis `cancel:{id}` ustawiana po commicie; detektor sprawdza ją
     przy podjęciu, na każdym ticku i przed publikacją wyniku. Anulowanie nie jest komunikatem AMQP.
-  - Redis fail-open (cache → DB, dedup → guard DB, snapshot progresu → pomiń, cancel → licz do końca).
+  - Redis fail-open (cache → DB, dedup → guard DB, cancel → licz do końca).
     Wyjątek: limiter uploadu w gatewayu jest świadomie fail-closed (503); pozostałe trasy są fail-open.
 
 ## Bezpieczeństwo

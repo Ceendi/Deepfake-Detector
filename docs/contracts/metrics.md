@@ -3,13 +3,13 @@
 Custom business metrics (D3), exposed by the Orchestrator at `/actuator/prometheus` (permitAll —
 internal scrape). Names below are the **Prometheus exposition** names (verified via `scrape()` in
 `AnalysisMetricsTest`); in Java code they are dotted (Micrometer converts `.`→`_` and adds the
-`_total` counter suffix without doubling). This file is the single source for the PR4 dashboards.
+`_total` counter suffix without doubling). This file is the source for the provisioned business dashboard.
 
 | Prometheus name              | Type    | Labels                                   | Meaning |
 |------------------------------|---------|------------------------------------------|---------|
 | `analyses_total`             | counter | `status` (completed/failed/cancelled), `type` (video/audio/full) | One per terminal transition. Funneled through `onTerminal`, so result, cancel, DLQ and stuck-recovery all count once. Recorded after commit, so a rolled-back transition counts nothing. |
 | `analyses_deleted_total`     | counter | `status` (completed/failed/cancelled) | One per analysis the owner permanently deletes (`DELETE /api/analysis/{id}/record`), tagged by the terminal status it carried. Recorded after commit; a losing concurrent delete (`404`) does not count. Independent of `analyses_total` (a cumulative event counter, never decremented) — the live `GET /api/analysis/stats` aggregate is what drops the deleted row. |
-| `analysis_duration_seconds`  | timer   | `type`                                   | End-to-end latency (created → completed). Recorded for `COMPLETED` only — duration is meaningless for an aborted analysis. |
+| `analysis_duration_seconds`  | timer   | `type`                                   | End-to-end latency (created → completed). Recorded for `COMPLETED` only — duration is meaningless for an aborted analysis. Histogram buckets are enabled for p95 by type. |
 | `cache_requests_total`       | counter | `result` (hit/miss)                      | `GET /api/analysis/{id}` cache lookups. Redis-down counts as `miss` (fail-open to DB), so a miss spike during a Redis outage is expected, not a bug. |
 | `analyses_inflight`          | gauge   | —                                        | Committed active analyses (`PENDING`/`PROCESSING`) in PostgreSQL, using the same query as admission. Sampled each scrape; returns `0` if the database query fails. This is the brief's `queue_depth`. |
 | `analyses_dlq_total`         | counter | —                                        | Analyses failed by the dead-letter consumer (D6). Counts only transitions that won the `failSourceIfUnaccepted` CAS, so it stays aligned with `analyses_total{status="failed"}` — a duplicate/late DLQ message for an already-terminal analysis does not count. |
@@ -18,7 +18,7 @@ internal scrape). Names below are the **Prometheus exposition** names (verified 
 
 Cardinality: labels are enum-valued only — never `analysis_id`/`user_id` (those go on **spans**, not
 metric series). RabbitMQ queue depth (`rabbitmq_queue_messages`) comes from the RabbitMQ Prometheus
-plugin in PR4, not from app code.
+plugin, not from app code.
 
 ## File Service (`/actuator/prometheus`)
 
@@ -37,16 +37,59 @@ Java name: `gateway.ratelimiter.degraded`. Route labels come from static gateway
 configuration, never user IDs or URLs. The Business dashboard shows the request
 rate by route. `GatewayRateLimitIntegrationTest` checks the actual Prometheus name.
 
+## Detectors (`/metrics`)
+
+Both FastAPI services expose the existing `prometheus_client` collectors. No metric
+contains an analysis ID, user ID, file key or model path.
+
+| Prometheus name | Type | Labels | Meaning |
+|---|---|---|---|
+| `inference_latency_seconds` | histogram | `source` (`video`) | Video runtime `process_task` wall time: download, inference and artifact upload; excludes pickup cancel and final result publication/ACK. Includes failed/interrupted attempts after processing starts. Uses the client's default buckets. |
+| `detector_results_total` | counter | `source` (`video`), `outcome` (`fake`, `real`, `failed`, `cancelled`) | Video delivery outcomes. Completed and failed are recorded after result confirm and ACK; cancelled is recorded before ACK. Redelivered attempts can each count. |
+| `video_stage_duration_seconds` | histogram | `stage` (`face_detection`, `backbone`, `temporal`, `gradcam`) | Time spent in a video pipeline stage, including a stage that raises. Buckets: 0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30 seconds. |
+| `video_model_load_duration_seconds` | gauge | — | Time of the last successful video model initialization. |
+| `audio_inference_duration_seconds` | histogram | — | Audio `analyze` wall time, including extraction, preprocessing and Grad-CAM, but excluding S3 download/upload. Includes failed/interrupted calls. Buckets: 0.5, 1, 2, 3, 5, 10, 15, 20, 30 seconds. |
+| `audio_processed_total` | counter | `status` (`success`, `error`, `cancelled`) | Audio delivery outcomes. Success and error follow result confirm and ACK; cancelled precedes ACK. Redelivered attempts can each count. `NO_AUDIO_TRACK` is a detector error even when a FULL analysis later completes through video. |
+| `audio_model_load_duration_seconds` | gauge | — | Time of the last successful audio model initialization. |
+
+Histogram exposition includes `_bucket{le}`, `_sum` and `_count`; all include an
+infinite bucket. The detector dashboard row shows p95 separately for video and
+audio, plus their existing outcome labels. These counters count delivery attempts,
+not unique analyses: use `analyses_total` for committed analysis outcomes.
+The two inference timers have different scopes, so their p95 values are not a
+controlled comparison of pure model execution. A p95 above the highest finite
+bucket saturates at that bucket; use the bucket distribution when investigating it.
+
+## Percentile dashboards and alerts
+
+`management.metrics.distribution.percentiles-histogram` enables
+`analysis.duration` in the orchestrator and `http.server.requests` in gateway,
+file-service and orchestrator. Prometheus exposes `analysis_duration_seconds_bucket`
+and `http_server_requests_seconds_bucket`. Grafana uses
+`histogram_quantile(0.95, sum by (le, type) (rate(...[5m])))` for analysis duration,
+and `(le, job)` for HTTP, aggregating replicas before computing the percentile.
+The finite histogram ranges extend to 2 hours for analysis duration (the existing
+absolute recovery allowance) and 10 minutes for HTTP (the default SSE lifetime),
+covering long analyses, uploads and streams instead of Micrometer's default 30 seconds.
+These are histogram bounds, not execution deadlines; values beyond a finite range
+can saturate p95 at its upper bound. Increase that bound if deploying longer requests.
+HTTP panels include all observed routes per service. No observations means no p95
+series; it does not mean zero latency. Histograms add bounded bucket series for
+existing labels and do not introduce user/analysis labels.
+
+The minimal rules in `infra/prometheus/alerts.yml` use existing metrics:
+`AnalysisDeadLettered` and `AnalysisStuckRecovered` detect counter increases over
+5 minutes; `AnalysisDeadLetterBacklog` detects a nonempty DLQ/quarantine for 2 minutes;
+`ScrapeTargetDown` detects `up == 0` for 2 minutes. Alert rules do not change
+recovery thresholds or queue policies. See [observability](../observability.md#alerts)
+for operation and validation.
+
 ## Tracing
 
-OTLP trace export is gated by `OTEL_TRACING_EXPORT_ENABLED` (default `false`; PR4 flips it on under
-the `monitoring` profile once Tempo exists). The tracer + Micrometer bridge are always on, so
+OTLP trace export is gated by `OTEL_TRACING_EXPORT_ENABLED` (default `false`; explicitly enable it when using
+the `monitoring` profile with Tempo). The tracer + Micrometer bridge are always on, so
 `trace_id`/`span_id` reach the logs (D2). Spans carry `analysis.id` (create + result handling) and
 `analysis.type` (create) so a trace is searchable by analysis in Tempo.
-
-> **Cross-service heads-up (PR4):** gateway, file-service and eureka also need
-> `micrometer-registry-prometheus` on the classpath for their `/actuator/prometheus` to exist before
-> Prometheus can scrape them.
 
 ## Gateway scrape transport
 

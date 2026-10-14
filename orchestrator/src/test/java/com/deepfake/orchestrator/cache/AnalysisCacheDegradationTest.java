@@ -60,7 +60,8 @@ class AnalysisCacheDegradationTest {
         doThrow(new RedisConnectionFailureException("down"))
                 .when(valueOps).set(anyString(), anyString(), any(Duration.class));
 
-        assertThatCode(() -> cache.putById(sample())).doesNotThrowAnyException();
+        var response = sample();
+        assertThatCode(() -> cache.putById(response, cache.beginFill(response.id()))).doesNotThrowAnyException();
     }
 
     @Test
