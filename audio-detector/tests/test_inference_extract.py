@@ -137,3 +137,23 @@ def test_missing_track_publishes_wire_fixture_before_ack(inference_module, monke
         channel.basic_ack.assert_not_called()
     else:
         channel.basic_ack.assert_called_once_with(delivery_tag=7)
+
+
+def test_ffmpeg_runs_bounded_without_stdin(inference_module, monkeypatch):
+    run = MagicMock(side_effect=[probe([{"index": 1}]), SimpleNamespace(returncode=0)])
+    monkeypatch.setattr(inference_module.subprocess, "run", run)
+    _instance(inference_module)._extract_audio("in.bin", 16000, "out.wav")
+    command, options = run.call_args.args[0], run.call_args.kwargs
+    assert "-nostdin" in command
+    assert options["stdin"] == subprocess.DEVNULL
+    assert options["timeout"] == 60 + inference_module.MEDIA_MAX_DURATION_SECONDS / 10
+
+
+def test_hung_ffmpeg_becomes_neutral_processing_error(inference_module, monkeypatch):
+    run = MagicMock(side_effect=[probe([{"index": 1}]),
+                                 subprocess.TimeoutExpired("ffmpeg -i /tmp/private/in.mp4", 240)])
+    monkeypatch.setattr(inference_module.subprocess, "run", run)
+    with pytest.raises(RuntimeError) as error:
+        _instance(inference_module)._extract_audio("/tmp/private/in.mp4", 16000, "out.wav")
+    assert str(error.value) == "Nie udało się wyodrębnić ścieżki audio z materiału."
+    assert not isinstance(error.value, inference_module.DetectorError)

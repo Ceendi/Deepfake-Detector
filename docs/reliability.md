@@ -166,27 +166,62 @@ connection loop and a single inference thread per process.
   persistent and `mandatory=True` on a confirm channel; the task is ACKed only after the confirm.
   A return, nack, lost connection or failed ACK escapes to the reconnect loop: the connection is
   closed (releasing unacked work to RabbitMQ) and the worker reconnects after 5 s. Transport
-  failures never become an inference FAILED result. Malformed JSON is nacked to the task DLQ.
+  failures never become an inference FAILED result. Malformed JSON, a non-UTF-8 body or
+  excessive nesting is nacked to the task DLQ.
+- **Error classification:** only `DetectorError` subclasses (string `code`, deliberate Polish
+  message) publish their own code and message. Any other exception, including foreign objects
+  with a `code` attribute such as `cv2.error` (`-215`) or libsndfile errors, publishes
+  `PROCESSING_ERROR` with the neutral message; details stay in logs. The `failed` outcome
+  metric is recorded after the ACK, like `completed`.
+- **Object storage outages:** connection errors, timeouts, exhausted transfer retries, 5xx, 429
+  and botocore's retryable throttling/timeout codes (`SlowDown`, `RequestTimeout`, …) while downloading the input or uploading artifacts are treated as transport
+  failures: no result is published, the connection is closed, and RabbitMQ redelivers the task
+  within `x-delivery-limit=5`. Consecutive outages back off the reconnect 5 s → 10 s → 20 s →
+  30 s (reset after the next ACKed task), so roughly two minutes of S3 outage are absorbed before
+  the task dead-letters to FAILED. These warnings carry only the error type: botocore messages
+  include the object URL with the user's file name. Missing or forbidden input (`404`/`NoSuchKey`/`403`) stays
+  `FAILED/PROCESSING_ERROR`; a forbidden artifact upload still only drops that heatmap.
+- **Task watchdog:** a separate thread checks the running attempt once a second. An attempt
+  exceeding `DETECTOR_TASK_HARD_LIMIT_SECONDS` (a hung ffmpeg or native ONNX call cannot be
+  interrupted) marks the consumer DOWN and exits the process with status 1; Compose restarts it
+  (`unless-stopped`) and RabbitMQ redelivers the task, counted toward the delivery limit. Audio
+  ffmpeg extraction additionally runs with `-nostdin` and a timeout of
+  `60 + MEDIA_MAX_DURATION_SECONDS / 10` seconds, which fails the task with `PROCESSING_ERROR`.
+  The default limit is deliberately above the 600 s stuck-job idle threshold, so a legitimate
+  long analysis is never killed; a hung attempt may block the worker up to an hour after
+  stuck recovery has already failed the analysis, and its late result is rejected by the guard.
+- **Credentials:** `RABBITMQ_PASSWORD`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` have no defaults.
+  Missing storage keys stop the import; a missing broker password keeps the API up with
+  `/health` DOWN and logs the reason on every reconnect attempt.
 - **Isolation of duplicates:** each attempt works in a private temp directory, and Grad-CAM keys
   carry an attempt UUID (`{analysisId}/{source}/gradcam_..._{attempt}.png`), so a duplicate never
   overwrites artifacts referenced by the accepted result.
 - **Start ping:** a worker publishes `0/LOADING` before downloading, which flips the analysis to
   `PROCESSING` and records that source's first pickup and latest progress in PostgreSQL.
   Later progress renews only that source's idle clock.
-- **Readiness:** models load once at startup. If loading fails the process stays up, `/health`
+- **Readiness:** models load once at startup. If loading fails, including an import error of the
+  ML stack, the process stays up, `/health`
   returns `503 DOWN`, and each task immediately gets a `FAILED` result with code
   `MODEL_UNAVAILABLE` (no download, progress or inference). `/health` is `UP` only with loaded
   models, a connected consumer and a fresh consumer heartbeat. Fix the model and restart the
   container; there is no automatic reload, and Compose does not restart unhealthy containers.
+
+Cancel checks fail open; after a Redis error the worker skips them for 5 s instead of paying
+the 1 s socket timeout on every progress tick.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `DETECTOR_TASK_HARD_LIMIT_SECONDS` | `3600` | Positive finite limit for one attempt before the worker restarts |
 
 Process kill before publishing → RabbitMQ redelivers and another worker recomputes. Kill after
 confirm but before ACK → the result may be published twice. A network loss is detected through
 the 30 s heartbeat (allow about a minute) plus the 5 s reconnect delay; this must fit inside the
 stuck-job idle budget below.
 
-Tests: `detector-runtime/tests/` (shared delivery guards), `tests/worker_redelivery/`
+Tests: `detector-runtime/tests/` (shared delivery guards, `test_failures.py` for error
+classification, storage outages and the watchdog), `tests/worker_redelivery/`
 (real worker processes with RabbitMQ and Redis; inference is
-stubbed), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
+stubbed, including S3 outage redelivery and the DLQ after the delivery limit), `WorkerRedeliveryIntegrationTest`, `*/tests/test_health.py`.
 
 ## Media duration and audio progress
 

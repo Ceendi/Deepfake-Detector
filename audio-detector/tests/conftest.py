@@ -1,13 +1,19 @@
 """Shared heavy-module stubs for tests that exercise the production inference wiring."""
 import importlib
+import os
 import sys
 from unittest.mock import MagicMock
 
 import pytest
 
+# The runtime refuses to start without credentials; tests never reach S3 or RabbitMQ.
+os.environ.setdefault("S3_ACCESS_KEY", "test")
+os.environ.setdefault("S3_SECRET_KEY", "test")
+os.environ.setdefault("RABBITMQ_PASSWORD", "test")
+
 _HEAVY = [
     "torch", "soundfile", "onnxruntime",
-    "matplotlib", "matplotlib.pyplot",
+    "matplotlib", "matplotlib.figure", "matplotlib.image",
     "src.models.mel_cnn",  # imports torchaudio/torchvision at module load
 ]
 

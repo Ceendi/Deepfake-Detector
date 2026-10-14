@@ -11,6 +11,8 @@ import time
 import types
 from pathlib import Path
 
+from botocore.exceptions import ClientError, EndpointConnectionError
+
 source, directory = sys.argv[1:]
 state = Path(directory)
 state.mkdir(parents=True, exist_ok=True)
@@ -60,6 +62,9 @@ inference = types.ModuleType("src.inference")
 setattr(inference, "VideoInference" if source == "video" else "AudioInference", ControlledInference)
 sys.modules["src.inference"] = inference
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / f"{source}-detector"))
+# Storage keys are mandatory at import; this fixture replaces the S3 client before any call.
+os.environ.setdefault("S3_ACCESS_KEY", "test")
+os.environ.setdefault("S3_SECRET_KEY", "test")
 from detector_runtime import consumer as runtime_module
 from src import consumer, main
 
@@ -73,6 +78,10 @@ if os.getenv("TEST_HEARTBEAT_SECONDS"):
 
     runtime_module.pika.ConnectionParameters = test_parameters
     main.HEALTH_MAX_SILENCE_SECONDS = int(os.environ["TEST_HEARTBEAT_SECONDS"])
+# Shorten reconnect backoff so storage outages reach the delivery limit within the test.
+if os.getenv("TEST_RECONNECT_SECONDS"):
+    runtime_module.RECONNECT_DELAY_SECONDS = float(os.environ["TEST_RECONNECT_SECONDS"])
+    runtime_module.STORAGE_BACKOFF_MAX_SECONDS = float(os.environ["TEST_RECONNECT_SECONDS"])
 
 
 def observe_health():
@@ -87,8 +96,17 @@ def observe_health():
 
 
 class ControlledInput:
+    def __init__(self):
+        self.outages = int(os.getenv("S3_DOWNLOAD_OUTAGES", "0"))
+
     def download_file(self, bucket, key, destination):
         event("download")
+        if self.outages > 0:
+            self.outages -= 1
+            raise EndpointConnectionError(endpoint_url="http://seaweedfs:8333")
+        if os.getenv("S3_DOWNLOAD_MISSING") == "true":
+            raise ClientError({"Error": {"Code": "404", "Message": "Not Found"},
+                               "ResponseMetadata": {"HTTPStatusCode": 404}}, "HeadObject")
         Path(destination).write_bytes(b"controlled test input")
 
     def upload_file(self, local_path, bucket, key, **kwargs):

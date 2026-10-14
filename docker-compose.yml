@@ -607,6 +607,7 @@ services:
       QUEUE_NAME: analysis.video
       SOURCE_LABEL: video
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
+      DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
       # Python OTel: same gate + endpoint values as the Java *otel-env anchor, but under the
       # standard OTel SDK env name the Python OTLP exporter reads directly.
       OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
@@ -641,6 +642,7 @@ services:
       redis: { condition: service_healthy }
     environment:
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
+      DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: ${RABBITMQ_USER}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
