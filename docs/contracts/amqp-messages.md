@@ -5,6 +5,9 @@ declared by application code at startup (Spring AMQP `@Bean` in the Orchestrator
 `pika channel.queue_declare(...)` in detectors). This document is the single
 source of truth: every publisher and consumer must declare with **exactly the
 same arguments**, otherwise RabbitMQ will reject with `PRECONDITION_FAILED`.
+`rabbitmq-init` also declares both exchanges and `analysis.video`/`analysis.audio` with the
+same arguments before granting permissions (see [Broker users](#broker-users)); keep its
+arguments in sync with these declarations.
 
 ## Topology
 
@@ -62,6 +65,19 @@ the original. Publication failure pauses the affected listener, requeues the ori
 and resumes automatically with a delay increasing from 5s to a 60s cap. Readiness
 is DOWN until processing succeeds. See
 [listener retries, DLQs and quarantine](../reliability.md#listener-retries-dlqs-and-quarantine).
+
+## Broker users
+
+Applications connect as least-privilege users, never as the administrator. Any change to the
+topology, publishers or consumers must update `infra/rabbitmq/provision_users.py` as well.
+
+| User | Declares (configure) | Consumes (read) | Publishes |
+|---|---|---|---|
+| `orchestrator` | both exchanges and all eight queues | `analysis.results`, `analysis.progress`, `analysis.{video,audio,results}.dlq` | `analysis.exchange` with keys `analysis.video`/`analysis.audio` only; `analysis.dlx` |
+| `detector` | both exchanges, `analysis.{video,audio}` (+ `.dlq`), `analysis.results`, `analysis.progress` | `analysis.video`, `analysis.audio` | `analysis.exchange` with keys `analysis.results`/`analysis.progress` only |
+
+Binding keys on `analysis.exchange` are limited to the four routing keys above. Neither user may
+use the default exchange.
 
 ## Message formats
 

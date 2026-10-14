@@ -13,6 +13,7 @@ on:
       - .github/workflows/security-scan.yml
       - .env.example
       - infra/seaweedfs/**
+      - infra/rabbitmq/**
       - infra/tempo/**
       - infra/tests/**
       - infra/keycloak/**
@@ -33,6 +34,7 @@ on:
       - .github/workflows/security-scan.yml
       - .env.example
       - infra/seaweedfs/**
+      - infra/rabbitmq/**
       - infra/tempo/**
       - infra/tests/**
       - infra/keycloak/**
@@ -95,6 +97,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: python3 infra/tests/test_s3_configuration.py
+
+  rabbitmq-users:
+    name: Least-privilege RabbitMQ users
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 infra/tests/test_rabbitmq_users.py
 
   orchestrator-verify:
     name: Manual orchestrator fault acceptance

@@ -160,6 +160,8 @@ services:
           pids: 500
     logging: *default-logging
     environment:
+      # Administrator for manual operations only (UI, CLI); applications use the
+      # least-privilege users that rabbitmq-init provisions.
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     ports:
@@ -178,6 +180,35 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+    networks: [deepfake]
+
+  rabbitmq-init:
+    # Post-healthy, idempotent: (re)creates the `orchestrator` and `detector` users with
+    # permissions limited to their own queues and routing keys. Every run resets their
+    # passwords, so it also migrates an existing broker volume and rotates credentials.
+    image: python:3.14.8-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
+    profiles: ["core"]
+    security_opt: *default-security
+    cap_drop: [ALL]
+    read_only: true
+    deploy:
+      resources:
+        limits:
+          memory: 64m
+          cpus: "0.25"
+          pids: 50
+    logging: *default-logging
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+    environment:
+      RABBITMQ_MANAGEMENT_URL: http://rabbitmq:15672
+      RABBITMQ_ADMIN_USER: ${RABBITMQ_USER}
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_ORCHESTRATOR_PASSWORD: ${RABBITMQ_ORCHESTRATOR_PASSWORD}
+      RABBITMQ_DETECTOR_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}
+    entrypoint: ["python3", "-I", "/provision_users.py"]
+    volumes:
+      - ./infra/rabbitmq/provision_users.py:/provision_users.py:ro
     networks: [deepfake]
 
   seaweedfs:
@@ -216,13 +247,18 @@ services:
       # 0 = auto-derive max volume count from available disk size (SeaweedFS 4.x).
       # This is the documented "use whatever the disk allows" mode for dev.
       - -volume.max=0
-      # Bind to all interfaces; without this `weed server` listens only on
-      # the eth0 IP and the in-container healthcheck on localhost gets
-      # ECONNREFUSED. Required for `wget http://localhost:8333/` to work.
-      - -ip.bind=0.0.0.0
+      # Master/volume/filer (9333/8080/8888 + gRPC) live in this one process, so they
+      # bind loopback only: the master hands out volume read/write JWTs to any caller.
+      # Only the S3 gateway (and its gRPC port, JWT-protected via security.toml)
+      # listens on the docker network.
+      - -ip=127.0.0.1
+      - -ip.bind=127.0.0.1
+      - -s3.ip.bind=0.0.0.0
+      # Unused catalog endpoints that would otherwise listen next to S3.
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
     ports:
-      # 8333 = S3 API (only port apps need). Master/volume/filer (9333/8080/8888)
-      # stay internal to the docker network.
+      # 8333 = S3 API, the only port apps need.
       - "127.0.0.1:${S3_PORT:-8333}:8333"
     volumes:
       - seaweeddata:/data
@@ -243,7 +279,8 @@ services:
 
   seaweedfs-init:
     # Phase 1 (pre-start): renders /etc/seaweedfs/s3.json from the template
-    # using env vars, populated into the shared `seaweedconfig` volume.
+    # using env vars, and security.toml with fresh JWT signing keys, into the
+    # shared `seaweedconfig` volume.
     # Runs before the main seaweedfs service starts (via depends_on).
     # Runs as root: the seaweedfs image entrypoint also runs as root, so a
     # 0644 file written here is readable downstream regardless of ownership.
@@ -522,6 +559,7 @@ services:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       rabbitmq: { condition: service_healthy }
+      rabbitmq-init: { condition: service_completed_successfully }
       eureka-server: { condition: service_healthy }
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
@@ -531,8 +569,9 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-250ms}
       REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-250ms}
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      # Least-privilege broker user created by rabbitmq-init (not the administrator).
+      RABBITMQ_USER: orchestrator
+      RABBITMQ_PASSWORD: ${RABBITMQ_ORCHESTRATOR_PASSWORD}
       S3_ORCHESTRATOR_KEY: ${S3_ORCHESTRATOR_KEY}
       S3_ORCHESTRATOR_SECRET: ${S3_ORCHESTRATOR_SECRET}
       SSE_GLOBAL_CONNECTIONS: ${SSE_GLOBAL_CONNECTIONS:-128}
@@ -597,13 +636,14 @@ services:
     logging: *default-logging
     depends_on:
       rabbitmq: { condition: service_healthy }
+      rabbitmq-init: { condition: service_completed_successfully }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     environment:
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_USER: detector
+      RABBITMQ_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}
       QUEUE_NAME: analysis.video
       SOURCE_LABEL: video
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
@@ -636,14 +676,15 @@ services:
     logging: *default-logging
     depends_on:
       rabbitmq: { condition: service_healthy }
+      rabbitmq-init: { condition: service_completed_successfully }
       seaweedfs: { condition: service_healthy }
       seaweedfs-bucket-init: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
     environment:
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
       RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: ${RABBITMQ_USER}
-      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_USER: detector
+      RABBITMQ_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}
       QUEUE_NAME: analysis.audio
       SOURCE_LABEL: audio
       # Python OTel — see video-detector for the rationale.
