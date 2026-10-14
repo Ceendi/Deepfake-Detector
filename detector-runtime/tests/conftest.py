@@ -1,3 +1,4 @@
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,6 +8,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from detector_runtime import DetectorRuntime
 
 trace.set_tracer_provider(TracerProvider())
+# The runtime refuses to connect without a broker password; tests never reach RabbitMQ.
+os.environ.setdefault("RABBITMQ_PASSWORD", "test")
 
 
 @pytest.fixture(params=["audio", "video"])
