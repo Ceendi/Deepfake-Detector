@@ -87,8 +87,34 @@ class AnalysisStreamControllerTest {
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
 
         mvc.perform(get("/api/analysis/{id}/stream", id)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
                         .with(jwt().jwt(j -> j.subject("user-b")).authorities(userRole())))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound()).andExpect(content().string(""));
+    }
+
+    @Test
+    void missingStreamHasEmptyBodyWithAbsentOrWildcardAccept() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.openStream(id, "user-a"))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
+        for (String accept : new String[]{null, "*/*"}) {
+            var request = get("/api/analysis/{id}/stream", id)
+                    .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole()));
+            if (accept != null) request.accept(accept);
+            mvc.perform(request).andExpect(status().isNotFound()).andExpect(content().string(""));
+        }
+    }
+
+    @Test
+    void exhaustedQuotaReturns429AndRetryAfterWithoutBody() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(service.openStream(id, "user-a"))
+                .thenThrow(new com.deepfake.orchestrator.exception.TooManyStreamsException());
+        mvc.perform(get("/api/analysis/{id}/stream", id).accept(MediaType.TEXT_EVENT_STREAM)
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Retry-After", "5"))
+                .andExpect(content().string(""));
     }
 
     @Test

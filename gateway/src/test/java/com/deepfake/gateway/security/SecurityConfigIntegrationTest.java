@@ -70,6 +70,28 @@ class SecurityConfigIntegrationTest {
     }
 
     @Test
+    void anonymousPreflightIsAnsweredBeforeAuthentication() {
+        for (String origin : List.of("http://localhost:5173", "http://localhost:4173")) {
+            webTestClient.options().uri("/api/analysis")
+                    .header("Origin", origin).header("Access-Control-Request-Method", "POST")
+                    .header("Access-Control-Request-Headers", "Authorization, Content-Type")
+                    .exchange().expectStatus().isOk()
+                    .expectHeader().valueEquals("Access-Control-Allow-Origin", origin)
+                    .expectHeader().valueEquals("Access-Control-Allow-Credentials", "true")
+                    .expectHeader().value("Access-Control-Allow-Headers", value ->
+                            org.assertj.core.api.Assertions.assertThat(value).contains("Authorization", "Content-Type"));
+        }
+    }
+
+    @Test
+    void untrustedPreflightIsRejected() {
+        webTestClient.options().uri("/api/analysis")
+                .header("Origin", "https://untrusted.example").header("Access-Control-Request-Method", "POST")
+                .exchange().expectStatus().isForbidden()
+                .expectHeader().doesNotExist("Access-Control-Allow-Origin");
+    }
+
+    @Test
     void protectedRouteWithoutTokenReturns401() {
         webTestClient.get().uri("/api/analysis")
                 .exchange()

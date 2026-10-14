@@ -95,6 +95,6 @@ class FileErrorContractTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
                 // internal detail stays in logs, never echoed to the client
-                .andExpect(jsonPath("$.message").value("Internal server error"));
+                .andExpect(jsonPath("$.message").value("Wystąpił wewnętrzny błąd serwera."));
     }
 }

@@ -191,7 +191,7 @@ public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
             @Param("queueCutoff") Instant queueCutoff, @Param("ageCutoff") Instant ageCutoff);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query(value = "UPDATE analysis SET status = 'FAILED', error_message = 'dispatch, queue, progress or absolute deadline exceeded, auto-failed by recovery', updated_at = :now WHERE id = :id AND " + EXPIRED,
+    @Query(value = "UPDATE analysis SET status = 'FAILED', error_message = '[ANALYSIS_TIMEOUT] Analiza trwała zbyt długo i została przerwana.', updated_at = :now WHERE id = :id AND " + EXPIRED,
             nativeQuery = true)
     int failIfExpired(@Param("id") UUID id, @Param("cutoff") Instant cutoff,
             @Param("dispatchCutoff") Instant dispatchCutoff, @Param("queueCutoff") Instant queueCutoff,

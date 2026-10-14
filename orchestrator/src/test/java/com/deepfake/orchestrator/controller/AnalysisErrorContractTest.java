@@ -123,6 +123,17 @@ class AnalysisErrorContractTest {
     }
 
     @Test
+    void listCapsPageSizeAndIgnoresUnknownClientSort() throws Exception {
+        when(service.list(eq("user-a"), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
+        mvc.perform(get("/api/analysis").param("size", "2000").param("sort", "unknown,asc")
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isOk());
+        var page = org.mockito.ArgumentCaptor.forClass(Pageable.class);
+        org.mockito.Mockito.verify(service).list(eq("user-a"), page.capture());
+        org.assertj.core.api.Assertions.assertThat(page.getValue().getPageSize()).isEqualTo(100);
+    }
+
+    @Test
     void validationReturns400WithFieldErrors() throws Exception {
         mvc.perform(post("/api/analysis")
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole()))

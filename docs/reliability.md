@@ -176,6 +176,32 @@ refused everything outside their own queues and routing keys. `infra/tests/test_
 checks that internal SeaweedFS ports are unreachable from the network, that anonymous IAM gRPC
 calls fail, and that the filer requires a JWT even on loopback.
 
+## HTTP errors and request correlation
+
+Orchestrator and file-service explicitly map request binding/negotiation failures to
+400/405/406/413/415 instead of the unexpected-error handler. Disconnects do not trigger
+another write; async timeouts have no body. Both avoid ERROR logging for those async
+conditions. Unexpected application failures still return a generic 500 and log details.
+Shared error messages are neutral Polish text; technical status-exception reasons
+are not exposed. Clients accepting only SSE/PDF/binary data receive error status and
+headers without JSON negotiation or warning logs.
+
+The gateway validates `X-Correlation-ID` against `^[A-Za-z0-9-]{1,64}$`, replacing invalid
+or absent values with a UUID and echoing the downstream ID. Both servlet services apply
+the same rule to direct requests. The file claim call forwards the request's MDC correlation ID.
+
+Security's CORS filter answers permitted preflights before JWT authentication. Origin
+configuration has one source in the gateway, so routing cannot duplicate CORS headers.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `GATEWAY_CORS_ORIGINS` | `http://localhost:5173,http://localhost:4173` | Comma-separated frontend origins |
+
+History always uses `createdAt DESC, id DESC` with a page size capped at 100, ignoring
+client sort parameters. Regression tests: both `HttpExceptionContractTest` and correlation
+filter tests, `SecurityConfigIntegrationTest`, `AnalysisServiceListTest`,
+`AnalysisErrorContractTest`, `AnalysisFileResolutionIntegrationTest`.
+
 ## Creating an analysis
 
 `POST /api/analysis` goes through three steps.
@@ -594,6 +620,13 @@ Tests: `RedisDownDegradationIntegrationTest`, `GatewayRateLimitIntegrationTest`,
 forwarding to a stub backend, immediate bypass responses and the Prometheus counter, then verifies
 `429` returns after recovery. Unit tests cover the sentinel, timeouts and shared window expiry.
 
+DLQ failures persist `[DEAD_LETTERED] Nie udało się zakończyć analizy.`;
+stuck recovery persists `[ANALYSIS_TIMEOUT] Analiza trwała zbyt długo i została przerwana.`
+Exception headers remain only in logs with `analysis_id`; recovery thresholds and
+source-specific CAS guards are unchanged. Regression tests:
+`AnalysisServiceFailFromDlqTest`, `WorkerRedeliveryIntegrationTest`,
+`AnalysisStuckRecoveryIntegrationTest`.
+
 ## SSE delivery
 
 Code: `AnalysisStreamRegistry`, `SseMvcLifecycle`, `SseLimits`.
@@ -610,7 +643,10 @@ The dedicated `sse-watchdog` runs heartbeat and observation tasks with independe
 guards. A failed tick logs WARN and later ticks continue instead of being cancelled by
 `scheduleAtFixedRate`.
 
-Quotas count physical connections; over quota → `429` with `Retry-After: 5`. A slot is released
+Quotas count physical connections; over quota → `429` with `Retry-After: 5` and no body.
+Missing/foreign subscriptions return an empty `404` without WARN, including callers
+accepting only `text/event-stream`. Async disconnects/timeouts write no error body
+and do not log ERROR. A slot is released
 only after the servlet request completes and the writer exits, so a client that stalls a write
 keeps its slot until the peer disconnects. Size the quotas accordingly. The frontend reconciles
 with `GET` after a result, EOF, error or `429`; the database is authoritative.

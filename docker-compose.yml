@@ -524,6 +524,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-250ms}
       REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-250ms}
+      GATEWAY_CORS_ORIGINS: ${GATEWAY_CORS_ORIGINS:-http://localhost:5173,http://localhost:4173}
       GATEWAY_REDIS_LIMITER_BUDGET: ${GATEWAY_REDIS_LIMITER_BUDGET:-750ms}
       GATEWAY_REDIS_DEGRADED_BYPASS: ${GATEWAY_REDIS_DEGRADED_BYPASS:-2s}
       # D4: upload rate-limit, env-tunable (raise for the load test). Defaults = prod values.
