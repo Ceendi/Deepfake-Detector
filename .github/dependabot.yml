@@ -141,12 +141,25 @@ updates:
     # CI-only pip file; its `-e ./detector-runtime` is relative to the repo root, not the file.
     exclude-paths:
       - "**/requirements-light.txt"
+    # Images install [project.dependencies] from pyproject, not the lock: keep exact pins and move
+    # them instead of widening them into ranges.
+    versioning-strategy: increase
     groups:
       python:
         update-types: ["minor", "patch"]
+    # Inference runtimes change scores and latency; bump them deliberately with accuracy and
+    # latency measurements (AGENTS.md quality targets).
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "onnxruntime"
+      - dependency-name: "onnx"
+      - dependency-name: "torch"
+      - dependency-name: "torchvision"
+      - dependency-name: "torchaudio"
+      - dependency-name: "transformers"
+      - dependency-name: "timm"
+      - dependency-name: "insightface"
     commit-message:
       prefix: "build(deps)"
     labels: [dependencies]
