@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "Shared AMQP worker runtime for the deepfake detectors"
 requires-python = ">=3.12"
 dependencies = [
-    "pika==1.4.*",
-    "structlog==25.*",
-    "boto3==1.42.*",
+    "pika==1.4.4",
+    "structlog==25.5.0",
+    "boto3==1.42.97",
     "redis",
     "opentelemetry-api>=1.30",
 ]
