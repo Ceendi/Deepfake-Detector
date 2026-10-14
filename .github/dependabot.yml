@@ -141,8 +141,8 @@ updates:
     # CI-only pip file; its `-e ./detector-runtime` is relative to the repo root, not the file.
     exclude-paths:
       - "**/requirements-light.txt"
-    # Images install [project.dependencies] from pyproject, not the lock: keep exact pins and move
-    # them instead of widening them into ranges.
+    # Images install [project.dependencies] from pyproject, not the lock, so runtime pins are exact
+    # (==X.Y.Z); `increase` moves them. Wildcard pins (==X.*) would be widened into ranges instead.
     versioning-strategy: increase
     groups:
       python:
