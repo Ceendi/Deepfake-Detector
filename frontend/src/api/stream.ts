@@ -11,6 +11,9 @@ export interface StreamHandlers {
   onResult: (e: AnalysisResultEvent) => void
 }
 
+// The backend sends a heartbeat every 15 s; silence this long means a half-open connection.
+export const STREAM_IDLE_TIMEOUT_MS = 45000
+
 // Read framed events until EOF or cancellation; callers own the recovery policy.
 export async function streamAnalysis(
   id: string,
@@ -18,27 +21,51 @@ export async function streamAnalysis(
   signal: AbortSignal,
 ): Promise<void> {
   signal.throwIfAborted()
-  const token = await abortable(getToken, signal)
-  signal.throwIfAborted()
-  const correlationId = newCorrelationId()
-
-  const res = await fetch(`${env.apiBaseUrl}/analysis/${id}/stream`, {
-    method: 'GET',
-    signal,
-    headers: {
-      Accept: 'text/event-stream',
-      'X-Correlation-Id': correlationId,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
-
-  if (!res.ok) {
-    const body = await res.json().catch(() => null)
-    throw apiErrorFrom(res.status, body, res.headers.get('X-Correlation-Id') ?? correlationId)
+  const idle = new AbortController()
+  const streamSignal = AbortSignal.any([signal, idle.signal])
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
+  const armIdle = () => {
+    clearTimeout(idleTimer)
+    idleTimer = setTimeout(
+      () => idle.abort(new DOMException('SSE stream idle', 'TimeoutError')),
+      STREAM_IDLE_TIMEOUT_MS,
+    )
   }
-  if (!res.body) throw new Error('Brak strumienia SSE w odpowiedzi.')
 
-  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  try {
+    armIdle()
+    const token = await abortable(getToken, streamSignal)
+    streamSignal.throwIfAborted()
+    const correlationId = newCorrelationId()
+
+    const res = await fetch(`${env.apiBaseUrl}/analysis/${id}/stream`, {
+      method: 'GET',
+      signal: streamSignal,
+      headers: {
+        Accept: 'text/event-stream',
+        'X-Correlation-Id': correlationId,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      throw apiErrorFrom(res.status, body, res.headers.get('X-Correlation-Id') ?? correlationId)
+    }
+    if (!res.body) throw new Error('Brak strumienia SSE w odpowiedzi.')
+    await readFrames(res.body, handlers, streamSignal, armIdle)
+  } finally {
+    clearTimeout(idleTimer)
+  }
+}
+
+async function readFrames(
+  body: ReadableStream<BufferSource>,
+  handlers: StreamHandlers,
+  signal: AbortSignal,
+  onData: () => void,
+): Promise<void> {
+  const reader = body.pipeThrough(new TextDecoderStream()).getReader()
   const abortReader = () => {
     void reader.cancel().catch(() => {})
   }
@@ -51,6 +78,7 @@ export async function streamAnalysis(
       const { value, done } = await reader.read()
       signal.throwIfAborted()
       if (done) break
+      onData() // Any bytes, including heartbeat comments, prove the connection is alive.
       buffer += value.replace(/\r/g, '') // Normalize CRLF frame separators.
       let sep: number
       while ((sep = buffer.indexOf('\n\n')) !== -1) {

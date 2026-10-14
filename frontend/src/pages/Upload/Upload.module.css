@@ -280,6 +280,20 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
 }
+.inlineError {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: var(--spacing-3) var(--spacing-5) 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+}
+.inlineError svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 .footerNote {
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);

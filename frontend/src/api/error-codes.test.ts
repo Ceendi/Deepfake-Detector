@@ -33,7 +33,7 @@ describe('analysisFailureMessage', () => {
     ['DEAD_LETTERED', 'Nie udało się zakończyć analizy.'],
     [
       'STORAGE_QUOTA_EXCEEDED',
-      'Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe.',
+      'Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.',
     ],
   ])('%s → uzgodniony komunikat', (code, message) => {
     expect(analysisFailureMessage(`[${code}] technical detail`)).toBe(message)

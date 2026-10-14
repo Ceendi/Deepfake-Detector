@@ -15,7 +15,7 @@ export const ERROR_CODE_MESSAGES: Readonly<Record<string, string>> = {
   ANALYSIS_TIMEOUT: 'Analiza trwała zbyt długo i została przerwana.',
   DEAD_LETTERED: 'Nie udało się zakończyć analizy.',
   STORAGE_QUOTA_EXCEEDED:
-    'Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe.',
+    'Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.',
   NO_SPEECH:
     'Brak wystarczająco wyraźnego sygnału audio do analizy. Wgraj nagranie z wyraźnie słyszalną mową.',
   NO_AUDIO_TRACK: 'Materiał nie zawiera ścieżki audio. Wgraj nagranie z dźwiękiem.',

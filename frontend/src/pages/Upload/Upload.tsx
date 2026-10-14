@@ -55,7 +55,7 @@ export default function Upload() {
     setFile(null)
     setError(null)
     setPreviewUrl(null)
-    flow.retry() // wróć do idle, gdyby cykl był w stanie failed
+    flow.reset() // nowy plik → zapomnij poprzedni upload i wróć do idle
     if (inputRef.current) inputRef.current.value = '' // pozwala wybrać ten sam plik ponownie
   }
 
@@ -140,14 +140,23 @@ export default function Upload() {
           <AnalyzingState file={file} analysisType={flow.analysisType} bySource={flow.bySource} />
         )
       case 'analyzing':
+      case 'stillRunning': {
+        const stillRunning = flow.state.name === 'stillRunning' ? flow.state : undefined
+        // Bez aktywnego śledzenia nie ma strumienia, który dowiózłby wynik anulowania.
+        const watching = !stillRunning || stillRunning.watching
         return (
           <AnalyzingState
             file={file}
             analysisType={flow.analysisType}
             bySource={flow.bySource}
-            onCancel={flow.cancel}
+            onCancel={watching ? flow.cancel : undefined}
+            cancelling={flow.cancelling}
+            cancelError={flow.cancelError}
+            stillRunningId={stillRunning?.analysisId}
+            watching={watching}
           />
         )
+      }
       default: // 'idle'
         return <PreviewState onReset={reset} onAnalyze={() => flow.start(file)} />
     }

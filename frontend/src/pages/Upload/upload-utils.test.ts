@@ -252,7 +252,7 @@ describe('messageForError', () => {
       new ApiError({ status: 409, code: 'STORAGE_QUOTA_EXCEEDED', message: 'quota' }),
     )
     expect(msg).toBe(
-      'Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy, aby wgrać nowe.',
+      'Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.',
     )
   })
 
