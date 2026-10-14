@@ -118,10 +118,14 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    # An Ubuntu release changes the system Python the detectors run on; migrate it deliberately.
+    # An Ubuntu release changes the system Python the detectors run on, and 24.10-style tags are
+    # short-lived non-LTS releases; move between LTS versions deliberately. The version range also
+    # covers digest refreshes, which Dependabot has written with a newer tag. 24.04 digests still update.
     ignore:
       - dependency-name: "ubuntu"
-        update-types: ["version-update:semver-major"]
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "ubuntu"
+        versions: [">= 24.05"]
     commit-message:
       prefix: "build(deps)"
     labels: [dependencies, infra]
@@ -134,12 +138,28 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # CI-only pip file; its `-e ./detector-runtime` is relative to the repo root, not the file.
+    exclude-paths:
+      - "**/requirements-light.txt"
+    # Images install [project.dependencies] from pyproject, not the lock, so runtime pins are exact
+    # (==X.Y.Z); `increase` moves them. Wildcard pins (==X.*) would be widened into ranges instead.
+    versioning-strategy: increase
     groups:
       python:
         update-types: ["minor", "patch"]
+    # Inference runtimes change scores and latency; bump them deliberately with accuracy and
+    # latency measurements (AGENTS.md quality targets).
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "onnxruntime"
+      - dependency-name: "onnx"
+      - dependency-name: "torch"
+      - dependency-name: "torchvision"
+      - dependency-name: "torchaudio"
+      - dependency-name: "transformers"
+      - dependency-name: "timm"
+      - dependency-name: "insightface"
     commit-message:
       prefix: "build(deps)"
     labels: [dependencies]

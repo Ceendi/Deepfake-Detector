@@ -140,6 +140,17 @@ class TempoIntegrationTest(unittest.TestCase):
         state = json.loads(self.command("docker", "inspect", container))[0]
         self.assertEqual(0, state["RestartCount"])
 
+    def test_compose_stop_exits_cleanly_within_default_grace(self):
+        trace_id = self.send_trace()
+        self.eventually(lambda: self.assertIn(
+            "persisted-smoke-span", self.request(self.http_port, f"/api/traces/{trace_id}"),
+        ))
+        # No --timeout: use the stop grace Compose would give the real service.
+        self.compose("stop", "tempo")
+        container = self.compose("ps", "--all", "-q", "tempo").strip()
+        state = json.loads(self.command("docker", "inspect", container))[0]["State"]
+        self.assertEqual(("exited", 0), (state["Status"], state["ExitCode"]))
+
     def test_tempo2_flushed_blocks_remain_readable(self):
         # The prior Compose version is intentionally fixed as the migration baseline.
         config = json.loads(self.compose_file.read_text())

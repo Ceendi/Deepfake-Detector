@@ -526,8 +526,8 @@ Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `Confirmed
 - **Database outages** on results and terminal DLQs are not exhausted into a recovery queue.
   `CannotCreateTransactionException`, `CannotGetJdbcConnectionException`,
   `DataAccessResourceFailureException`, `TransientDataAccessException`, `QueryTimeoutException`
-  and SQLState `08xxx`/`57P01`–`57P03` (connection lost, server shutdown or restart) anywhere in
-  the cause chain bypass in-process retry. The original delivery is requeued,
+  SQLState `08xxx`/`57P01`–`57P03` (connection lost, server shutdown or restart) and a failed
+  rollback (the session died mid-statement) anywhere in the cause chain bypass in-process retry. The original delivery is requeued,
   its listener is stopped, and restart waits for shutdown completion with 1 s / 2 s / 4 s
   exponential delays capped at 30 s, without an attempt limit. Successful processing resets
   the backoff. Results and DLQs pause independently; progress retains its advisory policy.
