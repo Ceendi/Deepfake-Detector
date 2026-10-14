@@ -61,10 +61,13 @@ the app. For local smoke tests with `alice`/`bob` or JMeter, add
 `auth`; see [Keycloak configuration](infra/keycloak/README.md). Keep this option
 unset in deployments.
 
-Database credentials and RabbitMQ bootstrap credentials initialize only on empty
+Database credentials and RabbitMQ administrator bootstrap credentials initialize only on empty
 volumes. Editing passwords in `.env` does not rotate accounts in existing data:
 change the stored credentials through the service's administration tools, then
 update and recreate the clients. Keep persistent data; `down -v` deletes it.
+Application broker passwords are reconciled on every `rabbitmq-init` run; update
+`.env` and recreate all affected clients (including the `ml` profile when used).
+See [broker users](docs/reliability.md#broker-users-and-internal-storage-apis).
 Keycloak realm policy is synchronized separately by `keycloak-config-cli`.
 
 If you override `KEYCLOAK_PORT`, also set `VITE_KEYCLOAK_URL` in `frontend/.env`

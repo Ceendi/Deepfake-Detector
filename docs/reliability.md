@@ -221,8 +221,10 @@ outbound alert transport. No new application metric or recovery policy is added.
 Both Keycloak realm variants disable self-service password reset until SMTP is
 configured. Password history and refresh-token rotation remain unconfigured;
 [Keycloak documentation](../infra/keycloak/README.md) describes the actual policy.
-Persistent database/broker credentials must be rotated administratively on existing
-volumes; changing bootstrap environment values alone does not update stored accounts.
+Persistent database and RabbitMQ administrator credentials must be rotated
+administratively on existing volumes; changing bootstrap environment values alone
+does not update stored accounts. Application broker passwords are reconciled by
+`rabbitmq-init` on each run, as described [above](#broker-users-and-internal-storage-apis).
 
 ## Creating an analysis
 
