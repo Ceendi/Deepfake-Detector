@@ -54,7 +54,7 @@ public class FfprobeMediaProbe implements MediaProbe {
     public Optional<ProbeResult> probe(Path file) throws IOException {
         List<String> cmd = new ArrayList<>(commandPrefix);
         cmd.addAll(List.of("-v", "quiet", "-protocol_whitelist", "file", "-print_format", "json", "-show_entries",
-                "format=format_name,duration:stream=index,width,height", file.toAbsolutePath().toString()));
+                "format=format_name,duration:stream=index,codec_type,width,height:stream_disposition=attached_pic", file.toAbsolutePath().toString()));
         Process process = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.DISCARD).start();
         ExecutorService reader = Executors.newSingleThreadExecutor(
                 Thread.ofPlatform().daemon().name("ffprobe-output-" + process.pid()).factory());
@@ -167,7 +167,8 @@ public class FfprobeMediaProbe implements MediaProbe {
             }
             long maxPixels = 0;
             for (var stream : out.streams()) {
-                if (stream == null) continue;
+                // Cover art (MP3/M4A attached_pic) is not decoded by the detectors.
+                if (stream == null || !"video".equals(stream.codecType()) || stream.isAttachedPicture()) continue;
                 if (stream.width() != null && stream.height() != null) {
                     if (stream.width() <= 0 || stream.height() <= 0) return Optional.empty();
                     maxPixels = Math.max(maxPixels, (long) stream.width() * stream.height());
@@ -196,7 +197,14 @@ public class FfprobeMediaProbe implements MediaProbe {
             @JsonProperty("streams") List<Stream> streams,
             @JsonProperty("format") Format format) {
         private record Stream(@JsonProperty("index") Integer index,
-                @JsonProperty("width") Integer width, @JsonProperty("height") Integer height) {}
+                @JsonProperty("codec_type") String codecType,
+                @JsonProperty("width") Integer width, @JsonProperty("height") Integer height,
+                @JsonProperty("disposition") Disposition disposition) {
+            boolean isAttachedPicture() {
+                return disposition != null && Integer.valueOf(1).equals(disposition.attachedPic());
+            }
+        }
+        private record Disposition(@JsonProperty("attached_pic") Integer attachedPic) {}
         private record Format(
                 @JsonProperty("format_name") String formatName,
                 @JsonProperty("duration") String duration) {}

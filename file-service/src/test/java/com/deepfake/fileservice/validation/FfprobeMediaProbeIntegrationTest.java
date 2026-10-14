@@ -54,6 +54,15 @@ class FfprobeMediaProbeIntegrationTest {
     }
 
     @Test
+    void acceptsAudioWithLargeCoverArt() throws Exception {
+        Path media = tmp.resolve("cover.mp3");
+        runToFile(List.of("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "sine=d=1", "-f", "lavfi", "-i",
+                "color=c=black:s=3000x3000", "-frames:v", "1", "-map", "0:a", "-map", "1:v", "-c:v", "mjpeg",
+                "-disposition:v", "attached_pic", media.toString()), tmp.resolve("generation.log"));
+        assertThat(validator.validate(media).mimetype()).isIn(FileValidator.MIME_WHITELIST);
+    }
+
+    @Test
     void probesValidWavAndReportsFormatAndDuration() throws IOException {
         Path wav = tmp.resolve("tone.wav");
         Files.write(wav, wav(new byte[0]));

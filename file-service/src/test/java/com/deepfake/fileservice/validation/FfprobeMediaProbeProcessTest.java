@@ -58,8 +58,10 @@ class FfprobeMediaProbeProcessTest {
 
     @Test
     void retainsLargestStreamPixelProductWithoutIntegerOverflow() throws IOException {
-        String output = "{\"streams\":[{\"index\":0,\"width\":2160,\"height\":3840},"
-                + "{\"index\":1,\"width\":100000,\"height\":100000}],\"format\":{\"format_name\":\"mp4\"}}";
+        String output = "{\"streams\":[{\"index\":0,\"codec_type\":\"video\",\"width\":2160,\"height\":3840},"
+                + "{\"index\":1,\"codec_type\":\"video\",\"width\":100000,\"height\":100000},"
+                + "{\"index\":2,\"codec_type\":\"video\",\"width\":200000,\"height\":200000,"
+                + "\"disposition\":{\"attached_pic\":1}}],\"format\":{\"format_name\":\"mp4\"}}";
         var probe = new FfprobeMediaProbe(1024, List.of(
                 Path.of(System.getProperty("java.home"), "bin", "java").toString(), "-cp",
                 childClasspath(), Child.class.getName(), "output", tmp.resolve("child.pid").toString(),
@@ -165,7 +167,7 @@ class FfprobeMediaProbeProcessTest {
                 var command = java.util.Arrays.asList(args);
                 int protocol = command.indexOf("-protocol_whitelist");
                 if (protocol < 0 || !command.get(protocol + 1).equals("file")
-                        || !command.contains("format=format_name,duration:stream=index,width,height")) {
+                        || !command.contains("format=format_name,duration:stream=index,codec_type,width,height:stream_disposition=attached_pic")) {
                     System.exit(2);
                 }
             }
