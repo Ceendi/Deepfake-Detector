@@ -4,6 +4,7 @@ import com.deepfake.orchestrator.config.AmqpRecoveryControl;
 import com.deepfake.orchestrator.config.RabbitConfig;
 import com.deepfake.orchestrator.service.AnalysisService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 /** AUTO ack occurs after the source-specific database transaction commits or quarantine is confirmed. */
 @Component
+@Slf4j
 @RequiredArgsConstructor
 public class DeadLetterListener {
     private final AnalysisService analysisService;
@@ -33,6 +35,9 @@ public class DeadLetterListener {
             if (!(decoded instanceof Map<?, ?> map)) throw new IllegalArgumentException("Expected object payload");
             payload = map;
             id = UUID.fromString((String) payload.get("analysis_id"));
+            if (!id.toString().equalsIgnoreCase((String) payload.get("analysis_id"))) {
+                throw new IllegalArgumentException("Invalid analysis_id");
+            }
             String queue = message.getMessageProperties().getConsumerQueue();
             if (RabbitConfig.Q_RESULTS_DLQ.equals(queue)) {
                 Object origin = message.getMessageProperties().getHeaders().get("x-original-routingKey");
@@ -41,8 +46,8 @@ public class DeadLetterListener {
                 // Upgrade safety: the previous shared recoverer could already have parked
                 // advisory progress here. Never reinterpret it as an unaccepted source failure.
                 if (RabbitConfig.Q_PROGRESS.equals(origin) || RabbitConfig.Q_PROGRESS.equals(legacyOrigin)
-                        || !("COMPLETED".equals(status) || "FAILED".equals(status))
-                        || ("COMPLETED".equals(status) && !(payload.get("result") instanceof Map<?, ?>))) {
+                        || (payload.containsKey("progress")
+                            && !("COMPLETED".equals(status) || "FAILED".equals(status)))) {
                     throw new IllegalArgumentException("Dead letter is not a terminal result");
                 }
             }
@@ -64,6 +69,13 @@ public class DeadLetterListener {
         try {
             Object reason = message.getMessageProperties().getHeaders().get("x-exception-message");
             analysisService.failFromDlq(id, source, reason == null ? "dead-lettered" : reason.toString());
+            Object status = payload.get("status");
+            if (RabbitConfig.Q_RESULTS_DLQ.equals(message.getMessageProperties().getConsumerQueue())
+                    && (!("COMPLETED".equals(status) || "FAILED".equals(status))
+                        || ("COMPLETED".equals(status) && !(payload.get("result") instanceof Map<?, ?>)))) {
+                // The source failure has committed; retain malformed data for manual inspection.
+                throw new PoisonDeadLetterException("Malformed terminal result dead letter", new IllegalArgumentException());
+            }
             recovery.succeeded(RabbitConfig.DLQ_LISTENER);
         } finally {
             MDC.remove("correlationId");

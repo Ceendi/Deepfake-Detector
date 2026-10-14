@@ -85,10 +85,13 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 - **D6 niezawodność:**
   - Wysyłka zadań przez transakcyjny outbox (`analysis_task_outbox`); wiadomość wychodzi tylko dla zacommitowanej,
     aktywnej analizy.
-  - Detektory: ręczny ACK, prefetch 1, publisher confirms, wynik potwierdzony przed ACK, reconnect co 5 s.
+  - Detektory: ręczny ACK, prefetch 1, publisher confirms, wynik potwierdzony przed ACK, reconnect co 5 s
+    (przy awarii S3 backoff 5/10/20/30 s, zadanie wraca do kolejki).
   - Listenery `analysis.results`/`progress` w trybie `AUTO` (ACK po commicie TX — świadomie, dla retry + recoverer);
     DLQ consumer w trybie `AUTO` po commicie, z potwierdzoną kwarantanną błędnych wiadomości.
-    Wyniki: 4 próby (1 s/4 s/15 s), potem potwierdzona publikacja do `analysis.results.dlq` → FAILED.
+    Wyniki: trwałe błędy 4 próby (1 s/4 s/15 s), potem potwierdzona publikacja do `analysis.results.dlq` → FAILED;
+    błędne dane od razu do DLQ. Awaria bazy (utrata połączenia, restart, timeout): wiadomość wraca do kolejki,
+    listener pauzuje 1/2/4… s (maks. 30 s) bez limitu prób — nigdy DLQ ani kwarantanna.
     Progress: 3 próby (100 ms/200 ms), potem log i ACK; nie powoduje FAILED.
   - Idempotencja per źródło: pierwszy wynik wygrywa w PostgreSQL (warunkowy UPDATE); Redis `dedup:{id}:{source}`
     to tylko podpowiedź ustawiana po commicie.

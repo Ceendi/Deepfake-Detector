@@ -5,11 +5,16 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.reset;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -83,6 +88,8 @@ class AnalysisResultRetryIntegrationTest {
 
     @Test
     void exhaustedRetriesLandInResultsDlq() {
+        reset(analysisService);
+        double retriesBefore = meterRegistry.get("amqp.listener.retries").counter().count();
         doThrow(new RuntimeException("boom")).when(analysisService).handleResult(any());
 
         UUID id = UUID.randomUUID();
@@ -98,7 +105,25 @@ class AnalysisResultRetryIntegrationTest {
         verify(analysisService, atLeast(3)).handleResult(any());
         // max-retries=2 = 1 initial + 2 redeliveries -> amqp_listener_retries_total must be exactly 2,
         // pinning the counter's semantics (retries, not failed attempts) against the real Boot factory.
-        assertThat(meterRegistry.get("amqp.listener.retries").counter().count()).isEqualTo(2.0);
+        assertThat(meterRegistry.get("amqp.listener.retries").counter().count() - retriesBefore).isEqualTo(2.0);
+    }
+
+    @ParameterizedTest
+    @MethodSource("deterministicFailures")
+    void deterministicFailureIsPublishedImmediatelyWithoutRetry(RuntimeException failure) {
+        reset(analysisService);
+        double retriesBefore = meterRegistry.get("amqp.listener.retries").counter().count();
+        doThrow(failure).when(analysisService).handleResult(any());
+        rabbitTemplate.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_RESULTS,
+                Map.of("analysis_id", "bad-id", "source", "video", "status", "COMPLETED"));
+        assertThat(rabbitTemplate.receive(RabbitConfig.Q_RESULTS_DLQ, 5000)).isNotNull();
+        verify(analysisService, times(1)).handleResult(any());
+        assertThat(meterRegistry.get("amqp.listener.retries").counter().count()).isEqualTo(retriesBefore);
+    }
+
+    static Stream<RuntimeException> deterministicFailures() {
+        return Stream.of(new InvalidResultException("Invalid analysis_id"),
+                new ClassCastException("Invalid field type"), new NumberFormatException("Invalid number"));
     }
 
     @Configuration

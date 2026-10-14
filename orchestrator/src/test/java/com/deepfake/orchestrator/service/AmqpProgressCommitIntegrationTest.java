@@ -5,6 +5,8 @@ import static org.awaitility.Awaitility.await;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 import java.time.Duration;
+import java.io.IOException;
+import java.net.ServerSocket;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -39,6 +41,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.config.RabbitConfig;
+import com.deepfake.orchestrator.config.AmqpRecoveryControl;
+import com.github.dockerjava.api.model.ExposedPort;
+import com.github.dockerjava.api.model.PortBinding;
+import com.github.dockerjava.api.model.Ports;
+import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.boot.health.contributor.Status;
 import com.deepfake.orchestrator.entity.*;
 import com.deepfake.orchestrator.listener.*;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
@@ -59,7 +67,11 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @Testcontainers
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class AmqpProgressCommitIntegrationTest {
-    @Container static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    private static final int DATABASE_PORT = availablePort();
+    // Docker can reassign ephemeral published ports on restart; the JDBC endpoint must stay stable.
+    @Container static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine")
+            .withCreateContainerCmdModifier(cmd -> cmd.getHostConfig().withPortBindings(
+                    new PortBinding(Ports.Binding.bindPort(DATABASE_PORT), new ExposedPort(5432))));
     @Container static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine").withExposedPorts(6379);
     @Container static final GenericContainer<?> broker = new GenericContainer<>("rabbitmq:4.3.1-alpine")
             .withEnv("RABBITMQ_DEFAULT_USER", "test").withEnv("RABBITMQ_DEFAULT_PASS", "test")
@@ -78,6 +90,8 @@ class AmqpProgressCommitIntegrationTest {
     @Autowired StringRedisTemplate redis;
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactions;
+    @Autowired AmqpRecoveryControl recovery;
+    @Autowired RabbitAdmin admin;
     @MockitoBean BackpressureGuard backpressure;
     @MockitoBean IdempotencyGuard idempotency;
     @MockitoBean AnalysisCache cache;
@@ -86,6 +100,14 @@ class AmqpProgressCommitIntegrationTest {
     @MockitoSpyBean AnalysisResultListener results;
     @MockitoSpyBean DeadLetterListener deadLetters;
     final AtomicInteger progressAttempts = new AtomicInteger(), deadAttempts = new AtomicInteger();
+
+    private static int availablePort() {
+        try (var socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (IOException failure) {
+            throw new IllegalStateException("Cannot allocate PostgreSQL test port", failure);
+        }
+    }
 
     @BeforeEach void resetState() {
         dropFault(); repository.deleteAll(); reset(cache, streams, results, deadLetters);
@@ -99,6 +121,43 @@ class AmqpProgressCommitIntegrationTest {
         });
     }
     @AfterEach void removeFault() { dropFault(); }
+
+    @Test void stoppedPostgresKeepsResultsAndDeadLettersUntilDatabaseReturns() {
+        UUID resultId = seed(AnalysisType.VIDEO), deadId = seed(AnalysisType.AUDIO);
+        postgres.getDockerClient().stopContainerCmd(postgres.getContainerId()).withTimeout(1).exec();
+        try {
+            complete(resultId, "video");
+            rabbit.convertAndSend(RabbitConfig.DLX, RabbitConfig.Q_AUDIO_DLQ, Map.of("analysis_id", deadId.toString()));
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                    assertThat(recovery.health().getStatus()).isEqualTo(Status.DOWN));
+            // Exceeds the old finite retry window, including connection acquisition timeouts.
+            await().during(Duration.ofSeconds(42)).atMost(Duration.ofSeconds(48)).untilAsserted(() -> {
+                assertThat(admin.getQueueInfo(RabbitConfig.Q_RESULTS_DLQ).getMessageCount()).isZero();
+                assertThat(admin.getQueueInfo(RabbitConfig.Q_QUARANTINE).getMessageCount()).isZero();
+            });
+        } finally {
+            postgres.getDockerClient().startContainerCmd(postgres.getContainerId()).exec();
+            await().ignoreExceptions().atMost(Duration.ofSeconds(30)).until(() -> jdbc.queryForObject("SELECT 1", Integer.class) == 1);
+        }
+        await().atMost(Duration.ofSeconds(45)).untilAsserted(() -> {
+            assertThat(status(resultId)).isEqualTo("COMPLETED");
+            assertThat(status(deadId)).isEqualTo("FAILED");
+            assertThat(recovery.health().getStatus()).isEqualTo(Status.UP);
+        });
+        assertThat(rabbit.receive(RabbitConfig.Q_QUARANTINE, 100)).isNull();
+        verify(streams, timeout(2000).times(1)).sendResult(eq(resultId), any());
+        verify(streams, timeout(2000).times(1)).sendResult(eq(deadId), any());
+    }
+
+    @Test void missingResultBypassesRetryFailsSourceAndParksCopy() {
+        UUID id = seed(AnalysisType.VIDEO);
+        rabbit.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_RESULTS,
+                Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED"));
+        assertThat(rabbit.receive(RabbitConfig.Q_QUARANTINE, 5000)).isNotNull();
+        assertThat(status(id)).isEqualTo("FAILED");
+        verify(results, times(1)).onResult(any());
+        assertThat(deadAttempts).hasValue(1);
+    }
 
     @Test void progressCommitFailureDropsOnlyAdvisoryEventAndLaterRealResultCompletes() {
         UUID id = seed(AnalysisType.VIDEO);

@@ -51,7 +51,8 @@ arguments (no DLX).
 
 `analysis.results.dlq` is bound to `analysis.dlx` with a routing key equal to the
 queue name, but it is **not** reached by broker dead-lettering — it is fed by the
-Orchestrator's confirmed recoverer after the result listener exhausts its retries.
+Orchestrator's confirmed recoverer after permanent result processing failures exhaust retries,
+or immediately for malformed result data.
 Progress has an independent advisory policy and never enters this terminal DLQ. `analysis.results` therefore keeps **no** DLX arguments, so the detectors
 that also declare it don't hit `PRECONDITION_FAILED`. Only the Orchestrator declares
 and consumes `analysis.results.dlq`.
@@ -60,7 +61,7 @@ Terminal DLQs use AUTO acknowledgements after the source-specific database commi
 Their HTTP-visible analysis failure message is always
 `[DEAD_LETTERED] Nie udało się zakończyć analizy.`; `x-exception-message` is diagnostic
 information logged with `analysis_id`, never persisted in the user-visible message.
-Poison payloads and exhausted terminal database retries are durably parked in the
+Poison payloads and exhausted permanent terminal data failures are durably parked in the
 backend-owned `analysis.backend.quarantine`, bound to `analysis.dlx` with the same
 routing key. That queue has no automatic consumer. Every recovery publication is
 mandatory and awaits correlated publisher confirmation/returns before acknowledging
@@ -68,6 +69,12 @@ the original. Publication failure pauses the affected listener, requeues the ori
 and resumes automatically with a delay increasing from 5s to a 60s cap. Readiness
 is DOWN until processing succeeds. See
 [listener retries, DLQs and quarantine](../reliability.md#listener-retries-dlqs-and-quarantine).
+
+Transient database failures in results and terminal DLQ listeners retain the original message
+by requeueing and pausing only the affected listener, with restart delays 1s/2s/4s up to 30s.
+They never trigger results DLQ/quarantine publication. A `COMPLETED` dead letter missing its
+result object still fails an active, expected, unaccepted source when the ID/source are valid,
+then retains a confirmed quarantine copy. Malformed IDs cannot identify an analysis to fail.
 
 ## Broker users
 
@@ -307,8 +314,12 @@ Contract:
 
 ## Reliability (D6)
 
-- **Results retry:** `analysis.results` uses 4 attempts with 1s/4s/15s backoff.
-  Message-conversion errors are fatal and go straight to the recoverer.
+- **Results retry:** permanent `analysis.results` processing failures use 4 attempts with
+  1s/4s/15s backoff. Malformed payloads, invalid IDs/scores, class casts, number parsing and
+  message conversion bypass retry and go straight to the confirmed recoverer.
+- **Database outages:** transient database failures (connection loss, server restart,
+  timeouts) on results and terminal DLQs requeue the original and pause only that listener,
+  restarting after 1s/2s/4s up to 30s with no attempt limit. They never reach a DLQ or quarantine.
 - **Progress retry:** advisory progress uses 3 attempts (100ms/200ms), then log + ACK.
   Exhausted progress never fails an analysis or enters the result DLQ.
 - **Dead-lettering:** detector task queues use broker DLX → `*.dlq`. Result failures
@@ -316,8 +327,9 @@ Contract:
   `analysis.results.dlq`, with `x-exception-*` headers and confirmation before ACK.
 - **DLQ consumer:** one AUTO listener drains `results/video/audio.dlq`. It fails an active
   analysis only for an expected, unaccepted source, then sends SSE after commit.
-  Poison payloads and exhausted database retries (3 attempts, 250ms/500ms) are sent to
-  `analysis.backend.quarantine` for manual inspection with confirmed publication.
+  A missing/unparseable `analysis_id` and permanent data failures (3 attempts, 250ms/500ms)
+  are sent to `analysis.backend.quarantine` for manual inspection with confirmed publication;
+  identifiable malformed terminal results first fail the expected source.
   A recovery publication failure requeues the original and pauses the listener with
   backoff (5s → 60s); see [reliability](../reliability.md#listener-retries-dlqs-and-quarantine).
 - **Acknowledgement:** detectors use MANUAL; result/progress and terminal DLQ listeners

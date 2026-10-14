@@ -46,6 +46,8 @@ class ObservabilityConfigurationTest(unittest.TestCase):
             expression = panels[panel_id]['targets'][0]['expr']
             self.assertIn('histogram_quantile(0.95', expression)
             self.assertIn(metric, expression)
+        # Long-lived SSE streams and scrape/health traffic would dominate the API p95.
+        self.assertIn('uri!~"/actuator.*|.*/stream"', panels[5]['targets'][0]['expr'])
         expressions = '\n'.join(target['expr'] for panel in panels.values()
                                 for target in panel.get('targets', []))
         for metric in ('inference_latency_seconds_bucket', 'audio_inference_duration_seconds_bucket',

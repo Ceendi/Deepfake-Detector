@@ -32,6 +32,18 @@ class DeadLetterListenerTest {
         listener.onDead(message(RabbitConfig.Q_RESULTS_DLQ, Map.of("analysis_id", id.toString(), "source", "video", "status", "FAILED")));
         verify(service).failFromDlq(id, "video", "boom");
     }
+    @Test void completedWithoutResultFailsIdentifiableSourceBeforeQuarantiningCopy() {
+        assertThatThrownBy(() -> listener.onDead(message(RabbitConfig.Q_RESULTS_DLQ,
+                Map.of("analysis_id", id.toString(), "source", "video", "status", "COMPLETED"))))
+                .isInstanceOf(PoisonDeadLetterException.class);
+        verify(service).failFromDlq(id, "video", "boom");
+    }
+    @Test void invalidStatusStillFailsIdentifiableResultBeforeQuarantiningCopy() {
+        assertThatThrownBy(() -> listener.onDead(message(RabbitConfig.Q_RESULTS_DLQ,
+                Map.of("analysis_id", id.toString(), "source", "video", "status", "unknown"))))
+                .isInstanceOf(PoisonDeadLetterException.class);
+        verify(service).failFromDlq(id, "video", "boom");
+    }
     @Test void invalidPayloadsArePoisonRatherThanDatabaseFailures() {
         assertThatThrownBy(() -> listener.onDead(message(RabbitConfig.Q_RESULTS_DLQ, Map.of("analysis_id", id.toString()))))
                 .isInstanceOf(PoisonDeadLetterException.class);

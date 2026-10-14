@@ -16,7 +16,7 @@ import org.springframework.boot.health.contributor.HealthIndicator;
 
 import lombok.extern.slf4j.Slf4j;
 
-/** A failed recovery publication must leave the original queued, without immediate redelivery loops. */
+/** Dependency outages retain the original queued, without immediate redelivery loops. */
 @Slf4j
 public class AmqpRecoveryControl implements HealthIndicator, AutoCloseable {
     private final ObjectProvider<RabbitListenerEndpointRegistry> registry;
@@ -42,12 +42,24 @@ public class AmqpRecoveryControl implements HealthIndicator, AutoCloseable {
     }
 
     public void publicationFailed(String listenerId) {
+        failed(listenerId, initialDelayMs, maxDelayMs);
+    }
+
+    public void databaseFailed(String listenerId) {
+        failed(listenerId, 1000L, 30_000L);
+    }
+
+    private void failed(String listenerId, long initialDelay, long maxDelay) {
         if (closed.get()) return;
         State state;
         long generation;
         synchronized (lifecycleLock) {
-            state = paused.computeIfAbsent(listenerId, ignored -> new State(initialDelayMs));
+            state = paused.computeIfAbsent(listenerId, ignored -> new State(initialDelay, maxDelay));
             if (state.stopping) return;
+            if (state.maxDelayMs != maxDelay) {
+                state.nextDelayMs = initialDelay;
+                state.maxDelayMs = maxDelay;
+            }
             state.stopping = true;
             state.starting = false;
             state.successDuringStart = false;
@@ -110,9 +122,9 @@ public class AmqpRecoveryControl implements HealthIndicator, AutoCloseable {
         long delay;
         synchronized (lifecycleLock) {
             delay = state.nextDelayMs;
-            state.nextDelayMs = delay >= maxDelayMs / 2 ? maxDelayMs : delay * 2;
+            state.nextDelayMs = Math.min(state.maxDelayMs, delay * 2);
         }
-        log.warn("Recovery transport unavailable; next listener lifecycle attempt in {} ms", delay);
+        log.warn("AMQP listener dependency unavailable; next lifecycle attempt in {} ms", delay);
         scheduler.schedule(action, delay, TimeUnit.MILLISECONDS);
     }
 
@@ -149,6 +161,7 @@ public class AmqpRecoveryControl implements HealthIndicator, AutoCloseable {
         long generation;
         long scheduledGeneration;
         long nextDelayMs;
-        State(long delay) { nextDelayMs = delay; }
+        long maxDelayMs;
+        State(long delay, long maxDelay) { nextDelayMs = delay; maxDelayMs = maxDelay; }
     }
 }

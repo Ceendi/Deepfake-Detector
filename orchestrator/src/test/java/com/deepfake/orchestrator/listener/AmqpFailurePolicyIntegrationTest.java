@@ -25,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -101,9 +102,9 @@ class AmqpFailurePolicyIntegrationTest {
         await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> assertThat(count(RabbitConfig.Q_VIDEO_DLQ)).isZero());
     }
 
-    @Test void exhaustedDatabaseFailureAndPoisonBothEnterDurableQuarantine() {
+    @Test void exhaustedPermanentDataFailureAndPoisonBothEnterDurableQuarantine() {
         UUID id = UUID.randomUUID();
-        doThrow(new DataAccessResourceFailureException("unavailable")).when(service).failFromDlq(eq(id), eq("video"), any());
+        doThrow(new DataIntegrityViolationException("invalid stored data")).when(service).failFromDlq(eq(id), eq("video"), any());
         publishDead(id);
         Message parked = rabbit.receive(RabbitConfig.Q_QUARANTINE, 5000);
         assertThat(parked).isNotNull();
@@ -135,7 +136,7 @@ class AmqpFailurePolicyIntegrationTest {
                 RabbitConfig.DLX, RabbitConfig.Q_RESULTS_DLQ, Map.of());
         admin.removeBinding(binding);
         UUID id = UUID.randomUUID();
-        doThrow(new DataAccessResourceFailureException("result database unavailable")).when(service).handleResult(any());
+        doThrow(new DataIntegrityViolationException("invalid result data")).when(service).handleResult(any());
         rabbit.convertAndSend(RabbitConfig.EXCHANGE, RabbitConfig.Q_RESULTS,
                 Map.of("analysis_id", id.toString(), "source", "video", "status", "FAILED"));
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
