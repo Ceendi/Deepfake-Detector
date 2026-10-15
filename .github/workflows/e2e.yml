@@ -13,6 +13,9 @@ on:
       - eureka-server/**
       - infra/keycloak/**
       - infra/keycloak-config-cli/**
+      - infra/postgres/**
+      - infra/rabbitmq/**
+      - infra/seaweedfs/**
       - docker-compose.yml
       - .env.example
       - .github/workflows/e2e.yml
