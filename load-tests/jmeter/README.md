@@ -37,6 +37,8 @@ Wait for warmup, then **verify** before measuring:
 - `docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps`
   → exactly **1** `FILE-SERVICE` instance (Eureka has no published host port).
 - One manual upload returns **200** (not 422/401/429) — e.g. via the runner with `-Threads 1 -Duration 5`.
+- The first full run after a fresh `up` is slow (cold JIT, SeaweedFS creates its volumes). Run it once with
+  `-Label warmup` and discard it.
 
 ```powershell
 .\run-loadtest.ps1 -Label r1
@@ -53,6 +55,8 @@ docker compose --profile core --profile auth up -d
 - `docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps`
   → **2** `FILE-SERVICE` instances (distinct IPs).
 - A few warmup uploads hit **both** replicas: `docker compose logs file-service | Select-String "/api/files/upload"` shows two container IDs.
+- Changing the replica count recreates every replica, and the Gateway can answer `503 No servers available` until its
+  Eureka cache refreshes. Do a full warm-up run (`-Label warmup`) and measure only after it ends with 0 % errors.
 
 ```powershell
 .\run-loadtest.ps1 -Label r2
