@@ -250,7 +250,9 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1g
+          # Every in-flight S3 upload buffers 4 MiB chunks in this process; at 1g
+          # the D4 load test reached the limit and uploads stalled.
+          memory: 2g
           cpus: "1.0"
           pids: 500
     logging: *default-logging
