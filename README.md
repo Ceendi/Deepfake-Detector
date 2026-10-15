@@ -12,7 +12,8 @@ You need Docker Engine 24+ with Compose v2, Node.js 22 LTS (or 20.19+) and npm. 
 of RAM for the backend and authentication, or 14–16 GB with both ML detectors.
 On Windows, WSL2 defaults to 50% of host RAM. On a 16 GB laptop, set
 `memory=14GB` in `%UserProfile%\.wslconfig`, run `wsl --shutdown`, and use
-`FILE_SERVICE_REPLICAS=1` without the `monitoring` profile. See
+`FILE_SERVICE_REPLICAS=1` without the `monitoring` profile. The memory limits then add up to
+14.25 GiB, but they are ceilings; during analyses the stack used about 6.6 GiB. See
 [Windows memory configuration](SETUP.md#windows--wsl2-memory).
 
 **First time here?** Follow [SETUP.md](SETUP.md) for the complete walkthrough,
