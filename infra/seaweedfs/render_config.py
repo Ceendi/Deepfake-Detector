@@ -20,6 +20,10 @@ IDENTITIES = {
 # Without these keys the filer, volume and S3 IAM gRPC APIs accept anonymous requests.
 JWT_SECTIONS = ("jwt.signing", "jwt.signing.read", "jwt.filer_signing", "jwt.filer_signing.read")
 JWT_EXPIRES_AFTER_SECONDS = 10
+# The S3 gateway deletes a chunk with its write token after the volume upload
+# times out (30 s response-header timeout in SeaweedFS 4.x). A shorter token
+# makes that delete fail with 401 and leaves an orphaned needle vacuum cannot find.
+WRITE_JWT_EXPIRES_AFTER_SECONDS = 60
 
 
 class ConfigurationError(Exception):
@@ -133,8 +137,9 @@ def render_security():
     # component reads them from this file in the same process at start.
     lines = []
     for section in JWT_SECTIONS:
+        expires = WRITE_JWT_EXPIRES_AFTER_SECONDS if section == "jwt.signing" else JWT_EXPIRES_AFTER_SECONDS
         lines += [f"[{section}]", f'key = "{secrets.token_urlsafe(48)}"',
-                  f"expires_after_seconds = {JWT_EXPIRES_AFTER_SECONDS}", ""]
+                  f"expires_after_seconds = {expires}", ""]
     return "\n".join(lines)
 
 
