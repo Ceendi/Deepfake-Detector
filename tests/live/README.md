@@ -41,3 +41,8 @@ LIVE_REPORT=live-report.md python tests/live/live_acceptance.py
 | `LIVE_REPORT` | — | ścieżka tabeli wyników (Markdown) |
 
 Zestaw restartuje kontenery, więc uruchamiaj go wyłącznie na jednorazowym projekcie compose.
+
+## Skalowanie detektorów
+
+`detector_scaling.py` wrzuca N analiz naraz i mierzy, ile czasu uruchomione detektory potrzebują
+na opróżnienie kolejki. Metoda i wyniki: [`docs/reports/detector-scaling.md`](../../docs/reports/detector-scaling.md).
