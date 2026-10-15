@@ -255,6 +255,10 @@ services:
           memory: 2g
           cpus: "1.0"
           pids: 500
+    environment:
+      # Go does not see the cgroup limit: without this the heap grows to twice the
+      # live set (~400 MB idle) and is not returned, pinning the container at its limit.
+      GOMEMLIMIT: 1536MiB
     logging: *default-logging
     depends_on:
       seaweedfs-init:

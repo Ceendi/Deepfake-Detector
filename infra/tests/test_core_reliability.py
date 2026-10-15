@@ -49,8 +49,10 @@ class CoreReliabilityConfigurationTest(unittest.TestCase):
                          int(services['file-service']['deploy']['resources']['limits']['memory']))
 
     def test_storage_has_memory_for_concurrent_uploads(self):
-        limits = resolved_compose()['services']['seaweedfs']['deploy']['resources']['limits']
-        self.assertEqual(2 * 1024**3, int(limits['memory']))
+        service = resolved_compose()['services']['seaweedfs']
+        self.assertEqual(2 * 1024**3, int(service['deploy']['resources']['limits']['memory']))
+        # The Go heap must collect before the cgroup limit instead of pinning the container at it.
+        self.assertEqual('1536MiB', service['environment']['GOMEMLIMIT'])
 
     def test_container_probe_uses_liveness(self):
         service = resolved_compose()['services']['orchestrator']
