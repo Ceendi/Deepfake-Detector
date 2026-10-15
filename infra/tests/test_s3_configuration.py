@@ -4,6 +4,7 @@ Run: python3 infra/tests/test_s3_configuration.py (Python 3.9+, Docker Compose).
 No developer secrets, checkpoints, fixed host ports or existing volumes are used.
 """
 
+import base64
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -33,6 +34,23 @@ for port in map(int, sys.argv[1:]):
         result[port] = "closed"
 print(json.dumps(result))
 """
+# Mirrors the S3 gateway's chunk cleanup: write with the master's token, then
+# delete the local copy with that same token once the upload has timed out.
+CHUNK_CLEANUP_PROBE = """
+set -eu
+headers=$(curl -fsS -D - -o /tmp/assign.json http://127.0.0.1:9333/dir/assign)
+token=$(printf '%s\\n' "$headers" | tr -d '\\r' | sed -n 's/^Authorization: Bearer //p')
+fid=$(sed -n 's/.*"fid":"\\([^"]*\\)".*/\\1/p' /tmp/assign.json)
+printf chunk > /tmp/chunk
+write=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" \\
+  -F file=@/tmp/chunk "http://127.0.0.1:8080/$fid")
+sleep "$1"
+delete=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE -H "Authorization: Bearer $token" \\
+  "http://127.0.0.1:8080/$fid?type=replicate")
+echo "{\\"write\\": $write, \\"delete\\": $delete, \\"token\\": \\"$token\\"}"
+"""
+# SeaweedFS 4.x waits this long for volume response headers before cleanup.
+VOLUME_UPLOAD_TIMEOUT_SECONDS = 30
 PREFIXES = {
     "admin": "S3_ADMIN", "file-service": "S3_FILE_SERVICE",
     "orchestrator": "S3_ORCHESTRATOR", "detector": "S3_DETECTOR",
@@ -232,6 +250,20 @@ class S3ConfigurationTest(unittest.TestCase):
             self.assertIn("401 Unauthorized", result.stderr)
         body = self.assert_status("admin", "GET", "/deepfake-uploads/private", 200)
         self.assertTrue(body == b"private", "S3 object changed through an internal API")
+
+    def test_timed_out_chunk_upload_can_still_be_cleaned_up(self):
+        self.compose("up", "-d", "seaweedfs-bucket-init")
+        self.wait_for_buckets()
+        issued = time.time()
+        result = self.compose("exec", "-T", "seaweedfs", "sh", "-c", CHUNK_CLEANUP_PROBE, "probe",
+                              str(VOLUME_UPLOAD_TIMEOUT_SECONDS + 5))
+        probe = json.loads(result.stdout.strip().splitlines()[-1])
+        self.assertEqual(201, probe["write"])
+        # A 401 here leaves an orphaned needle that vacuum never reclaims.
+        self.assertEqual(202, probe["delete"], "cleanup delete rejected the upload's own write token")
+        payload = probe["token"].split(".")[1]
+        expires = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))["exp"]
+        self.assertLessEqual(expires - issued, 61, "volume write tokens must still expire quickly")
 
     def test_production_image_renderer_regressions(self):
         result = self.compose("run", "--rm", "--no-deps", "renderer-tests", check=False)

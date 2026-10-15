@@ -157,7 +157,10 @@ passwords, control characters, an administrator named like an application user, 
 SeaweedFS runs master, volume, filer and S3 in one process. `seaweedfs-init` also writes
 `security.toml` with fresh random keys for `jwt.signing`, `jwt.signing.read`, `jwt.filer_signing`
 and `jwt.filer_signing.read` on every run, and every component in that process loads the same
-file at start. Without it, the filer HTTP API and the S3 IAM gRPC API (`PutIdentity`) on the
+file at start. Tokens expire after 10 s, except volume write tokens (`jwt.signing`), which last
+60 s. When a chunk upload times out after 30 s, the S3 gateway deletes the partial chunk with
+that same token. A shorter lifetime rejects the delete with 401, and the orphaned chunk is
+never reclaimed. Without it, the filer HTTP API and the S3 IAM gRPC API (`PutIdentity`) on the
 network accepted anonymous calls that bypass S3 identities. The master gives volume JWTs to any
 caller, so master, volume and filer also listen only on the container's loopback interface. Only
 the S3 API (8333) and its JWT-protected gRPC port (18333) are reachable from other containers.
