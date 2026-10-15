@@ -94,3 +94,122 @@ tests:
       - eval_time: 6m
         alertname: AnalysisDeadLetterBacklog
         exp_alerts: []
+  - name: disabled detectors without queued work stay quiet
+    interval: 1m
+    input_series:
+      - series: up{job="video-detector",instance="video-detector:8000"}
+        values: 0+0x5
+      - series: up{job="audio-detector",instance="audio-detector:8000"}
+        values: 0+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.video"}
+        values: 0+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.audio"}
+        values: 0+0x5
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ScrapeTargetDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: DetectorUnavailable
+        exp_alerts: []
+  - name: missing DNS targets without queued work stay quiet
+    interval: 1m
+    input_series:
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.video"}
+        values: 0+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.audio"}
+        values: 0+0x5
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: DetectorUnavailable
+        exp_alerts: []
+  - name: queued video without DNS targets fires only for video after the hold
+    interval: 1m
+    input_series:
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.video"}
+        values: 2+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.audio"}
+        values: 0+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.video.dlq"}
+        values: 1+0x5
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: DetectorUnavailable
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: DetectorUnavailable
+        exp_alerts:
+          - exp_labels: {severity: critical, job: video-detector, queue: analysis.video}
+            exp_annotations: {summary: Brak dostępnego detektora dla oczekujących zadań.}
+  - name: a healthy replica suppresses only its own detector alert
+    interval: 1m
+    input_series:
+      - series: up{job="video-detector",instance="10.0.0.1:8000"}
+        values: 1+0x5
+      - series: up{job="video-detector",instance="10.0.0.2:8000"}
+        values: 0+0x5
+      - series: up{job="audio-detector",instance="10.0.0.3:8000"}
+        values: 0+0x5
+      - series: up{job="audio-detector",instance="10.0.0.4:8000"}
+        values: 0+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.video"}
+        values: 2+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.audio"}
+        values: 3+0x5
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ScrapeTargetDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: DetectorUnavailable
+        exp_alerts:
+          - exp_labels: {severity: critical, job: audio-detector, queue: analysis.audio}
+            exp_annotations: {summary: Brak dostępnego detektora dla oczekujących zadań.}
+  - name: audio backlog with no targets resolves when work drains
+    interval: 1m
+    input_series:
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.audio"}
+        values: 1+0x3 0+0x3
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: DetectorUnavailable
+        exp_alerts:
+          - exp_labels: {severity: critical, job: audio-detector, queue: analysis.audio}
+            exp_annotations: {summary: Brak dostępnego detektora dla oczekujących zadań.}
+      - eval_time: 4m
+        alertname: DetectorUnavailable
+        exp_alerts: []
+  - name: detector recovery resolves despite a remaining backlog
+    interval: 1m
+    input_series:
+      - series: up{job="video-detector",instance="10.0.0.1:8000"}
+        values: 0+0x3 1+0x3
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.video"}
+        values: 1+0x7
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: DetectorUnavailable
+        exp_alerts:
+          - exp_labels: {severity: critical, job: video-detector, queue: analysis.video}
+            exp_annotations: {summary: Brak dostępnego detektora dla oczekujących zadań.}
+      - eval_time: 4m
+        alertname: DetectorUnavailable
+        exp_alerts: []
+  - name: brief outage and unrelated queues do not fire
+    interval: 1m
+    input_series:
+      - series: up{job="audio-detector",instance="10.0.0.1:8000"}
+        values: 1 0 1+0x3
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.audio"}
+        values: 1+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.video.dlq"}
+        values: 1+0x5
+      - series: rabbitmq_queue_messages_ready{job="rabbitmq",queue="analysis.results"}
+        values: 1+0x5
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: DetectorUnavailable
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: DetectorUnavailable
+        exp_alerts: []

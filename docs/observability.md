@@ -51,14 +51,39 @@ scraped and scaling/recreation updates the target list. The `job="file-service"`
 `/actuator/prometheus` path stay the same. `python3 infra/tests/test_core_reliability.py` verifies
 healthy scrapes of the real replicas during a 2 → 1 → 2 scale cycle.
 
+Video and audio detectors also use DNS discovery (`type: A`, port 8000, refresh 30 s),
+keeping their `job` labels and `/metrics` path. Each replica has a separate IP-based
+`instance`. The detector p95 panels sum histogram buckets across instances before
+computing the percentile; outcome panels sum rates by outcome/status. Their legends
+therefore stay stable when replicas change. `python3 infra/tests/test_monitoring_configuration.py`
+checks both detector jobs during a 2 → 1 → 2 cycle using lightweight HTTP metrics
+fixtures, without ML models or worker consumers.
+
+Gateway's container healthcheck uses `http://localhost:9090/actuator/health/liveness`,
+with Actuator probes enabled. Redis outages leave the live gateway container healthy;
+the full `/actuator/health` remains available on the internal management port and
+reports dependency failures for diagnostics. Application port 8080 still rejects
+Actuator requests. Uploads retain their existing fail-closed 503 behavior and other
+routes retain fail-open rate limiting. The core reliability test stops Redis and
+checks diagnostic health, liveness and the automatic container probe before restoring it.
+
 ## Alerts
 
 Prometheus loads `infra/prometheus/alerts.yml` from a read-only Compose mount.
 The rules detect DLQ failures, stuck recovery, persistent DLQ/quarantine backlog
 and unavailable scrape targets. Inspect pending/firing rules at
 `http://localhost:9090/alerts`; no Alertmanager or outbound notification channel
-is configured. ML targets deliberately report DOWN when the `ml` profile is off,
-so their availability alerts are expected in a core-only stack.
+is configured. `ScrapeTargetDown` excludes `video-detector` and `audio-detector`,
+so disabling the optional `ml` profile with empty task queues does not trigger it.
+`DetectorUnavailable` fires after 2 minutes only when `analysis.video` or
+`analysis.audio` has ready messages and no healthy scrape target exists for the
+corresponding detector job. It derives the job from the queue name and matches
+healthy replicas by `job`, covering failed scrapes and completely absent DNS targets.
+One healthy replica suppresses this availability alert for its own job even if
+another replica is down. It clears when work drains or a replica becomes healthy.
+It measures scrape availability, not worker progress; stuck recovery remains independent.
+If RabbitMQ queue metrics are unavailable, the detector alert cannot infer pending
+work; the broker's own `ScrapeTargetDown` reports that scrape failure instead.
 
 DLQ/quarantine backlog calls for inspection of the original message and service
 logs. Stuck recovery means the existing recovery deadlines failed an analysis;
@@ -70,7 +95,8 @@ next healthy evaluation. Recreate Prometheus after changing rules or scrape conf
 `python3 infra/tests/test_observability_configuration.py` validates Compose
 operator overrides and dashboard queries, then uses the Compose Prometheus image's
 `promtool check config` and `promtool test rules`. Fixtures prove alert activation,
-the 2-minute hold, resolution, counter resets and short-outage suppression.
+the 2-minute hold, resolution, counter resets, short-outage suppression, missing
+detector DNS targets, empty queues and partial replica outages.
 
 ## Traces
 

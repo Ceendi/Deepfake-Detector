@@ -11,6 +11,31 @@ from test_discovery import ROOT, command, resolved_compose
 
 
 class ObservabilityConfigurationTest(unittest.TestCase):
+    def test_detectors_discover_every_replica_through_dns(self):
+        config = (ROOT / 'infra/prometheus/prometheus.yml').read_text()
+        for name in ('video-detector', 'audio-detector'):
+            with self.subTest(job=name):
+                job = config.split('  - job_name: ' + name + '\n', 1)[1]
+                job = job.split('  - job_name:', 1)[0]
+                self.assertNotIn('static_configs:', job)
+                self.assertIn('metrics_path: /metrics', job)
+                self.assertIn('dns_sd_configs:', job)
+                self.assertIn("names: ['" + name + "']", job)
+                self.assertIn('type: A', job)
+                self.assertIn('port: 8000', job)
+                self.assertIn('refresh_interval: 30s', job)
+
+    def test_detector_panels_aggregate_instances_before_display(self):
+        dashboard = json.loads((ROOT / 'infra/grafana/dashboards/deepfake-business.json').read_text())
+        panels = {panel['id']: panel for panel in dashboard['panels']}
+        for panel_id, grouping in ((12, 'le'), (13, 'outcome')):
+            for target in panels[panel_id]['targets']:
+                with self.subTest(panel=panel_id, target=target['refId']):
+                    expected = 'status' if panel_id == 13 and target['refId'] == 'B' else grouping
+                    self.assertIn('sum by (' + expected + ') (rate(', target['expr'])
+                    self.assertNotIn('instance', target['expr'])
+                    self.assertNotIn('instance', target.get('legendFormat', ''))
+
     def test_core_defaults_do_not_require_monitoring_or_extra_replicas(self):
         config = resolved_compose()['services']
         self.assertEqual('false', config['orchestrator']['environment']['OTEL_TRACING_EXPORT_ENABLED'])

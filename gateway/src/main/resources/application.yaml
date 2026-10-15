@@ -87,6 +87,8 @@ management:
         include: health,info,prometheus
   endpoint:
     health:
+      probes:
+        enabled: true
       show-details: when_authorized
       show-components: when_authorized
   tracing:

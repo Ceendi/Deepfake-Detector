@@ -44,7 +44,10 @@ The core integration test reads effective JVM flags and heap sizes inside every 
 The orchestrator container probes `/actuator/health/liveness`. The `amqpRecovery` contributor
 remains in readiness, which can stay DOWN after a broker outage until a successful delivery or
 recovery publication. That readiness state must not make a live process an unhealthy container.
-Gateway probes its internal management port (`9090/actuator/health`). RabbitMQ checks both
+Gateway probes liveness on its internal management port (`9090/actuator/health/liveness`),
+so a Redis outage leaves the live container healthy. The full `/actuator/health` remains
+available for dependency diagnostics; upload fail-closed and other routes' fail-open
+policies stay the same. RabbitMQ checks both
 `check_running` and `check_port_connectivity`, rather than only Erlang-node reachability.
 
 RabbitMQ's effective memory budget is explicitly `512MB` (512,000,000 bytes) and the quorum WAL is capped at

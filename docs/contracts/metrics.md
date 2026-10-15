@@ -80,7 +80,16 @@ existing labels and do not introduce user/analysis labels.
 The minimal rules in `infra/prometheus/alerts.yml` use existing metrics:
 `AnalysisDeadLettered` and `AnalysisStuckRecovered` detect counter increases over
 5 minutes; `AnalysisDeadLetterBacklog` detects a nonempty DLQ/quarantine for 2 minutes;
-`ScrapeTargetDown` detects `up == 0` for 2 minutes. Alert rules do not change
+`ScrapeTargetDown` detects `up == 0` for 2 minutes, excluding the optional detector
+jobs. `DetectorUnavailable` detects ready messages in `analysis.video` or
+`analysis.audio` for 2 minutes without any `up == 1` target in the corresponding
+`video-detector` or `audio-detector` job, including absent DNS targets. Its labels
+are `job`, `queue` and `severity`; it uses the existing per-queue
+`rabbitmq_queue_messages_ready{job="rabbitmq"}` metric. A healthy replica or an empty
+queue resolves the alert. Missing broker metrics cannot establish pending work.
+Detector targets use DNS A discovery on port 8000 (refresh 30 s), with one IP-based
+`instance` per replica; dashboards aggregate instances before p95/outcome display.
+Metric names and application labels remain unchanged. Alert rules do not change
 recovery thresholds or queue policies. See [observability](../observability.md#alerts)
 for operation and validation.
 
