@@ -2,8 +2,9 @@
 
 Proves D4: replicating `file-service` behind the Gateway's Eureka load balancer improves throughput / p95.
 50 concurrent threads × 60s, ~5 MB multipart upload through the Gateway (`lb://file-service`).
-Production defaults are 5 uploads/minute (burst 5), 4 concurrent uploads per replica and
-a 5 GiB quota per user. The isolated benchmark raises all three limits below.
+Production defaults are 5 uploads/minute (burst 5), 4 concurrent uploads per replica,
+2 concurrent uploads per user on each replica and a 5 GiB quota per user.
+The isolated benchmark raises these limits below; all 50 threads share one token.
 
 **Tools:** Apache JMeter 5.6.x (on PATH), ffmpeg (sample), Docker. Report lands in
 [`docs/reports/d4-replication.md`](../../docs/reports/d4-replication.md).
@@ -27,6 +28,7 @@ $env:LOADTEST_CLIENT_SECRET = "<same as .env>"
 $env:UPLOAD_RL_REPLENISH = "10000"; $env:UPLOAD_RL_BURST = "10000"
 $env:UPLOAD_RL_REQUESTED_TOKENS = "1"
 $env:UPLOAD_MAX_CONCURRENT = "50"
+$env:UPLOAD_MAX_CONCURRENT_PER_USER = "50"
 # Isolated benchmark only: permit the generated uploads to exceed the normal 5 GiB quota.
 $env:STORAGE_QUOTA_BYTES = "536870912000"
 $env:FILE_SERVICE_REPLICAS = "1"

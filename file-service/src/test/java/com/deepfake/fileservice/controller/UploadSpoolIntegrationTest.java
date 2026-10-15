@@ -96,6 +96,10 @@ class UploadSpoolIntegrationTest {
                 var rejected = http.send(upload(), HttpResponse.BodyHandlers.ofString());
                 assertThat(rejected.statusCode()).isEqualTo(503);
                 assertThat(rejected.headers().firstValue("Retry-After")).contains("5");
+                assertThat(rejected.body()).contains("SERVICE_UNAVAILABLE");
+                var anonymous = HttpRequest.newBuilder(upload(), (name, value) -> !name.equalsIgnoreCase("Authorization"))
+                        .build();
+                assertThat(http.send(anonymous, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(401);
                 for (String method : List.of("POST", "PUT")) {
                     var unknown = HttpRequest.newBuilder(upload(), (name, value) -> true)
                             .uri(URI.create("http://localhost:" + port + "/api/files/unknown"))

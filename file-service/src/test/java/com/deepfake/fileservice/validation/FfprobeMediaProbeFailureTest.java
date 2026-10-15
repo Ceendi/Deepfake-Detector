@@ -1,6 +1,8 @@
 package com.deepfake.fileservice.validation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.deepfake.fileservice.exception.MediaProbeUnavailableException;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -18,7 +20,7 @@ import org.junit.jupiter.api.Test;
 
 class FfprobeMediaProbeFailureTest {
     @Test
-    void stdoutIoFailureRejectsTheContainerRatherThanEscapingAsAnInternalError() throws Exception {
+    void stdoutIoFailureReportsTemporaryUnavailability() throws Exception {
         var process = mock(Process.class);
         when(process.getInputStream()).thenReturn(new InputStream() {
             @Override public int read() throws IOException { throw new IOException("broken stdout"); }
@@ -31,7 +33,8 @@ class FfprobeMediaProbeFailureTest {
             when(builder.start()).thenReturn(process);
         })) {
             var probe = new FfprobeMediaProbe(1024, List.of("fake-ffprobe"), Duration.ofMillis(100));
-            assertThat(probe.probe(Path.of("media.wav"))).isEmpty();
+            assertThatThrownBy(() -> probe.probe(Path.of("media.wav")))
+                    .isInstanceOf(MediaProbeUnavailableException.class).hasCauseInstanceOf(IOException.class);
         }
         verify(process).destroyForcibly();
     }
@@ -53,7 +56,8 @@ class FfprobeMediaProbeFailureTest {
             when(builder.start()).thenReturn(process);
         })) {
             var probe = new FfprobeMediaProbe(1024, List.of("fake-ffprobe"), Duration.ofMillis(100));
-            assertThat(probe.probe(Path.of("media.wav"))).isEmpty();
+            assertThatThrownBy(() -> probe.probe(Path.of("media.wav")))
+                    .isInstanceOf(MediaProbeUnavailableException.class);
         }
         verify(process, never()).waitFor();
         verify(process, times(2)).waitFor(anyLong(), any(TimeUnit.class));
@@ -82,13 +86,14 @@ class FfprobeMediaProbeFailureTest {
                     when(builder.redirectError(ProcessBuilder.Redirect.DISCARD)).thenReturn(builder);
                     when(builder.start()).thenReturn(process);
                 })) {
-                    return new FfprobeMediaProbe(1024, List.of("fake-ffprobe"), Duration.ofMillis(100))
-                            .probe(Path.of("media.wav"));
+                    assertThatThrownBy(() -> new FfprobeMediaProbe(1024, List.of("fake-ffprobe"), Duration.ofMillis(100))
+                            .probe(Path.of("media.wav"))).isInstanceOf(MediaProbeUnavailableException.class);
+                    return true;
                 }
             });
             try {
                 assertThat(reading.await(2, TimeUnit.SECONDS)).isTrue();
-                assertThat(result.get(7, TimeUnit.SECONDS)).isEmpty();
+                assertThat(result.get(7, TimeUnit.SECONDS)).isTrue();
             } finally { release.countDown(); }
         }
     }

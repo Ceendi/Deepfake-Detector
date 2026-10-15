@@ -41,6 +41,9 @@ LIVE_REPORT=live-report.md python tests/live/live_acceptance.py
 | `LIVE_REPORT` | — | ścieżka tabeli wyników (Markdown) |
 
 Zestaw restartuje kontenery, więc uruchamiaj go wyłącznie na jednorazowym projekcie compose.
+Uploady w obu skryptach są sekwencyjne, więc domyślny limit
+`UPLOAD_MAX_CONCURRENT_PER_USER=2` wystarcza. Równoległe testy Playwright w CI
+ustawiają `UPLOAD_MAX_CONCURRENT_PER_USER=4`, do globalnego limitu repliki.
 
 ## Skalowanie detektorów
 

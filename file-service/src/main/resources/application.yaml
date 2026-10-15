@@ -65,6 +65,7 @@ media:
     max-output-bytes: ${MEDIA_PROBE_MAX_OUTPUT_BYTES:65536}
 upload:
   max-concurrent: ${UPLOAD_MAX_CONCURRENT:4}
+  max-concurrent-per-user: ${UPLOAD_MAX_CONCURRENT_PER_USER:2}
 management:
   metrics:
     distribution:

@@ -49,6 +49,11 @@ Resolution compares width×height regardless of orientation; the `INVALID_FILE` 
 Exactly the limit is accepted. Unknown duration remains accepted; the audio detector
 also bounds decoding and checks the decoded WAV before allocating its waveform.
 `422` body uses code `INVALID_FILE`; no S3 object or metadata row is stored.
+Non-zero ffprobe exit, malformed JSON and output above `MEDIA_PROBE_MAX_OUTPUT_BYTES`
+also return `422 INVALID_FILE`. A probe timeout, interruption, startup I/O failure or
+stdout I/O failure returns `503 SERVICE_UNAVAILABLE` with `Retry-After: 5` instead:
+the server could not inspect the file. The temporary upload is deleted and neither
+an S3 object nor metadata is stored.
 
 Owner quota: stored `size_bytes` (including soft-deleted files until their physical purge,
 72 h by default) plus the upload may not exceed
@@ -57,9 +62,17 @@ Exhaustion returns `409` with code `STORAGE_QUOTA_EXCEEDED` and message
 `Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.`
 The authoritative check is serialized across replicas per owner after the S3 write; the
 object is deleted when the upload is rejected.
-The gateway permits 5 uploads/minute with burst 5 by default (429). A full replica
-(`UPLOAD_MAX_CONCURRENT`, default 4) returns 503 with `Retry-After: 5` before multipart parsing.
+The gateway permits 5 uploads/minute with burst 5 by default (429). Before multipart
+parsing, authenticated uploads first acquire a per-`jwt.sub` slot on this replica
+(`UPLOAD_MAX_CONCURRENT_PER_USER`, default 2), then a global replica slot
+(`UPLOAD_MAX_CONCURRENT`, default 4). User saturation returns `429 UPLOAD_USER_LIMIT`;
+replica saturation returns `503 SERVICE_UNAVAILABLE`. Both return an `ErrorResponse`
+and `Retry-After: 5`. If both limits are reached, the user limit takes precedence.
+Slots are released on success, failure or disconnect; user entries disappear at zero.
+Security runs first: unauthenticated requests receive `401` without occupying a slot.
 This guard also covers multipart requests on other paths/methods before MVC routing.
+The frontend displays a Polish temporary-unavailability message for upload `503` and
+a wait-and-retry message for `429`; upload response DTOs are unchanged.
 
 Response `200 OK`:
 
@@ -487,5 +500,6 @@ These suites run in the existing CI Java and frontend jobs.
 | 409  | Conflict (e.g. cancel on an already-finished analysis)     |
 | 413  | Payload Too Large (file exceeds limit)                     |
 | 422  | Unprocessable Entity (e.g. invalid file format)            |
-| 429  | Too Many Requests (rate limit / queue backpressure)        |
+| 429  | Too Many Requests (rate limit / per-user concurrent uploads / queue backpressure) |
 | 500  | Internal Server Error                                      |
+| 503  | Service Unavailable (e.g. replica upload capacity or temporary probe failure) |

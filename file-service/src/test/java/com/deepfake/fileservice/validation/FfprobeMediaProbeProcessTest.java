@@ -2,6 +2,7 @@ package com.deepfake.fileservice.validation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import com.deepfake.fileservice.exception.MediaProbeUnavailableException;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -94,7 +95,8 @@ class FfprobeMediaProbeProcessTest {
     @ValueSource(strings = {"stall", "eof"})
     void deadlineIncludesPartialOutputAndExitAfterEof(String mode) throws IOException {
         long start = System.nanoTime();
-        assertThat(probe(mode, "{", Duration.ofSeconds(1)).probe(tmp.resolve("media"))).isEmpty();
+        assertThatThrownBy(() -> probe(mode, "{", Duration.ofSeconds(1)).probe(tmp.resolve("media")))
+                .isInstanceOf(MediaProbeUnavailableException.class).hasCauseInstanceOf(java.util.concurrent.TimeoutException.class);
         assertThat(Duration.ofNanos(System.nanoTime() - start)).isBetween(Duration.ofMillis(900), Duration.ofSeconds(3));
     }
 
@@ -121,7 +123,8 @@ class FfprobeMediaProbeProcessTest {
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Thread caller = new Thread(() -> {
             try {
-                assertThat(probe("stall", "{", Duration.ofSeconds(8)).probe(tmp.resolve("media"))).isEmpty();
+                assertThatThrownBy(() -> probe("stall", "{", Duration.ofSeconds(8)).probe(tmp.resolve("media")))
+                        .isInstanceOf(MediaProbeUnavailableException.class).hasCauseInstanceOf(InterruptedException.class);
                 interrupted.set(Thread.currentThread().isInterrupted());
             } catch (Throwable e) {
                 failure.set(e);
@@ -147,7 +150,8 @@ class FfprobeMediaProbeProcessTest {
     void reportsProcessStartupIoFailure() {
         FfprobeMediaProbe missing = new FfprobeMediaProbe(LIMIT,
                 List.of(tmp.resolve("missing-ffprobe").toString()), Duration.ofSeconds(1));
-        assertThatThrownBy(() -> missing.probe(tmp.resolve("media"))).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> missing.probe(tmp.resolve("media")))
+                .isInstanceOf(MediaProbeUnavailableException.class).hasCauseInstanceOf(IOException.class);
     }
 
     @Test
