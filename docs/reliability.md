@@ -817,13 +817,15 @@ request processing. Upload spool uses a dedicated directory; transferTo(File) mo
 Tomcat's disk part for validation and S3, and the file is removed in finally. ffprobe
 allows only the file protocol and checks each stream's pixel product against 4K.
 
-FileStorageService opens a READ_COMMITTED transaction, takes
-pg_advisory_xact_lock(114546, hashtext(user_id)), sums size_bytes of all stored rows and
-rejects quota overflow with 409 STORAGE_QUOTA_EXCEEDED before S3. Exact quota fits.
-The lock lasts through S3 and the metadata commit, so replicas cannot spend the same
-space concurrently. S3 failure rolls back admission; a failed metadata commit leaves
-an invisible orphan for the existing cleanup sweep. Hash collisions only serialize
-unrelated owners. Soft-deleted files keep counting until the purge removes the object
+FileStorageService first rejects an obvious overflow without a lock, then writes the
+object to S3 outside any transaction. Admission is a short READ_COMMITTED transaction:
+pg_advisory_xact_lock(114546, hashtext(user_id)), the sum of size_bytes of all stored
+rows, and the metadata insert; overflow returns 409 STORAGE_QUOTA_EXCEEDED. Exact quota
+fits. Concurrent uploads of one owner therefore write to S3 in parallel and serialize only
+on the quota check, so replicas cannot spend the same space twice and a slow S3 write never
+holds the lock or a pooled connection. A rejected or failed admission deletes the object;
+if that delete fails, the orphan sweep removes it. An overflow that slips past the early
+check is briefly stored in S3. Hash collisions only serialize unrelated owners. Soft-deleted files keep counting until the purge removes the object
 and row (72 h by default), so delete-and-reupload cannot exceed the quota on disk.
 
 Creation resolves input through POST /api/files/{id}/claim with the verified JWT.
