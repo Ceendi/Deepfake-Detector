@@ -40,6 +40,7 @@
   align-items: center;
   gap: var(--spacing-3);
   min-width: 0;
+  flex: 1 1 16rem;
 }
 .fileThumb {
   flex-shrink: 0;
@@ -59,7 +60,10 @@
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
   line-height: var(--line-height-tight);
-  overflow-wrap: anywhere;
+  height: 1lh;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .meta {
   display: flex;

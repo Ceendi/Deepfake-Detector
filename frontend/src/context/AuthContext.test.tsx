@@ -1,8 +1,9 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { AuthProvider } from './AuthContext'
 import { useAuth } from './auth-context'
+import { logout } from '@/auth/keycloak'
 
 const kc = vi.hoisted(() => ({
   updateToken: vi.fn(),
@@ -24,8 +25,14 @@ vi.mock('@/auth/keycloak', () => ({
 vi.mock('@/auth/initKeycloak', () => ({ initAuth: vi.fn().mockResolvedValue(true) }))
 
 function Probe() {
-  const { isAuthenticated, isLoading } = useAuth()
-  return <span>{isLoading ? 'loading' : isAuthenticated ? 'in' : 'out'}</span>
+  const { isAuthenticated, isLoading, user, logout } = useAuth()
+  return (
+    <>
+      <span>{isLoading ? 'loading' : isAuthenticated ? 'in' : 'out'}</span>
+      <span>{user?.username ?? 'no user'}</span>
+      <button onClick={logout}>Log out</button>
+    </>
+  )
 }
 
 async function renderSignedIn() {
@@ -143,4 +150,14 @@ it('a fast local clock does not end a session the server still considers valid',
   })
   expect(screen.getByText('in')).toBeInTheDocument()
   expect(kc.updateToken).toHaveBeenCalledTimes(2)
+})
+
+it('explicit logout clears context even when Keycloak emits no logout event', async () => {
+  await renderSignedIn()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Log out' }))
+
+  expect(logout).toHaveBeenCalledOnce()
+  expect(screen.getByText('out')).toBeInTheDocument()
+  expect(screen.getByText('no user')).toBeInTheDocument()
 })

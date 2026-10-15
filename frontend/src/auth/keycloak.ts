@@ -40,7 +40,14 @@ export function register(redirectPath?: string): void {
 }
 
 export function logout(): void {
-  void keycloak.logout({ redirectUri: window.location.origin })
+  if (keycloak.idToken) {
+    void keycloak.logout({ redirectUri: window.location.origin })
+    return
+  }
+  // Without an ID token, SSO may already have expired or will be revisited at the next login.
+  // Avoid Keycloak's confirmation page when there is no session hint to send.
+  keycloak.clearToken()
+  window.location.assign(window.location.origin)
 }
 
 // Link do Keycloak Account Console (edycja profilu / zmiana hasła — KROK 14 / V2).

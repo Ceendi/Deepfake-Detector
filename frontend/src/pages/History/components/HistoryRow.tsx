@@ -7,7 +7,7 @@ import type { AnalysisSummary, AnalysisStatus } from '@/api/types'
 import { Badge } from '@/components/ui/Badge/Badge'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
 
-import { useFileMeta } from '../file-meta'
+import { useFileMeta } from '@/api/file-meta'
 import styles from '../History.module.css'
 
 const dayFmt = new Intl.DateTimeFormat('pl-PL', { day: 'numeric', month: 'long' })
