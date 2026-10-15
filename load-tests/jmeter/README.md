@@ -75,6 +75,9 @@ Open `report-r1/index.html` and `report-r2/index.html` (throughput + response-ti
 ## Notes / validity
 
 - Keep **identical** conditions across both runs (same sample, same `-J` params, fresh `up`, same warmup) — the only variable is `FILE_SERVICE_REPLICAS`.
+- **Windows:** exclude `%LOCALAPPDATA%\Docker\wsl` and the `vmmem`/`vmmemWSL` processes from Defender real-time
+  scanning (admin PowerShell: `Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA\Docker\wsl"`). Without it the Docker
+  disk flushed at ~106 MB/s instead of ~730 MB/s and upload throughput fell from 7.0 to 3.0 req/s (see the D4 report).
 - Client (JMeter) and server share the host → absolute numbers are noisy, but the 1-vs-2 comparison is consistent.
 - Each `file-service` replica is capped at 1 vCPU (compose `deploy.resources.limits`), so the 2nd replica genuinely ~doubles the CPU-bound (ffprobe+Tika) upload capacity.
 - The `ml` profile is not needed (upload doesn't touch detectors); `monitoring` is optional (Grafana panels for live view).
