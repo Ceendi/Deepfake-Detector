@@ -821,8 +821,9 @@ fail-closed 503 policy; reads retain fail-open behavior. Replica saturation retu
 503 SERVICE_UNAVAILABLE with Retry-After: 5 and an ErrorResponse body. Per-user saturation
 returns 429 UPLOAD_USER_LIMIT with the same retry header. The user slot is acquired
 first and released even if the global admission fails; per-user counters are updated
-atomically and removed at zero. Spring Security runs before the admission filter, so
-anonymous requests get 401 without taking slots. The filter covers every multipart request,
+atomically and removed at zero. Spring Security runs before the admission filter. Anonymous
+multipart requests (they can reach `permitAll` routes such as actuator health) take only the
+replica slot, never a user slot. The filter covers every multipart request,
 including unknown routes, other methods and mixed-case content types: MVC parses
 multipart before selecting a handler. The slot is released after successful or failed
 request processing. Upload spool uses a dedicated directory; transferTo(File) moves

@@ -58,14 +58,9 @@ public class UploadConcurrencyFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        var authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (!(authentication instanceof JwtAuthenticationToken jwt) || !jwt.isAuthenticated()
-                || !StringUtils.hasText(jwt.getToken().getSubject())) {
-            chain.doFilter(request, response);
-            return;
-        }
-        String user = jwt.getToken().getSubject();
-        if (!acquireUser(user)) {
+        // Anonymous multipart can still reach permitAll routes, so it keeps the replica-wide bound.
+        String user = subject();
+        if (user != null && !acquireUser(user)) {
             reject(response, 429, "UPLOAD_USER_LIMIT", "Trwa już zbyt wiele Twoich uploadów. Spróbuj ponownie za chwilę.");
             return;
         }
@@ -81,8 +76,17 @@ public class UploadConcurrencyFilter extends OncePerRequestFilter {
                 slots.release();
             }
         } finally {
-            slotsByUser.computeIfPresent(user, (key, count) -> count == 1 ? null : count - 1);
+            if (user != null) slotsByUser.computeIfPresent(user, (key, count) -> count == 1 ? null : count - 1);
         }
+    }
+
+    private static String subject() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwt && jwt.isAuthenticated()
+                && StringUtils.hasText(jwt.getToken().getSubject())) {
+            return jwt.getToken().getSubject();
+        }
+        return null;
     }
 
     private boolean acquireUser(String user) {

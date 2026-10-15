@@ -29,14 +29,17 @@ class UploadConcurrencyFilterTest {
     @BeforeEach void login() { authenticate("alice"); }
     @AfterEach void logout() { SecurityContextHolder.clearContext(); }
 
-    @Test void anonymousRequestDoesNotAcquireAnySlot() throws Exception {
+    @Test void anonymousMultipartTakesAGlobalSlotButNoUserSlot() throws Exception {
         var filter = new UploadConcurrencyFilter(1, 1, tmp.toString());
         SecurityContextHolder.clearContext();
         filter.doFilter(upload(), new MockHttpServletResponse(), (request, response) -> {
+            assertNoUserSlots(filter);
             authenticate("alice");
-            var passed = new AtomicBoolean();
-            filter.doFilter(upload(), new MockHttpServletResponse(), (nestedRequest, nestedResponse) -> passed.set(true));
-            assertThat(passed).isTrue();
+            var rejected = new MockHttpServletResponse();
+            filter.doFilter(upload(), rejected, (nestedRequest, nestedResponse) -> {
+                throw new AssertionError("anonymous multipart must hold the replica slot");
+            });
+            assertThat(rejected.getStatus()).isEqualTo(503);
         });
         assertNoUserSlots(filter);
     }
