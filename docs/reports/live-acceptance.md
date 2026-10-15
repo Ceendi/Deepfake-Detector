@@ -63,6 +63,34 @@ download; video-detector: as soon as processing started).
   results to `analysis.results.dlq`. The `restart postgres` row above confirms the fix end to end.
 - File-service `422` messages for duration and format are technical English text; the frontend
   maps `422` to Polish messages by content (#142), so users do not see them.
-- Not covered: a video that reaches a verdict (needs footage with a real face, which the
-  repository must not contain). Run it locally with `E2E_VERDICT_FIXTURE` (Playwright) or
-  `LIVE_SAMPLE` pointing to such a clip.
+- A video that reaches a verdict is covered by the face run below; the footage stays outside
+  the repository. Repeat it locally with `E2E_VERDICT_FIXTURE` (Playwright) or `LIVE_SAMPLE`.
+
+## Video with a real face (2026-10-15)
+
+Input: the White House weekly address of 2017-01-07 (public domain, Wikimedia Commons), one
+speaker facing the camera. It was transcoded locally to MP4 (H.264 720p, AAC) and cut to
+30, 60 and 180 s. Stack: main at c650a59, `core` + `auth` + `ml`, one replica of each service,
+Docker Desktop with 14 GB, Defender exclusion as in the [D4 report](d4-replication.md). Detector
+times come from the detectors' own histograms (`inference_latency_seconds`,
+`video_stage_duration_seconds`, `audio_inference_duration_seconds`). One warm-up run (video
+24.4 s, of which 19.7 s was the first face detection) is excluded.
+
+| Clip | Wall time (s) | Outcome | `videoProb` | `audioProb` | Video (s) | of which face detection (s) | Audio (s) |
+|---|---|---|---|---|---|---|---|
+| 30 s | 16.5 | COMPLETED, REAL | 0.041 | 0.026 | 7.9 | 1.7 | 12.6 |
+| 30 s | 16.4 | COMPLETED, REAL | 0.041 | 0.026 | 5.7 | 2.0 | 12.4 |
+| 30 s | 20.6 | COMPLETED, REAL | 0.041 | 0.026 | 10.3 | 4.2 | 16.4 |
+| 60 s | 28.7 | COMPLETED, REAL | 0.044 | 0.014 | 10.7 | 4.3 | 24.8 |
+| 180 s | 65.5 | COMPLETED, REAL | 0.042 | 0.006 | 10.8 | 4.7 | 57.2 |
+
+Six FULL analyses of the 30 s clip created at once (`tests/live/detector_scaling.py`) all ended
+COMPLETED/REAL after 101.9 s (212 per hour). That is no faster than six in a row: each detector
+takes one task at a time.
+
+- Every clip of the real speaker got the correct verdict. Repeated runs of the same clip gave
+  identical probabilities.
+- Video time stays at about 6–11 s regardless of length, because the detector samples a fixed
+  number of frames. The AGENTS.md goal for a 30 s video is p95 < 8 s; two of three runs met it.
+- Audio grows linearly at about 0.32× real time (30 s in about 12.5 s). The goal for 30 s of
+  audio is < 3 s, so audio is not met and sets the wall time of a FULL analysis.
