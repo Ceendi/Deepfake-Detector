@@ -77,6 +77,10 @@ class TempoIntegrationTest(unittest.TestCase):
         self.otlp_port = self.compose("port", "tempo", "4318").strip().rsplit(":", 1)[1]
         self.eventually(lambda: self.assertIn("ready", self.request(self.http_port, "/ready")))
 
+    def container_state(self):
+        container = self.compose("ps", "--all", "-q", "tempo").strip()
+        return json.loads(self.command("docker", "inspect", container))[0]["State"]
+
     def print_failure_logs(self):
         outcome = self._outcome.result
         if any(test is self for test, _ in outcome.failures + outcome.errors):
@@ -118,8 +122,16 @@ class TempoIntegrationTest(unittest.TestCase):
         self.eventually(assert_trace)
         # Allow the live store to move the idle trace to its persistent WAL.
         time.sleep(15)
-        self.compose("stop", "--timeout", "30", "tempo")
+        # Keep the stop timeout well above Tempo's shutdown drain (finish_on_shutdown_timeout): a
+        # timeout equal to it races SIGKILL, and Docker may then return before reaping the
+        # container, turning the following start into a no-op.
+        self.compose("stop", "--timeout", "90", "tempo")
+        stopped = self.container_state()
+        self.assertEqual(("exited", 0), (stopped["Status"], stopped["ExitCode"]))
         self.compose("start", "tempo")
+        started = self.container_state()
+        self.assertTrue(started["Running"])
+        self.assertNotEqual(stopped["StartedAt"], started["StartedAt"])
         # Docker may allocate a different ephemeral host port after a restart.
         self.http_port = self.compose("port", "tempo", "3200").strip().rsplit(":", 1)[1]
         self.eventually(lambda: self.assertIn("ready", self.request(self.http_port, "/ready")))
@@ -127,6 +139,17 @@ class TempoIntegrationTest(unittest.TestCase):
         container = self.compose("ps", "-q", "tempo").strip()
         state = json.loads(self.command("docker", "inspect", container))[0]
         self.assertEqual(0, state["RestartCount"])
+
+    def test_compose_stop_exits_cleanly_within_default_grace(self):
+        trace_id = self.send_trace()
+        self.eventually(lambda: self.assertIn(
+            "persisted-smoke-span", self.request(self.http_port, f"/api/traces/{trace_id}"),
+        ))
+        # No --timeout: use the stop grace Compose would give the real service.
+        self.compose("stop", "tempo")
+        container = self.compose("ps", "--all", "-q", "tempo").strip()
+        state = json.loads(self.command("docker", "inspect", container))[0]["State"]
+        self.assertEqual(("exited", 0), (state["Status"], state["ExitCode"]))
 
     def test_tempo2_flushed_blocks_remain_readable(self):
         # The prior Compose version is intentionally fixed as the migration baseline.

@@ -55,7 +55,8 @@ Owner quota: stored `size_bytes` (including soft-deleted files until their physi
 `STORAGE_QUOTA_BYTES` (5368709120 bytes, 5 GiB). Exact equality is accepted.
 Exhaustion returns `409` with code `STORAGE_QUOTA_EXCEEDED` and message
 `Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.`
-The check is serialized across replicas per owner before the S3 write.
+The authoritative check is serialized across replicas per owner after the S3 write; the
+object is deleted when the upload is rejected.
 The gateway permits 5 uploads/minute with burst 5 by default (429). A full replica
 (`UPLOAD_MAX_CONCURRENT`, default 4) returns 503 with `Retry-After: 5` before multipart parsing.
 This guard also covers multipart requests on other paths/methods before MVC routing.

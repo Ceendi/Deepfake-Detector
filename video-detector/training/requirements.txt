@@ -6,7 +6,7 @@ torch>=2.7
 torchvision
 lightning==2.5.*
 timm>=1.0
-albumentations>=2.0,<3
+albumentations>=2.0.8,<3
 opencv-python-headless>=4.10
 insightface>=0.7.3
 onnx

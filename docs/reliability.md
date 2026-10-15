@@ -157,7 +157,10 @@ passwords, control characters, an administrator named like an application user, 
 SeaweedFS runs master, volume, filer and S3 in one process. `seaweedfs-init` also writes
 `security.toml` with fresh random keys for `jwt.signing`, `jwt.signing.read`, `jwt.filer_signing`
 and `jwt.filer_signing.read` on every run, and every component in that process loads the same
-file at start. Without it, the filer HTTP API and the S3 IAM gRPC API (`PutIdentity`) on the
+file at start. Tokens expire after 10 s, except volume write tokens (`jwt.signing`), which last
+60 s. When a chunk upload times out after 30 s, the S3 gateway deletes the partial chunk with
+that same token. A shorter lifetime rejects the delete with 401, and the orphaned chunk is
+never reclaimed. Without it, the filer HTTP API and the S3 IAM gRPC API (`PutIdentity`) on the
 network accepted anonymous calls that bypass S3 identities. The master gives volume JWTs to any
 caller, so master, volume and filer also listen only on the container's loopback interface. Only
 the S3 API (8333) and its JWT-protected gRPC port (18333) are reachable from other containers.
@@ -670,6 +673,9 @@ Code: `OptionalRedisOperations` (orchestrator), `ProtectiveRedisRateLimiter` and
   failure opens another window. Concurrent failures do not extend an existing window. A WARN
   is emitted at most once per window, without a user identifier. Each fail-open request, including
   those in the window, increments `gateway_ratelimiter_degraded_total{route}` (uploads do not).
+  On `ApplicationReadyEvent` the gateway runs the limiter script once on a throwaway key
+  (`RateLimiterWarmup`, 5 s, failures only logged). Without it the first scripted calls on a cold
+  JVM exceeded `REDIS_COMMAND_TIMEOUT`, opened the shared window and failed uploads with `503`.
   Rerun `GatewayRateLimitIntegrationTest` after upgrading Spring Cloud Gateway.
 
 | Variable | Default | Meaning |
@@ -814,13 +820,15 @@ request processing. Upload spool uses a dedicated directory; transferTo(File) mo
 Tomcat's disk part for validation and S3, and the file is removed in finally. ffprobe
 allows only the file protocol and checks each stream's pixel product against 4K.
 
-FileStorageService opens a READ_COMMITTED transaction, takes
-pg_advisory_xact_lock(114546, hashtext(user_id)), sums size_bytes of all stored rows and
-rejects quota overflow with 409 STORAGE_QUOTA_EXCEEDED before S3. Exact quota fits.
-The lock lasts through S3 and the metadata commit, so replicas cannot spend the same
-space concurrently. S3 failure rolls back admission; a failed metadata commit leaves
-an invisible orphan for the existing cleanup sweep. Hash collisions only serialize
-unrelated owners. Soft-deleted files keep counting until the purge removes the object
+FileStorageService first rejects an obvious overflow without a lock, then writes the
+object to S3 outside any transaction. Admission is a short READ_COMMITTED transaction:
+pg_advisory_xact_lock(114546, hashtext(user_id)), the sum of size_bytes of all stored
+rows, and the metadata insert; overflow returns 409 STORAGE_QUOTA_EXCEEDED. Exact quota
+fits. Concurrent uploads of one owner therefore write to S3 in parallel and serialize only
+on the quota check, so replicas cannot spend the same space twice and a slow S3 write never
+holds the lock or a pooled connection. A rejected or failed admission deletes the object;
+if that delete fails, the orphan sweep removes it. An overflow that slips past the early
+check is briefly stored in S3. Hash collisions only serialize unrelated owners. Soft-deleted files keep counting until the purge removes the object
 and row (72 h by default), so delete-and-reupload cannot exceed the quota on disk.
 
 Creation resolves input through POST /api/files/{id}/claim with the verified JWT.

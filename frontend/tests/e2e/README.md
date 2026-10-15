@@ -6,13 +6,19 @@ a `/api/**` proxuje dev server Vite na Gateway (`vite.config.ts`).
 
 ## Wymagania przed uruchomieniem
 
-1. **Backend + Keycloak** (z korzenia repo):
+1. **Backend + Keycloak** (z korzenia repo), z realmem deweloperskim:
    ```bash
+   # w .env: KEYCLOAK_REALM_CONFIG=dev/realm-export.json
    docker compose --profile core --profile auth up        # + --profile ml dla detektorów
    ```
-2. **Realm `deepfake`** z userami `alice` / `bob` (hasło `Test1234!@`) — seedowany z
-   `infra/keycloak/realm-export.json`.
-3. **Dev server** na `:5173` — jeśli nie działa, Playwright (`webServer`) podniesie go sam.
+2. **Realm `deepfake`** z userami `alice` / `bob` (hasło `Test1234!@`) — są tylko w
+   `infra/keycloak/dev/realm-export.json`; produkcyjny `realm-export.json` nie ma kont testowych.
+3. **Limity:** bez detektorów analizy zostają aktywne, a testy wgrywają pliki równolegle. Przy
+   domyślnych limitach (3 aktywne analizy, 5 uploadów/min na użytkownika) kolejne przebiegi
+   dostają 429. Lokalnie podnieś `BACKPRESSURE_MAX_INFLIGHT_PER_USER` i `UPLOAD_RL_BURST` w `.env`
+   (tak robi CI) albo uruchamiaj na świeżym stacku.
+4. **`frontend/.env`** — skopiuj `frontend/.env.example`; bez niego dev server nie zna adresu Keycloaka.
+5. **Dev server** na `:5173` — jeśli nie działa, Playwright (`webServer`) podniesie go sam.
    (Backendu/Keycloaka `webServer` **nie** startuje — muszą działać niezależnie.)
 
 ## Uruchamianie
@@ -59,4 +65,6 @@ E2E_VERDICT_FIXTURE=/ścieżka/do/klipu_z_twarzą.mp4 npm run e2e -- --project=c
   bezpieczne — wylogowanie w jednym teście nie psuje innych.
 - Testy `upload`/`idor` tworzą realne analizy na koncie `alice` (dane przyrastają w historii —
   to oczekiwane). Plik wejściowy to wygenerowany w pamięci WAV (`fixtures/media.ts`), nie commitujemy binariów.
-- E2E **nie** jest częścią CI (`.github/workflows/ci.yml`) — wymaga pełnego stacku. Uruchamiaj lokalnie / on-demand.
+- CI: `.github/workflows/e2e.yml` stawia `core` + `auth` z realmem dev i podniesionymi limitami
+  (jednorazowy projekt compose) i uruchamia Chromium. Test werdyktu jest tam pominięty, bo modeli
+  detektorów nie ma w repozytorium.

@@ -24,6 +24,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.nio.file.Files;
@@ -33,6 +34,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -91,38 +93,57 @@ class UploadLifecycleIntegrationTest {
     }
 
     @Test void simultaneousUploadsCannotBothSpendTheSameRemainingQuota() throws Exception {
-        CountDownLatch firstInS3 = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        CountDownLatch secondStarted = new CountDownLatch(1);
+        CountDownLatch bothInS3 = new CountDownLatch(2);
         when(s3.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenAnswer(call -> {
-            firstInS3.countDown();
-            assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+            bothInS3.countDown();
+            assertThat(bothInS3.await(10, TimeUnit.SECONDS)).isTrue();
             return null;
         });
         try (var pool = Executors.newFixedThreadPool(2)) {
-            var first = pool.submit(() -> storage.store(file("alice", 6), media));
-            assertThat(firstInS3.await(5, TimeUnit.SECONDS)).isTrue();
-            var second = pool.submit(() -> {
-                secondStarted.countDown();
-                assertThatThrownBy(() -> storage.store(file("alice", 6), media))
-                        .isInstanceOf(StorageQuotaExceededException.class);
-            });
-            try {
-                assertThat(secondStarted.await(5, TimeUnit.SECONDS)).isTrue();
-                org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5)).untilAsserted(() ->
-                        assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_locks "
-                                + "WHERE locktype = 'advisory' AND NOT granted", Long.class)).isEqualTo(1));
-            } finally {
-                release.countDown();
-            }
-            first.get(10, TimeUnit.SECONDS);
-            second.get(10, TimeUnit.SECONDS);
-        } finally {
-            release.countDown();
+            var first = pool.submit(() -> admitted(file("alice", 6)));
+            var second = pool.submit(() -> admitted(file("alice", 6)));
+            assertThat(java.util.List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
         }
         assertThat(repository.storedBytes("alice")).isEqualTo(6);
         assertThat(repository.count()).isEqualTo(1);
-        verify(s3, times(1)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
+        // The losing upload's object is removed rather than left for the orphan sweep.
+        verify(s3, times(1)).deleteObject(any(DeleteObjectRequest.class));
+    }
+
+    @Test void ownerUploadsDoNotWaitForEachOthersStorageWrite() throws Exception {
+        CountDownLatch firstInS3 = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger writes = new AtomicInteger();
+        when(s3.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenAnswer(call -> {
+            if (writes.getAndIncrement() == 0) {
+                firstInS3.countDown();
+                assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
+            }
+            return null;
+        });
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var slow = pool.submit(() -> storage.store(file("alice", 3), media));
+            assertThat(firstInS3.await(5, TimeUnit.SECONDS)).isTrue();
+            try {
+                // Before the fix the owner lock was held across the write, so this waited for it.
+                pool.submit(() -> storage.store(file("alice", 3), media)).get(5, TimeUnit.SECONDS);
+                assertThat(repository.storedBytes("alice")).isEqualTo(3);
+            } finally {
+                release.countDown();
+            }
+            slow.get(10, TimeUnit.SECONDS);
+        }
+        assertThat(repository.storedBytes("alice")).isEqualTo(6);
+    }
+
+    private boolean admitted(FileMetadata upload) {
+        try {
+            storage.store(upload, media);
+            return true;
+        } catch (StorageQuotaExceededException quotaExceeded) {
+            return false;
+        }
     }
 
     @Test void failedStorageWriteRollsBackAndDoesNotConsumeQuota() {

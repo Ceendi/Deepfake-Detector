@@ -9,11 +9,11 @@ description = "Video Detector Service for Deepfakes"
 requires-python = ">=3.12"
 dependencies = [
     "deepfake-detector-runtime",
-    "fastapi==0.136.3",
-    "uvicorn[standard]==0.46.0",
+    "fastapi==0.143.0",
+    "uvicorn[standard]==0.54.0",
     "pika==1.4.4",
-    "pydantic==2.13.5",
-    "prometheus-client==0.25.0",
+    "pydantic==2.14.1",
+    "prometheus-client==0.26.0",
     "structlog==25.5.0",
     "boto3==1.43.111",
     "redis",

@@ -250,9 +250,15 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1g
+          # Every in-flight S3 upload buffers 4 MiB chunks in this process; at 1g
+          # the D4 load test reached the limit and uploads stalled.
+          memory: 2g
           cpus: "1.0"
           pids: 500
+    environment:
+      # Go does not see the cgroup limit: without this the heap grows to twice the
+      # live set (~400 MB idle) and is not returned, pinning the container at its limit.
+      GOMEMLIMIT: 1536MiB
     logging: *default-logging
     depends_on:
       seaweedfs-init:
@@ -694,6 +700,7 @@ services:
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
       MEDIA_MAX_PIXELS: ${MEDIA_MAX_PIXELS:-8294400}
       DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
+      ONNX_INTRA_THREADS: ${VIDEO_ONNX_INTRA_THREADS:-4}
       # Python OTel: same gate + endpoint values as the Java *otel-env anchor, but under the
       # standard OTel SDK env name the Python OTLP exporter reads directly.
       OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
@@ -730,6 +737,7 @@ services:
     environment:
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
       DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
+      ONNX_INTRA_THREADS: ${AUDIO_ONNX_INTRA_THREADS:-6}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: detector
       RABBITMQ_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}

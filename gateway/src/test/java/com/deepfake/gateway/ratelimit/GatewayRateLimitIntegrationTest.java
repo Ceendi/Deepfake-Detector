@@ -127,6 +127,20 @@ class GatewayRateLimitIntegrationTest {
         }
     }
 
+    @Autowired org.springframework.data.redis.core.ReactiveStringRedisTemplate template;
+    @Autowired @org.springframework.beans.factory.annotation.Qualifier("redisRequestRateLimiterScript")
+    org.springframework.data.redis.core.script.RedisScript<List<Long>> script;
+
+    @Test
+    void warmupLoadsTheLimiterScriptIntoRedis() {
+        try (var connection = connectionFactory.getConnection()) {
+            connection.scriptingCommands().scriptFlush();
+            assertThat(connection.scriptingCommands().scriptExists(script.getSha1())).containsExactly(false);
+            RateLimiterWarmup.run(template, script, Duration.ofSeconds(5)).block();
+            assertThat(connection.scriptingCommands().scriptExists(script.getSha1())).containsExactly(true);
+        }
+    }
+
     @Test
     void defaultUploadBucketAllowsFiveThenRejectsSixth() {
         for (int i = 0; i < 5; i++) assertThat(upload()).isEqualTo(200);

@@ -65,6 +65,9 @@ class FileUploadControllerSecurityTest {
     @MockitoBean
     org.springframework.jdbc.core.JdbcTemplate jdbc;
 
+    @MockitoBean
+    org.springframework.transaction.PlatformTransactionManager transactions;
+
     private static SimpleGrantedAuthority userRole() {
         return new SimpleGrantedAuthority("ROLE_USER");
     }

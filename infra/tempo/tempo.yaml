@@ -29,3 +29,8 @@ storage:
       path: /var/tempo/blocks
     wal:
       path: /var/tempo/wal
+
+# Even when idle, the worker waits out this timeout on shutdown (its in-process scheduler stops
+# first). The 30s default outlasts Docker's 10s stop grace; interrupted jobs are retried.
+backend_worker:
+  finish_on_shutdown_timeout: 5s

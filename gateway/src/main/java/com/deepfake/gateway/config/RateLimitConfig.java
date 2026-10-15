@@ -4,12 +4,15 @@ import java.time.Duration;
 import java.util.List;
 
 import com.deepfake.gateway.ratelimit.ProtectiveRedisRateLimiter;
+import com.deepfake.gateway.ratelimit.RateLimiterWarmup;
 import com.deepfake.gateway.ratelimit.RedisLimiterDegradation;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
 import org.springframework.cloud.gateway.support.ConfigurationService;
+import org.springframework.context.ApplicationListener;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -47,6 +50,12 @@ class RateLimitConfig {
             RedisLimiterDegradation degradation, MeterRegistry meters) {
         return new ProtectiveRedisRateLimiter(template, script, configurationService, budget,
                 degradation, ProtectiveRedisRateLimiter.FailureMode.OPEN, meters);
+    }
+
+    @Bean
+    ApplicationListener<ApplicationReadyEvent> rateLimiterWarmup(ReactiveStringRedisTemplate template,
+            @Qualifier("redisRequestRateLimiterScript") RedisScript<List<Long>> script) {
+        return event -> RateLimiterWarmup.run(template, script, Duration.ofSeconds(5)).block();
     }
 
     /** Rate-limit bucket key = JWT subject, so limits are per user. */
