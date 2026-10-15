@@ -38,9 +38,11 @@ jobs:
         run: |
           # Analyses never finish without detectors; uploads come in bursts from parallel tests.
           sed -e 's/^BACKPRESSURE_MAX_INFLIGHT_PER_USER=.*/BACKPRESSURE_MAX_INFLIGHT_PER_USER=100/' \
+              -e 's/^UPLOAD_MAX_CONCURRENT_PER_USER=.*/UPLOAD_MAX_CONCURRENT_PER_USER=4/' \
               -e 's|^# KEYCLOAK_REALM_CONFIG=.*|KEYCLOAK_REALM_CONFIG=dev/realm-export.json|' \
               -e 's/^# UPLOAD_RL_BURST=.*/UPLOAD_RL_BURST=6000/' .env.example > e2e.env
           grep -qx 'BACKPRESSURE_MAX_INFLIGHT_PER_USER=100' e2e.env
+          grep -qx 'UPLOAD_MAX_CONCURRENT_PER_USER=4' e2e.env
           grep -qx 'KEYCLOAK_REALM_CONFIG=dev/realm-export.json' e2e.env
           grep -qx 'UPLOAD_RL_BURST=6000' e2e.env
       - name: Start core and auth

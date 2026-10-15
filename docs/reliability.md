@@ -797,23 +797,32 @@ Code: file-service `FileValidator`, `FfprobeMediaProbe`. The MIME detected by Ti
 bytes must be whitelisted, then ffprobe must report an allowed container. ffprobe is asked only
 for stream indexes and the container format name and duration (no tags). Its output is capped at
 `MEDIA_PROBE_MAX_OUTPUT_BYTES` (default 65536), and stdout reading plus process exit share a 10 s
-deadline. Overflow, timeout, stdout I/O failure, non-zero exit or missing stream data → `422 INVALID_FILE`.
+deadline. Overflow, malformed JSON, non-zero exit, unsupported format or missing stream
+data → `422 INVALID_FILE`. Timeout, interruption, process startup I/O failure and stdout
+I/O failure → `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. These operational failures
+log WARN without file paths or user data. The temporary upload is removed and no S3
+object or metadata is stored.
 Cleanup kills the child and waits at most 5 s in total for process exit and reader termination,
 restoring the caller's interrupt flag. Failure to exit or stop the reader logs WARN; a still-live
 child's pipes are not closed synchronously because a blocked read can hold their lock. The reader
-is a daemon so a stuck subprocess cannot keep the JVM alive. Process startup I/O failures
-retain their existing error behavior. The upload limit is 500 MB.
+is a daemon so a stuck subprocess cannot keep the JVM alive. The upload limit is 500 MB.
 
 Tests need `ffmpeg` and `ffprobe` installed: `FfprobeMediaProbeIntegrationTest`,
-`FfprobeMediaProbeProcessTest`, `FfprobeMediaProbeFailureTest`.
+`FfprobeMediaProbeProcessTest`, `FfprobeMediaProbeFailureTest`. `FfprobeUploadHttpTest`
+checks real child-process timeout/non-zero exit, HTTP status, retry headers and spool cleanup.
 
 ## Upload admission and unused retention
 
 Upload admission has three bounds: the gateway token bucket (five/minute, burst five),
-a servlet filter before multipart parsing (four concurrent uploads per replica), and
+a servlet filter before multipart parsing (four concurrent uploads per replica, at most
+two per authenticated `jwt.sub` on that replica), and
 a PostgreSQL per-owner quota (5 GiB). Gateway Redis outages retain their existing
 fail-closed 503 policy; reads retain fail-open behavior. Replica saturation returns
-503 with Retry-After: 5 and no body. The filter covers every multipart request,
+503 SERVICE_UNAVAILABLE with Retry-After: 5 and an ErrorResponse body. Per-user saturation
+returns 429 UPLOAD_USER_LIMIT with the same retry header. The user slot is acquired
+first and released even if the global admission fails; per-user counters are updated
+atomically and removed at zero. Spring Security runs before the admission filter, so
+anonymous requests get 401 without taking slots. The filter covers every multipart request,
 including unknown routes, other methods and mixed-case content types: MVC parses
 multipart before selecting a handler. The slot is released after successful or failed
 request processing. Upload spool uses a dedicated directory; transferTo(File) moves
@@ -847,6 +856,7 @@ protect existing analysis references; unused retention applies to new uploads.
 | `STORAGE_QUOTA_BYTES` | `5368709120` | Active uploaded bytes per user (5 GiB) |
 | `UPLOAD_UNUSED_RETENTION` | `7d` | Age before an unclaimed upload is soft-deleted |
 | `UPLOAD_MAX_CONCURRENT` | `4` | Upload requests per replica, including multipart parsing |
+| `UPLOAD_MAX_CONCURRENT_PER_USER` | `2` | Concurrent upload requests per authenticated jwt.sub on each replica |
 | `UPLOAD_SPOOL_DIRECTORY` | `${java.io.tmpdir}/deepfake-uploads` (Compose: `/tmp/deepfake-uploads`) | Dedicated multipart and validation spool |
 | `MEDIA_MAX_PIXELS` | `8294400` | Maximum width×height of each video stream (4K) |
 | `UPLOAD_RL_REPLENISH` | `1` | Upload tokens replenished per second |

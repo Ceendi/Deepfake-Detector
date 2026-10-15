@@ -1,6 +1,7 @@
 package com.deepfake.fileservice.validation;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.deepfake.fileservice.exception.MediaProbeUnavailableException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -55,7 +56,13 @@ public class FfprobeMediaProbe implements MediaProbe {
         List<String> cmd = new ArrayList<>(commandPrefix);
         cmd.addAll(List.of("-v", "quiet", "-protocol_whitelist", "file", "-print_format", "json", "-show_entries",
                 "format=format_name,duration:stream=index,codec_type,width,height:stream_disposition=attached_pic", file.toAbsolutePath().toString()));
-        Process process = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+        Process process;
+        try {
+            process = new ProcessBuilder(cmd).redirectError(ProcessBuilder.Redirect.DISCARD).start();
+        } catch (IOException e) {
+            log.warn("Could not start ffprobe");
+            throw new MediaProbeUnavailableException(e);
+        }
         ExecutorService reader = Executors.newSingleThreadExecutor(
                 Thread.ofPlatform().daemon().name("ffprobe-output-" + process.pid()).factory());
         Future<byte[]> stdout = reader.submit(() -> readBounded(process.getInputStream()));
@@ -69,26 +76,27 @@ public class FfprobeMediaProbe implements MediaProbe {
             return process.exitValue() == 0 ? parse(output) : Optional.empty();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return Optional.empty();
+            log.warn("ffprobe interrupted");
+            throw new MediaProbeUnavailableException(e);
         } catch (TimeoutException e) {
-            log.warn("ffprobe timed out for {}", file.getFileName());
-            return Optional.empty();
+            log.warn("ffprobe timed out");
+            throw new MediaProbeUnavailableException(e);
         } catch (ExecutionException e) {
             if (e.getCause() instanceof OutputLimitException) {
-                log.warn("ffprobe output exceeded {} bytes for {}", maxOutputBytes, file.getFileName());
+                log.warn("ffprobe output exceeded {} bytes", maxOutputBytes);
                 return Optional.empty();
             }
             if (e.getCause() instanceof IOException) {
-                log.warn("Could not read ffprobe output for {}", file.getFileName(), e.getCause());
-                return Optional.empty();
+                log.warn("Could not read ffprobe output");
+                throw new MediaProbeUnavailableException(e.getCause());
             }
             throw new IOException("Could not read ffprobe output", e.getCause());
         } finally {
-            cleanup(process, stdout, reader, file);
+            cleanup(process, stdout, reader);
         }
     }
 
-    private void cleanup(Process process, Future<byte[]> stdout, ExecutorService reader, Path file) {
+    private void cleanup(Process process, Future<byte[]> stdout, ExecutorService reader) {
         // Kill before closing pipes: close can otherwise wait for a blocked read to finish.
         process.destroyForcibly();
         boolean interrupted = Thread.interrupted();
@@ -110,11 +118,11 @@ public class FfprobeMediaProbe implements MediaProbe {
                     process.getOutputStream().close();
                     process.getErrorStream().close();
                 } catch (IOException e) {
-                    log.warn("Could not close ffprobe pipes for {}", file.getFileName(), e);
+                    log.warn("Could not close ffprobe pipes");
                 }
             } else {
                 // A pipe close may block while a live process still owns stdout.
-                log.warn("ffprobe did not exit within cleanup budget for {}", file.getFileName());
+                log.warn("ffprobe did not exit within cleanup budget");
             }
         } finally {
             stdout.cancel(true);
@@ -130,7 +138,7 @@ public class FfprobeMediaProbe implements MediaProbe {
                     break;
                 }
             }
-            if (!stopped) log.warn("ffprobe output reader did not stop within cleanup budget for {}", file.getFileName());
+            if (!stopped) log.warn("ffprobe output reader did not stop within cleanup budget");
             if (interrupted) Thread.currentThread().interrupt();
         }
     }
