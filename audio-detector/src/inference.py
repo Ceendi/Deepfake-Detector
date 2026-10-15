@@ -32,6 +32,11 @@ if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <
     raise ValueError("Media duration limit must be finite and positive")
 # Extraction is roughly 10x faster than real time; a stall beyond this budget is a hung ffmpeg.
 FFMPEG_TIMEOUT_SECONDS = 60 + MEDIA_MAX_DURATION_SECONDS / 10
+# ONNX Runtime and torch otherwise size their pools to every host core, even when the container
+# gets fewer or shares the host with another detector. 0 keeps the library defaults.
+ONNX_INTRA_THREADS = int(os.getenv("ONNX_INTRA_THREADS", "0"))
+if ONNX_INTRA_THREADS < 0:
+    raise ValueError("ONNX_INTRA_THREADS must not be negative")
 
 log = structlog.get_logger(__name__)
 
@@ -56,7 +61,12 @@ MODEL_LOAD_TIME = Gauge(
 class AudioInference:
     def __init__(self):
         start_load = time.time()
-        self.w2v2_session = ort.InferenceSession(W2V2_ONNX_PATH, providers=['CPUExecutionProvider'])
+        opts = ort.SessionOptions()
+        if ONNX_INTRA_THREADS:
+            opts.intra_op_num_threads = ONNX_INTRA_THREADS
+            torch.set_num_threads(ONNX_INTRA_THREADS)
+        self.w2v2_session = ort.InferenceSession(
+            W2V2_ONNX_PATH, sess_options=opts, providers=['CPUExecutionProvider'])
         
         self.mel_module = load_mel_cnn(MEL_CKPT_PATH)
         
