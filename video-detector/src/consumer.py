@@ -2,6 +2,7 @@ import os
 
 import structlog
 from detector_runtime import Artifact, DetectorRuntime, create_redis_client, create_s3_client
+from detector_runtime.metrics import inference_duration_buckets
 from opentelemetry import trace
 from prometheus_client import Counter, Histogram
 
@@ -17,6 +18,7 @@ INFERENCE_LATENCY = Histogram(
     "inference_latency_seconds",
     "Wall-clock time of one process() inference",
     ["source"],
+    buckets=inference_duration_buckets(),
 )
 DETECTOR_RESULTS = Counter(
     "detector_results_total",

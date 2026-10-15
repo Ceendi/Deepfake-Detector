@@ -44,21 +44,32 @@ contains an analysis ID, user ID, file key or model path.
 
 | Prometheus name | Type | Labels | Meaning |
 |---|---|---|---|
-| `inference_latency_seconds` | histogram | `source` (`video`) | Video runtime `process_task` wall time: download, inference and artifact upload; excludes pickup cancel and final result publication/ACK. Includes failed/interrupted attempts after processing starts. Uses the client's default buckets. |
+| `inference_latency_seconds` | histogram | `source` (`video`) | Video runtime `process_task` wall time: download, inference and artifact upload; excludes pickup cancel and final result publication/ACK. Includes failed/interrupted attempts after processing starts. Uses the shared detector duration buckets below. |
 | `detector_results_total` | counter | `source` (`video`), `outcome` (`fake`, `real`, `failed`, `cancelled`) | Video delivery outcomes. Completed and failed are recorded after result confirm and ACK; cancelled is recorded before ACK. Redelivered attempts can each count. |
-| `video_stage_duration_seconds` | histogram | `stage` (`face_detection`, `backbone`, `temporal`, `gradcam`) | Time spent in a video pipeline stage, including a stage that raises. Buckets: 0.1, 0.25, 0.5, 1, 2, 4, 8, 15, 30 seconds. |
+| `video_stage_duration_seconds` | histogram | `stage` (`face_detection`, `backbone`, `temporal`, `gradcam`) | Time spent in a video pipeline stage, including a stage that raises. Uses the shared detector duration buckets below. |
 | `video_model_load_duration_seconds` | gauge | — | Time of the last successful video model initialization. |
-| `audio_inference_duration_seconds` | histogram | — | Audio `analyze` wall time, including extraction, preprocessing and Grad-CAM, but excluding S3 download/upload. Includes failed/interrupted calls. Buckets: 0.5, 1, 2, 3, 5, 10, 15, 20, 30 seconds. |
+| `audio_inference_duration_seconds` | histogram | — | Audio `analyze` wall time, including extraction, preprocessing and Grad-CAM, but excluding S3 download/upload. Includes failed/interrupted calls. Uses the shared detector duration buckets below. |
 | `audio_processed_total` | counter | `status` (`success`, `error`, `cancelled`) | Audio delivery outcomes. Success and error follow result confirm and ACK; cancelled precedes ACK. Redelivered attempts can each count. `NO_AUDIO_TRACK` is a detector error even when a FULL analysis later completes through video. |
 | `audio_model_load_duration_seconds` | gauge | — | Time of the last successful audio model initialization. |
+
+All three duration histograms use explicit finite buckets in seconds:
+`0.1, 0.25, 0.5, 1, 2, 3, 4, 5, 8, 10, 15, 20, 30, 60, 120, 300, 600, 1200, 1800, 3600`.
+At startup, a `DETECTOR_TASK_HARD_LIMIT_SECONDS` above 3600 appends that exact finite
+bound, including fractional values. A lower configured limit keeps the base buckets.
+The setting retains its existing positive finite validation and default of 3600 s;
+these buckets do not change execution deadlines. Metric names and labels stay the same.
 
 Histogram exposition includes `_bucket{le}`, `_sum` and `_count`; all include an
 infinite bucket. The detector dashboard row shows p95 separately for video and
 audio, plus their existing outcome labels. These counters count delivery attempts,
 not unique analyses: use `analyses_total` for committed analysis outcomes.
 The two inference timers have different scopes, so their p95 values are not a
-controlled comparison of pure model execution. A p95 above the highest finite
-bucket saturates at that bucket; use the bucket distribution when investigating it.
+controlled comparison of pure model execution. The existing Business dashboard
+queries aggregate by `le` and have no fixed latency ceiling, so they need no query
+change; current alert rules do not reference these detector duration histograms.
+Deploy the new bucket layout to all replicas together and allow the 5-minute rate
+window to refresh before interpreting p95, since mixed layouts skew aggregation.
+A p95 above the highest finite bucket saturates at that bucket; use the bucket distribution when investigating it.
 
 ## Percentile dashboards and alerts
 
