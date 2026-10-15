@@ -32,13 +32,13 @@ npx playwright show-report        # raport HTML po przebiegu
 
 ## Co jest pokryte
 
-| Plik                 | Scenariusz                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------- |
-| `auth.spec.ts`       | redirect niezalogowanego → `/login`, pełne logowanie przez Keycloak, wylogowanie        |
-| `navigation.spec.ts` | nawigacja nagłówkiem: Dashboard → Upload → Historia → Profil                            |
-| `upload.spec.ts`     | walidacja kliencka (odrzut formatu), realny upload + `POST /analysis` (201), anulowanie |
-| `history.spec.ts`    | strona historii wczytuje listę bez błędu                                                |
-| `idor.spec.ts`       | analiza alice jest dla boba 404 (IDOR guard), właściciel dostaje 200                    |
+| Plik                 | Scenariusz                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `auth.spec.ts`       | redirect niezalogowanego → `/login`, pełne logowanie przez Keycloak, wylogowanie                                   |
+| `navigation.spec.ts` | nawigacja nagłówkiem: Dashboard → Upload → Historia → Profil                                                       |
+| `upload.spec.ts`     | walidacja kliencka (odrzut formatu), realny upload + `POST /analysis` (201), oryginalna nazwa w wyniku, anulowanie |
+| `history.spec.ts`    | strona historii wczytuje listę bez błędu                                                                           |
+| `idor.spec.ts`       | analiza alice jest dla boba 404 (IDOR guard), właściciel dostaje 200                                               |
 
 ## Test werdyktu (domyślnie pominięty)
 
