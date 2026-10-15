@@ -21,9 +21,22 @@ groups:
         annotations:
           summary: Wiadomości oczekują w DLQ lub kwarantannie.
       - alert: ScrapeTargetDown
-        expr: up == 0
+        expr: up{job!~"video-detector|audio-detector"} == 0
         for: 2m
         labels:
           severity: critical
         annotations:
           summary: Prometheus nie może zebrać metryk usługi.
+      - alert: DetectorUnavailable
+        # Queue-driven detection also covers absent DNS targets; any healthy replica can drain work.
+        # Match only the corresponding detector job so audio cannot hide a video outage (or vice versa).
+        expr: |
+          label_replace(
+            sum by (queue) (rabbitmq_queue_messages_ready{job="rabbitmq",queue=~"analysis\\.(video|audio)"}) > 0,
+            "job", "$1-detector", "queue", "analysis\\.(video|audio)"
+          ) unless on (job) (up{job=~"video-detector|audio-detector"} == 1)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Brak dostępnego detektora dla oczekujących zadań.

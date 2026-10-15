@@ -82,6 +82,68 @@ class MonitoringValidationTest(unittest.TestCase):
 
 
 class MonitoringIntegrationTest(unittest.TestCase):
+    def test_detector_dns_targets_follow_replica_scaling(self):
+        services = resolved_compose()['services']
+        project = 'detector-scrape-' + uuid.uuid4().hex[:12]
+        port = available_test_ports(1)[0]
+        prometheus = services['prometheus']
+        prometheus.pop('profiles', None)
+        prometheus['ports'][0]['published'] = str(port)
+        # Serve real HTTP metrics without loading ML models or consuming worker queues.
+        server = (
+            'from http.server import BaseHTTPRequestHandler, HTTPServer\n'
+            'class Metrics(BaseHTTPRequestHandler):\n'
+            ' def do_GET(self):\n'
+            '  self.send_response(200)\n'
+            '  self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")\n'
+            '  self.end_headers(); self.wfile.write(b"fixture_up 1\\n")\n'
+            'HTTPServer(("0.0.0.0", 8000), Metrics).serve_forever()\n'
+        )
+        detectors = {name: {
+            'image': services['rabbitmq-init']['image'],
+            'command': ['python', '-c', server],
+            'networks': ['deepfake'], 'read_only': True,
+            'mem_limit': '64m', 'pids_limit': 50,
+            'cap_drop': ['ALL'], 'security_opt': ['no-new-privileges:true'],
+        } for name in ('video-detector', 'audio-detector')}
+        config = {
+            'services': {'prometheus': prometheus, **detectors},
+            'volumes': {'prometheus-data': {'name': project + '-prometheus-data'}},
+            'networks': {'deepfake': {'name': project + '-network'}},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            compose_file = Path(directory) / 'compose.json'
+            compose_file.write_text(json.dumps(config))
+
+            def compose(*args):
+                return command('docker', 'compose', '-p', project, '-f', str(compose_file), *args)
+
+            def targets_match(replicas):
+                for name in detectors:
+                    containers = json.loads(command('docker', 'inspect', *compose('ps', '-q', name).split()))
+                    self.assertEqual(replicas, len(containers))
+                    expected = {
+                        next(iter(item['NetworkSettings']['Networks'].values()))['IPAddress'] + ':8000'
+                        for item in containers
+                    }
+                    with HTTP.open(f'http://127.0.0.1:{port}/api/v1/targets', timeout=5) as response:
+                        targets = [target for target in json.load(response)['data']['activeTargets']
+                                   if target['labels']['job'] == name]
+                    self.assertEqual(replicas, len(targets))
+                    self.assertEqual(expected, {target['labels']['instance'] for target in targets})
+                    self.assertTrue(all(target['health'] == 'up' for target in targets), targets)
+                    self.assertEqual({'http://' + address + '/metrics' for address in expected},
+                                     {target['scrapeUrl'] for target in targets})
+
+            try:
+                for replicas in (2, 1, 2):
+                    compose('up', '-d', '--wait', '--wait-timeout', '90',
+                            '--scale', 'video-detector=' + str(replicas),
+                            '--scale', 'audio-detector=' + str(replicas))
+                    self.eventually(lambda: targets_match(replicas))
+            finally:
+                compose('down', '--volumes', '--remove-orphans')
+
     def test_hardened_stack_starts_and_only_collects_its_own_project(self):
         config = resolved_compose()
         command('docker', 'compose', '--env-file', str(ROOT / '.env.example'),

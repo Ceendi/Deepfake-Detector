@@ -55,13 +55,15 @@ class CoreReliabilityConfigurationTest(unittest.TestCase):
         self.assertEqual('1536MiB', service['environment']['GOMEMLIMIT'])
 
     def test_container_probe_uses_liveness(self):
-        service = resolved_compose()['services']['orchestrator']
-        self.assertIn('http://localhost:8082/actuator/health/liveness',
-                      service['healthcheck']['test'])
+        services = resolved_compose()['services']
+        for name, port in (('orchestrator', 8082), ('gateway', 9090)):
+            with self.subTest(service=name):
+                self.assertIn(f'http://localhost:{port}/actuator/health/liveness',
+                              services[name]['healthcheck']['test'])
 
     def test_gateway_probe_and_broker_resource_configuration(self):
         services = resolved_compose()['services']
-        self.assertIn('http://localhost:9090/actuator/health',
+        self.assertIn('http://localhost:9090/actuator/health/liveness',
                       services['gateway'].get('healthcheck', {}).get('test', []))
         probe = services['rabbitmq']['healthcheck']['test']
         self.assertEqual('CMD-SHELL', probe[0])
@@ -193,6 +195,44 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
             self.assertEqual('up', targets[0]['health'], targets[0]['lastError'])
 
         self.eventually(scraped)
+
+    def test_gateway_stays_healthy_during_redis_outage(self):
+        original = self.containers('gateway')[0]
+        self.compose('stop', 'redis')
+        try:
+            failed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+
+            def diagnostic_health_down():
+                response = self.compose('exec', '-T', 'gateway', 'wget', '-S', '-O', '-',
+                                        'http://localhost:9090/actuator/health', check=False)
+                self.assertIn('503', response)
+
+            self.eventually(diagnostic_health_down)
+            probe = original['Config']['Healthcheck']['Test']
+            self.assertEqual('CMD', probe[0])
+            command('docker', 'exec', original['Id'], *probe[1:])
+
+            def live_after_automatic_probe():
+                diagnostic_health_down()
+                health = json.loads(self.compose('exec', '-T', 'gateway', 'wget', '-qO-',
+                                                 'http://localhost:9090/actuator/health/liveness'))
+                self.assertEqual('UP', health['status'])
+                current = self.containers('gateway')[0]
+                self.assertEqual(original['State']['StartedAt'], current['State']['StartedAt'])
+                self.assertEqual(original['RestartCount'], current['RestartCount'])
+                health = current['State']['Health']
+                self.assertGreater(health['Log'][-1]['End'], failed_at)
+                self.assertEqual(0, health['Log'][-1]['ExitCode'])
+                self.assertEqual('healthy', health['Status'])
+
+            self.eventually(live_after_automatic_probe, timeout=45)
+        finally:
+            self.compose('start', 'redis')
+
+        self.eventually(lambda: self.assertEqual('UP', json.loads(self.compose(
+            'exec', '-T', 'gateway', 'wget', '-qO-',
+            'http://localhost:9090/actuator/health',
+        ))['status']))
 
     def eventually(self, check, timeout=120):
         deadline = time.monotonic() + timeout

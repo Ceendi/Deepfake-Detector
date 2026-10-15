@@ -538,7 +538,7 @@ services:
       UPLOAD_RL_BURST: ${UPLOAD_RL_BURST:-60}
       UPLOAD_RL_REQUESTED_TOKENS: ${UPLOAD_RL_REQUESTED_TOKENS:-12}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:9090/actuator/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/actuator/health/liveness"]
       interval: 15s
       timeout: 5s
       retries: 10
