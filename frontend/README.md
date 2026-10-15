@@ -20,11 +20,11 @@ jego nazwa pobierania to `report-{analysisId}.pdf`.
 
 ## Wylogowanie
 
-Z dostępnym `idToken` aplikacja używa standardowego wylogowania Keycloak
-z powrotem na stronę główną. Bez `idToken` czyści tokeny w pamięci i stan
-`AuthContext`, a następnie przechodzi na stronę główną, omijając stronę
-potwierdzenia Keycloak. Ta ścieżka nie zamyka zdalnej sesji SSO: mogła już wygasnąć,
-a jeśli nadal istnieje, Keycloak obsłuży ją przy kolejnym logowaniu.
+Wylogowanie zawsze kończy sesję SSO w Keycloak i wraca na stronę główną; stan
+`AuthContext` jest czyszczony od razu. Samo wyczyszczenie tokenów w przeglądarce
+nie wystarcza, bo przy kolejnym ładowaniu `check-sso` zalogowałby użytkownika
+z powrotem. Gdy `idToken` jest niedostępny (rzadko, np. po nieudanym odświeżeniu
+tokenu), Keycloak pokazuje stronę potwierdzenia wylogowania.
 Tokeny nie są zapisywane w `localStorage`.
 
 ## Weryfikacja
