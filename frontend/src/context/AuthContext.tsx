@@ -65,7 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
     user,
     login,
-    logout,
+    logout: () => {
+      setIsAuthenticated(false)
+      setUser(null)
+      logout()
+    },
     register,
   }
 

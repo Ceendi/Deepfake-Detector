@@ -11,12 +11,13 @@ vi.mock('@/api/analysis', () => ({
   deleteAnalysisRecord: vi.fn(),
   fetchReportPdf: vi.fn(),
 }))
-vi.mock('@/api/files', () => ({ deleteFile: vi.fn() }))
+vi.mock('@/api/files', () => ({ deleteFile: vi.fn(), getFileMetadata: vi.fn() }))
 vi.mock('@/config/env', () => ({
   env: { apiBaseUrl: '/api', keycloakUrl: 'http://kc', keycloakRealm: 'r', keycloakClientId: 'c' },
 }))
 
 import { getAnalysis } from '@/api/analysis'
+import { getFileMetadata } from '@/api/files'
 
 function failed(id: string, fileKey: string): Analysis {
   return {
@@ -39,6 +40,7 @@ function failed(id: string, fileKey: string): Analysis {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(getFileMetadata).mockRejectedValue(new TypeError('Network down'))
 })
 
 describe('AnalysisResult', () => {

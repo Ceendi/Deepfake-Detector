@@ -1,6 +1,7 @@
 import { ChevronLeft, Video, AudioLines } from 'lucide-react'
 
 import type { Analysis } from '@/api/types'
+import { useFileMeta } from '@/api/file-meta'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 
 import { ReportPdfButton } from './ReportPdfButton'
@@ -15,6 +16,8 @@ import {
 import styles from '../AnalysisResult.module.css'
 
 export function ResultHeader({ analysis }: { analysis: Analysis }) {
+  const meta = useFileMeta(analysis.fileId)
+  const name = displayName(analysis.fileKey, meta?.name)
   const Icon = analysis.type === 'AUDIO' ? AudioLines : Video
   const inProgress = analysis.status === 'PENDING' || analysis.status === 'PROCESSING'
   // FAILED/CANCELLED nigdy nie będą miały raportu.
@@ -31,7 +34,13 @@ export function ResultHeader({ analysis }: { analysis: Analysis }) {
           <Icon size={22} strokeWidth={2} />
         </span>
         <div className={styles.headerText}>
-          <h1 className={styles.headerTitle}>{displayName(analysis.fileKey)}</h1>
+          <h1
+            className={styles.headerTitle}
+            aria-busy={meta === null}
+            title={meta === null ? undefined : name}
+          >
+            {meta === null ? 'Ładowanie nazwy pliku…' : name}
+          </h1>
           <div className={styles.meta}>
             <span className={styles.typeChip}>{typeLabel(analysis.type)}</span>
             <span className={styles.metaText}>{formatDateTime(analysis.createdAt)}</span>

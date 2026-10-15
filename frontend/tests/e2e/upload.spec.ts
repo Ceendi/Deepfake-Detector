@@ -27,7 +27,8 @@ test.describe('upload', () => {
   test('poprawny plik startuje realną analizę (upload + POST /analysis = 201)', async ({
     page,
   }) => {
-    await page.locator(FILE_INPUT).setInputFiles(wavPayload())
+    const file = wavPayload('oryginalna-nazwa-nagrania.wav')
+    await page.locator(FILE_INPUT).setInputFiles(file)
 
     // PreviewState — plik przeszedł walidację kliencką i czeka na „Analizuj plik".
     await expect(page.getByText('Plik gotowy do analizy')).toBeVisible()
@@ -47,6 +48,13 @@ test.describe('upload', () => {
 
     // UI opuszcza podgląd i wchodzi w fazę analizy (znika CTA „Analizuj plik").
     await expect(page.getByRole('button', { name: 'Analizuj plik' })).toBeHidden()
+
+    const { id } = (await createResp.json()) as { id: string }
+    await page.goto(`/analysis-result/${id}`)
+    await expect(page.getByRole('heading', { name: file.name, exact: true })).toHaveAttribute(
+      'title',
+      file.name,
+    )
   })
 
   test('można anulować trwającą analizę', async ({ page }) => {

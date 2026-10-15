@@ -1,6 +1,4 @@
-// Nazwa i długość pliku dla wierszy historii. Lista analiz (AnalysisSummary) ich nie zwraca, więc
-// dociągamy je z File Service. Cache modułowy współdzielą wiersze i wyszukiwarka: powrót na
-// wcześniejszą stronę ani ponowne wyszukiwanie nie odpalają kolejnych żądań.
+// Share metadata requests between history, search and analysis results.
 import { useEffect, useState } from 'react'
 
 import { getFileMetadata } from '@/api/files'
@@ -19,8 +17,7 @@ export function cachedFileMeta(fileId: string): FileMeta | undefined {
   return cache.get(fileId)
 }
 
-// Jedno żądanie na plik naraz. 404 (plik usunięty / cudzy — IDOR) cache'ujemy jako brak danych;
-// inne błędy (sieć, 429 z gatewaya) odrzucają promise i nie trafiają do cache — można ponowić.
+// Cache missing files; transient failures remain retryable on the next request.
 export function loadFileMeta(fileId: string): Promise<FileMeta> {
   const hit = cache.get(fileId)
   if (hit) return Promise.resolve(hit)
@@ -46,37 +43,32 @@ export function loadFileMeta(fileId: string): Promise<FileMeta> {
 }
 
 export function useFileMeta(fileId: string): FileMeta | null {
-  const [meta, setMeta] = useState<FileMeta | null>(() => cachedFileMeta(fileId) ?? null)
+  const [result, setResult] = useState<{ fileId: string; meta: FileMeta } | null>(null)
 
   useEffect(() => {
     let active = true
-    loadFileMeta(fileId).then(
-      (value) => {
-        if (active) setMeta(value)
-      },
-      () => undefined, // wiersz zostaje z fallbackiem na #fileId
-    )
+    const publish = (meta: FileMeta) => {
+      if (active) setResult({ fileId, meta })
+    }
+    loadFileMeta(fileId).then(publish, () => publish(UNAVAILABLE))
     return () => {
       active = false
     }
   }, [fileId])
 
-  return meta
+  // A new file must never inherit the previous file's name, even before its effect runs.
+  return cachedFileMeta(fileId) ?? (result?.fileId === fileId ? result.meta : null)
 }
 
 const SEARCH_CONCURRENCY = 4
 
 export interface FileNames {
   names: ReadonlyMap<string, string>
-  loading: boolean // true, dopóki nie sprawdzono wszystkich plików (albo ładowanie nie stanęło)
+  loading: boolean
 }
 
-// Nazwy plików wszystkich analiz — potrzebne dopiero, gdy użytkownik zaczyna szukać. Ładowane w tle
-// z ograniczoną równoległością; mapa rośnie w miarę napływu odpowiedzi. Pierwszy błąd inny niż 404
-// (np. 429 z limitu gatewaya na /api/files/**) zatrzymuje ładowanie, żeby nie zasypać limitu
-// i nie blokować reszty żądań użytkownika do File Service.
+// Stop background search after a transient error to avoid exhausting the gateway rate limit.
 export function useFileNames(fileIds: string[], enabled: boolean): FileNames {
-  // `source` — dla której listy policzono wynik; nowa lista oznacza ładowanie od pierwszego renderu.
   const [result, setResult] = useState<FileNames & { source: string[] | null }>({
     names: new Map(),
     loading: false,
@@ -110,7 +102,6 @@ export function useFileNames(fileIds: string[], enabled: boolean): FileNames {
       }
     }
 
-    // Start asynchronicznie — bez synchronicznego setState w efekcie.
     void Promise.resolve()
       .then(() => publish(queue.length > 0))
       .then(() => Promise.all(Array.from({ length: SEARCH_CONCURRENCY }, worker)))

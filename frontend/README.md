@@ -1,73 +1,43 @@
-# React + TypeScript + Vite
+# DeepfakeDetector — frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite, własne komponenty na CSS Modules. Uruchomienie aplikacji
+z backendem i Keycloak opisuje [SETUP.md](../SETUP.md#step-4--frontend-vite).
 
-Currently, two official plugins are available:
+## Nazwa pliku na stronie wyniku
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Nagłówek wyniku pobiera oryginalną nazwę przez `GET /api/files/{fileId}/metadata`.
+Wspólny cache w `src/api/file-meta.ts` obsługuje wynik, historię i wyszukiwanie;
+równoległe żądania tego samego pliku są łączone. Odpowiedź 404 jest zapamiętywana
+jako brak metadanych. Błędy sieci i 429 pozwalają ponowić pobranie przy kolejnym montowaniu.
 
-## React Compiler
+Podczas pobierania nagłówek ma placeholder o wysokości jednego wiersza. Długie nazwy
+są skracane z pełnym tekstem w `title`, a znaki sterujące i formatowania są usuwane.
+Gdy nazwy brak, historyczny klucz `{uuid}_nazwa` daje nazwę bez prefiksu;
+klucz `{uuid}.{ext}` lub samo UUID daje „Plik bez nazwy”.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Tytuł strony wyniku nie zawiera nazwy pliku. Raport PDF również jej nie używa;
+jego nazwa pobierania to `report-{analysisId}.pdf`.
 
-## Expanding the ESLint configuration
+## Wylogowanie
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+Z dostępnym `idToken` aplikacja używa standardowego wylogowania Keycloak
+z powrotem na stronę główną. Bez `idToken` czyści tokeny w pamięci i stan
+`AuthContext`, a następnie przechodzi na stronę główną, omijając stronę
+potwierdzenia Keycloak. Ta ścieżka nie zamyka zdalnej sesji SSO: mogła już wygasnąć,
+a jeśli nadal istnieje, Keycloak obsłuży ją przy kolejnym logowaniu.
+Tokeny nie są zapisywane w `localStorage`.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Weryfikacja
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm ci
+npm run lint
+npm run test:run
+npm run build
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+Testy Vitest obejmują metadane, fallbacki, błędy pobierania, zmianę pliku,
+bezpieczne wyświetlanie nazw i obie ścieżki wylogowania. Test Playwright uploadu
+sprawdza oryginalną nazwę na stronie wyniku po rzeczywistym uploadzie i utworzeniu
+analizy, bez oczekiwania na detektory. Wymagania i polecenia E2E:
+[tests/e2e/README.md](tests/e2e/README.md).

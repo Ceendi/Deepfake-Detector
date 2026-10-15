@@ -6,7 +6,7 @@ import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 import { Spinner } from '@/components/ui/Spinner/Spinner'
 import { Alert } from '@/components/ui/Alert/Alert'
 
-import { useFileNames } from './file-meta'
+import { useFileNames } from '@/api/file-meta'
 import { useHistory } from './use-history'
 import { HistoryToolbar } from './components/HistoryToolbar'
 import { HistoryEmpty } from './components/HistoryEmpty'

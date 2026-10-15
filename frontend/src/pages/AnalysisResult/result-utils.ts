@@ -14,9 +14,21 @@ export function formatDateTime(iso: string): string {
   return `${dayFmt.format(d)}, ${timeFmt.format(d)}`
 }
 
-// Nazwa do wyświetlenia — fileKey ma postać '{uuid}_oryginalna-nazwa.mp4'; obcinamy prefiks UUID.
-export function displayName(fileKey: string): string {
-  return fileKey.replace(/^[0-9a-fA-F-]{36}_/, '') || fileKey
+function cleanFileName(name: string): string {
+  return name.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '').trim()
+}
+
+export function displayName(fileKey: string, originalName?: string | null): string {
+  const name = cleanFileName(originalName ?? '')
+  if (name) return name
+  const fallback = cleanFileName(
+    fileKey.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/i, ''),
+  )
+  // New storage keys carry no user-facing name; keep historical filenames as a fallback.
+  return !fallback ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\..*)?$/i.test(fallback)
+    ? 'Plik bez nazwy'
+    : fallback
 }
 
 const TYPE_LABEL: Record<AnalysisType, string> = {
