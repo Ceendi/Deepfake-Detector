@@ -29,29 +29,17 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('logout', () => {
-  it('uses Keycloak logout while the ID token can identify the SSO session', () => {
-    kc.idToken = 'id-token'
-
-    logout()
-
-    expect(kc.logout).toHaveBeenCalledExactlyOnceWith({ redirectUri: 'https://app.example' })
-    expect(kc.clearToken).not.toHaveBeenCalled()
-    expect(assign).not.toHaveBeenCalled()
-  })
-
-  it.each([undefined, ''])(
-    'clears local tokens and returns home without an ID token (%s)',
+  it.each(['id-token', undefined, ''])(
+    'ends the Keycloak SSO session even without an ID token (%s)',
     (token) => {
       kc.idToken = token
 
       logout()
 
-      expect(kc.clearToken).toHaveBeenCalledOnce()
-      expect(assign).toHaveBeenCalledExactlyOnceWith('https://app.example')
-      expect(kc.clearToken.mock.invocationCallOrder[0]).toBeLessThan(
-        assign.mock.invocationCallOrder[0],
-      )
-      expect(kc.logout).not.toHaveBeenCalled()
+      // A local-only logout would be undone by check-sso on the next load.
+      expect(kc.logout).toHaveBeenCalledExactlyOnceWith({ redirectUri: 'https://app.example' })
+      expect(kc.clearToken).not.toHaveBeenCalled()
+      expect(assign).not.toHaveBeenCalled()
     },
   )
 })
