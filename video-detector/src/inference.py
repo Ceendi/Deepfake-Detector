@@ -33,6 +33,7 @@ import onnxruntime as ort
 import structlog
 import torch
 from detector_runtime import MediaTooLongError
+from detector_runtime.metrics import inference_duration_buckets
 from prometheus_client import Gauge, Histogram
 
 from .utils import (
@@ -93,7 +94,7 @@ STAGE_DURATION = Histogram(
     "video_stage_duration_seconds",
     "Wall-clock time of one pipeline stage",
     ["stage"],  # face_detection | backbone | temporal | gradcam
-    buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 15.0, 30.0],
+    buckets=inference_duration_buckets(),
 )
 MODEL_LOAD_TIME = Gauge(
     "video_model_load_duration_seconds",

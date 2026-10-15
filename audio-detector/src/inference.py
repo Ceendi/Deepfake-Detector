@@ -10,6 +10,7 @@ import soundfile as sf
 import structlog
 import torch
 from detector_runtime import DetectorError, MediaTooLongError
+from detector_runtime.metrics import inference_duration_buckets
 from matplotlib.figure import Figure
 from matplotlib.image import imsave
 from prometheus_client import Gauge, Histogram
@@ -51,7 +52,7 @@ class NoAudioTrackError(DetectorError):
 INFERENCE_TIME = Histogram(
     "audio_inference_duration_seconds",
     "Time taken to run inference on an audio file",
-    buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 20.0, 30.0]
+    buckets=inference_duration_buckets(),
 )
 MODEL_LOAD_TIME = Gauge(
     "audio_model_load_duration_seconds",

@@ -38,3 +38,19 @@ Docker installs external dependencies before copying runtime source and installi
 the local package with `--no-deps`; changing runtime or detector code preserves the
 external dependency layer. Both detectors use the same I/O loop, with the existing
 30 s AMQP heartbeat, prefetch 1 and 5 s reconnect backoff.
+
+## Runtime dependency versions
+
+Both detector manifests pin external runtime dependencies to versions in their
+respective `uv.lock`. Docker builds install the frozen production graph with
+`uv sync --frozen --no-dev`, then install this local package with `--no-deps`.
+Manifest pins also keep direct installations and later lock refreshes explicit.
+
+This package's Redis 8.1.0 and OpenTelemetry API 1.45.1 pins match both detector
+locks. This package has no independent lock. Freezing the manifests changes only
+local-package metadata in the detector locks; resolved external versions and
+artifact hashes remain unchanged.
+
+`detector_runtime.metrics.inference_duration_buckets()` supplies both detectors'
+duration histograms. It reuses the worker's validated task limit without changing
+that deadline; see [the metrics contract](../docs/contracts/metrics.md).
