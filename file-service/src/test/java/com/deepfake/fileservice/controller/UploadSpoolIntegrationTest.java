@@ -121,6 +121,35 @@ class UploadSpoolIntegrationTest {
         assertThat(repository.findAll().stream().mapToLong(FileMetadata::getSizeBytes).sum()).isEqualTo(2 * 65536);
     }
 
+    @Test void rejectedLargeUploadGetsItsStatusInsteadOfAConnectionReset() throws Exception {
+        var entered = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        when(validator.validate(any())).thenAnswer(call -> {
+            entered.countDown();
+            assertThat(release.await(30, TimeUnit.SECONDS)).isTrue();
+            return new FileValidator.Result("video/mp4", 1.0);
+        });
+        int size = 64 << 20;
+        try (var http = HttpClient.newHttpClient()) {
+            var first = http.sendAsync(upload(), HttpResponse.BodyHandlers.ofString());
+            try (var socket = new java.net.Socket("localhost", port)) {
+                assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+                socket.setSoTimeout(30_000);
+                var out = socket.getOutputStream();
+                out.write(("POST /api/files/upload HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer test-token\r\n"
+                        + "Content-Type: multipart/form-data; boundary=boundary\r\nContent-Length: " + size
+                        + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+                var chunk = new byte[1 << 20];
+                for (int sent = 0; sent < size; sent += chunk.length) out.write(chunk);
+                out.flush();
+                var status = new java.io.BufferedReader(new java.io.InputStreamReader(
+                        socket.getInputStream(), StandardCharsets.US_ASCII)).readLine();
+                assertThat(status).startsWith("HTTP/1.1 503");
+            } finally { release.countDown(); }
+            assertThat(first.get(10, TimeUnit.SECONDS).statusCode()).isEqualTo(200);
+        }
+    }
+
     @Test void fullOwnerQuotaReturns409WithoutWritingAnotherObject() throws Exception {
         repository.save(FileMetadata.builder().fileId(java.util.UUID.randomUUID()).userId("alice")
                 .objectKey("existing.mp4").mimetype("video/mp4").sizeBytes(5368709120L).build());
