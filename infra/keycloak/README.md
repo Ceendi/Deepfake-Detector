@@ -99,6 +99,9 @@ resources will silently disappear on the next sync.
 
 Compose builds `deepfake-keycloak-config-cli:6.5.1-security` from the pinned
 upstream source with patched dependencies and tests it against Keycloak `26.8.0`.
+The archive is fetched directly from `codeload.github.com` by commit and SHA-256;
+building does not spend the unauthenticated GitHub REST API quota. The source commit
+and archive checksum are unchanged.
 The integration test verifies both the default import and the development
 variant, then verifies reset is disabled without SMTP and exercises the password-reset flow
 with SMTP enabled only in the disposable test realm. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for

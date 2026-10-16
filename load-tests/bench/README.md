@@ -3,7 +3,8 @@
 Measures the three backend optimizations (orchestrator). Report:
 [`docs/reports/backend-cache-index-pool.md`](../../docs/reports/backend-cache-index-pool.md).
 
-**Tools:** `psql` (in the postgres container), `wrk` (via `williamyeh/wrk`, run on the `deepfake`
+**Tools:** `psql` (in the postgres container), `wrk` (via the immutable image
+`williamyeh/wrk@sha256:78adc0d9d51a99e6759e702a08d03eaece81c890ffcc9790ef9e5b199d54f091`, run on the `deepfake`
 network), and the `deepfake-loadtest` client for a token (added in the D4 PR; the orchestrator
 validates its USER role). Set `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in the local
 `.env` to enable this client, then bring up `docker compose --profile core --profile auth up -d`.

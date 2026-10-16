@@ -28,13 +28,19 @@ groups:
         annotations:
           summary: Prometheus nie może zebrać metryk usługi.
       - alert: DetectorUnavailable
-        # Queue-driven detection also covers absent DNS targets; any healthy replica can drain work.
-        # Match only the corresponding detector job so audio cannot hide a video outage (or vice versa).
+        # HTTP can stay healthy while the AMQP consumer reconnects indefinitely.
         expr: |
-          label_replace(
-            sum by (queue) (rabbitmq_queue_messages_ready{job="rabbitmq",queue=~"analysis\\.(video|audio)"}) > 0,
+          (
+            label_replace(
+              sum by (queue) (rabbitmq_queue_messages_ready{job="rabbitmq",queue=~"analysis\\.(video|audio)"}) > 0,
+              "job", "$1-detector", "queue", "analysis\\.(video|audio)"
+            ) unless on (job) (up{job=~"video-detector|audio-detector"} == 1)
+          ) or label_replace(
+            (sum by (queue) (rabbitmq_queue_messages_ready{job="rabbitmq",queue=~"analysis\\.(video|audio)"}) > 0)
+            and on (queue)
+            (sum by (queue) (rabbitmq_queue_consumers{job="rabbitmq",queue=~"analysis\\.(video|audio)"}) == 0),
             "job", "$1-detector", "queue", "analysis\\.(video|audio)"
-          ) unless on (job) (up{job=~"video-detector|audio-detector"} == 1)
+          )
         for: 2m
         labels:
           severity: critical

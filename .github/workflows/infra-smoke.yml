@@ -26,6 +26,8 @@ on:
       - infra/keycloak-config-cli/**
       - infra/postgres/**
       - infra/prometheus/**
+      - tests/live/**
+      - load-tests/bench/**
       - .github/workflows/infra-smoke.yml
   push:
     branches: [main]
@@ -53,6 +55,8 @@ on:
       - infra/keycloak-config-cli/**
       - infra/postgres/**
       - infra/prometheus/**
+      - tests/live/**
+      - load-tests/bench/**
       - .github/workflows/infra-smoke.yml
   workflow_dispatch:
 
@@ -71,6 +75,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 infra/tests/test_ci_reliability.py
+      - run: python3 infra/tests/test_live_acceptance.py
+      - run: python3 infra/tests/test_test_ports.py
       - run: python3 infra/tests/test_monitoring_configuration.py
 
   observability-configuration:
