@@ -1,5 +1,4 @@
 import logging
-import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -10,6 +9,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from . import consumer
+from .config import load_config
 
 # every log line is JSON + correlation_id + trace_id (Loki + OpenTelemetry).
 # contextvars.merge_contextvars pulls in bind_contextvars(...) set by the consumer handler.
@@ -26,7 +26,7 @@ structlog.configure(
 )
 
 # The I/O loop keeps beating during inference; silence means the connection thread is stuck.
-HEALTH_MAX_SILENCE_SECONDS = int(os.getenv("HEALTH_MAX_SILENCE_SECONDS", "120"))
+HEALTH_MAX_SILENCE_SECONDS = load_config()["HEALTH_MAX_SILENCE_SECONDS"]
 
 _consumer_alive = consumer.runtime.health_state
 

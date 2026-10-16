@@ -221,7 +221,9 @@ def test_domain_error_code_reaches_the_contract(runtime, code):
 
 
 @pytest.mark.parametrize("body", [b"{", b"{}", b"null", b"[]", b"\xff\xfe{}", b'"id"',
-                                  b"[" * 100_000 + b"]" * 100_000])
+                                  b"[" * 100_000 + b"]" * 100_000],
+                         ids=["invalid-json", "missing-id", "null", "array", "invalid-utf8",
+                              "string", "deeply-nested"])
 def test_malformed_task_goes_to_dlq_without_work(runtime, body):
     ch = MagicMock()
     runtime.handle_message(ch, MagicMock(delivery_tag=7), MagicMock(headers={}), body)

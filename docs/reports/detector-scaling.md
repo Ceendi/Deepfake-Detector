@@ -53,9 +53,12 @@ A1–A3 ran on main before this change. M1–M5 ran with it, where the library d
 
 `AUDIO_ONNX_INTRA_THREADS` defaults to 6 in `docker-compose.yml`, the fastest single-detector
 value here. `VIDEO_ONNX_INTRA_THREADS` keeps the existing default of 4 and is now configurable
-too. For video it bounds only the backbone and temporal ONNX sessions; InsightFace face detection
-and torch (Grad-CAM) still use their library defaults. Set both to at most the CPUs a detector
-container really gets. On a shared host, divide
+too. For video the same budget now bounds the backbone and temporal ONNX sessions, every
+InsightFace detection session (explicit CPU provider and session options), and torch (Grad-CAM).
+Video requires a positive integer; audio permits 0 for library defaults outside Compose.
+These additional video bounds have regression coverage, but no new throughput measurement was
+performed; the table above still describes the original audio experiment.
+Set both to at most the CPUs a detector container really gets. On a shared host, divide
 the cores between detector containers. In a container that only sees a CPU quota, such as an
 ECS task, the libraries may still count every host core.
 

@@ -53,3 +53,28 @@ external version and artifact hash in the detector locks unchanged.
 `detector_runtime.metrics.inference_duration_buckets()` supplies both detectors'
 duration histograms. It reuses the worker's validated task limit without changing
 that deadline; see [the metrics contract](../docs/contracts/metrics.md).
+
+## Startup validation
+
+Both adapters validate settings before the optional ML import/load guard. Invalid values log
+only the setting name and reason, then exit with status 1; configuration errors cannot turn
+all tasks into `MODEL_UNAVAILABLE`. Missing/corrupt checkpoints and broken ML imports retain
+that domain result and unhealthy readiness. Broker and storage credentials must be supplied
+before model loading; no connection attempt or reconnect loop hides missing credentials.
+
+- `MEDIA_MAX_DURATION_SECONDS`: finite and positive (default 1800).
+- Video `ONNX_INTRA_THREADS`: positive integer (default 4); applies to backbone, temporal,
+  InsightFace CPU sessions and torch. Audio accepts nonnegative integers (default 0 for library
+  defaults; Compose still supplies 6).
+- Video `MEDIA_MAX_PIXELS`, `DET_SIZE`: positive integers (defaults 8294400, 640).
+- Video `MIN_FACES`, `GRADCAM_TOPK`: integers 1–16 (defaults 4, 3).
+- `DECISION_THRESHOLD` (video), `MEL_EER_THRESHOLD` and `W2V2_EER_THRESHOLD` (audio): finite,
+  strictly between 0 and 1; existing defaults remain 0.5, 0.3049 and 0.3000.
+- Video `FRAME_STRATEGY`: `uniform` (default) or `middle2s`.
+- Video `HEALTH_MAX_SILENCE_SECONDS`: positive integer (default 120).
+- `RABBITMQ_PORT`, `REDIS_PORT`: integers 1–65535 (defaults 5672, 6379).
+
+Runtime image code, dependencies and bundled models belong to root and are read-only to the
+`app` user. Temporary attempts and generated heatmaps remain under `/tmp`; model downloads
+must happen at build time. The image verification script attempts effective write-access
+checks as `app`, including the InsightFace pack.
