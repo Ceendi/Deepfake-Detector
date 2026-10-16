@@ -830,7 +830,9 @@ multipart requests (they can reach `permitAll` routes such as actuator health) t
 replica slot, never a user slot. The filter covers every multipart request,
 including unknown routes, other methods and mixed-case content types: MVC parses
 multipart before selecting a handler. The slot is released after successful or failed
-request processing. Upload spool uses a dedicated directory; transferTo(File) moves
+request processing. A rejected body is still drained (Tomcat `max-swallow-size` 500MB, equal to
+the multipart limit): with Tomcat's 2 MB default the connection was reset mid-body and the gateway
+answered 500 instead of the 429/503 (about 3 % of rejections in the 2026-10-16 soak test). Upload spool uses a dedicated directory; transferTo(File) moves
 Tomcat's disk part for validation and S3, and the file is removed in finally. ffprobe
 allows only the file protocol and checks each stream's pixel product against 4K.
 
