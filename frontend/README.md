@@ -42,10 +42,10 @@ bieżącej karty, a `redirect_uri` wysyłany do Keycloaka nie zawiera `#`. Po ud
 powiadomienie o zmianie. Przy zablokowanym storage logowanie działa, ale kotwica może
 zostać pominięta. Zewnętrzne adresy powrotu są odrzucane.
 
-Przed uruchomieniem profilu `auth` zbuduj motyw przez `npm run build-keycloak-theme`
-(wymagane Node.js, Java 17+ i Maven). Plik `dist_keycloak/keycloak-theme.jar` jest lokalnym
-produktem budowania i nie trafia do Git; przebiegi E2E i testy Keycloaka w CI budują
-motyw ze źródeł. Po zmianie motywu zbuduj go ponownie.
+Motyw logowania buduje się przy budowaniu obrazu Keycloak (`infra/keycloak/Dockerfile`,
+kontekst `frontend/`), więc JAR nie trafia do Git, a na hoście nie są potrzebne Java ani Maven.
+Po zmianie motywu: `docker compose --profile auth up -d --build keycloak`. Lokalnie
+`npm run build-keycloak-theme` nadal działa (wymaga Javy 17+ i Mavena).
 
 ## Wylogowanie
 

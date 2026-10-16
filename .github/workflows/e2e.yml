@@ -55,9 +55,6 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci && cp .env.example .env
         working-directory: frontend
-      - name: Build Keycloak theme from source
-        run: npm run build-keycloak-theme
-        working-directory: frontend
       - name: Start core and auth
         run: $COMPOSE up -d --build --wait --wait-timeout 600
       - run: npx playwright install --with-deps chromium

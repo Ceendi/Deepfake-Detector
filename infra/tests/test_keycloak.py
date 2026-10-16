@@ -84,6 +84,7 @@ class KeycloakSecurityTest(unittest.TestCase):
         services = {name: config['services'][name] for name in ('keycloak', 'keycloak-db', 'keycloak-config-cli')}
         # Optional vulnerable-version control; CI always tests the Compose image.
         if os.environ.get('KEYCLOAK_TEST_IMAGE'):
+            services['keycloak'].pop('build')
             services['keycloak']['image'] = os.environ['KEYCLOAK_TEST_IMAGE']
         with socket.socket() as reservation:
             reservation.bind(('127.0.0.1', 0))

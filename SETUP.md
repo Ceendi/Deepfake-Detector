@@ -69,17 +69,10 @@ Application broker passwords are reconciled on every `rabbitmq-init` run; update
 `.env` and recreate all affected clients (including the `ml` profile when used).
 See [broker users](docs/reliability.md#broker-users-and-internal-storage-apis).
 
-Build the login theme before starting the `auth` profile (Node.js, Java 17+ and Maven are required):
-
-```bash
-cd frontend
-npm ci
-npm run build-keycloak-theme
-cd ..
-```
-
-The generated `frontend/dist_keycloak/keycloak-theme.jar` stays local and is ignored by Git.
-Rebuild it after changing theme sources. CI builds it before its auth/E2E stack starts.
+The `auth` profile builds the Keycloak image with the login theme from `frontend/` sources
+(`infra/keycloak/Dockerfile`), so no JAR is committed and the host needs no Java or Maven.
+The first build takes a few minutes. After changing the theme, rebuild it with
+`docker compose --profile auth up -d --build keycloak`.
 
 Keycloak realm policy is synchronized separately by `keycloak-config-cli`.
 

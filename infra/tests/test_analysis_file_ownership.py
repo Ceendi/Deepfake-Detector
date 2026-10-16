@@ -18,7 +18,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request
 
-from test_discovery import ROOT, HTTP, command, resolved_compose, available_test_ports
+from test_discovery import ROOT, HTTP, command, resolved_compose, available_test_ports, keycloak_base_image
 
 
 class AnalysisFileOwnershipTest(unittest.TestCase):
@@ -96,6 +96,9 @@ class AnalysisFileOwnershipTest(unittest.TestCase):
                                      'clients': clients, 'users': accounts}))
         services['keycloak']['volumes'] = [{'type': 'bind', 'source': str(realm),
                                            'target': '/opt/keycloak/data/import/realm.json', 'read_only': True}]
+        # No theme is needed here; use the base image instead of building it from frontend sources.
+        services['keycloak'].pop('build')
+        services['keycloak']['image'] = keycloak_base_image()
         services['keycloak']['command'] = ['start-dev', '--import-realm']
         services['keycloak']['environment']['KC_HOSTNAME'] = 'http://keycloak:8080'
         self.compose_file.write_text(json.dumps({

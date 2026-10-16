@@ -90,6 +90,7 @@ updates:
   - package-ecosystem: docker
     directories:
       - /infra/postgres
+      - /infra/keycloak
       - /infra/keycloak-config-cli
       - /infra/alloy
     schedule:

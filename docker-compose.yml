@@ -400,7 +400,10 @@ services:
     networks: [deepfake]
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.8.1
+    image: deepfake-keycloak:local
+    build:
+      context: ./frontend
+      dockerfile: ../infra/keycloak/Dockerfile
     profiles: ["auth"]
     restart: unless-stopped
     stop_grace_period: 30s # let in-flight HTTP / DB connections drain
@@ -416,11 +419,6 @@ services:
     depends_on:
       keycloak-db:
         condition: service_healthy
-    volumes:
-      # Login theme budowany przez Keycloakify (React) z frontend/ → JAR jako provider.
-      # Build: `npm run build-keycloak-theme` w frontend/ (output: dist_keycloak/keycloak-theme.jar).
-      # start-dev wykrywa providery automatycznie; po przebudowie JAR-a wymagany restart KC.
-      - ./frontend/dist_keycloak/keycloak-theme.jar:/opt/keycloak/providers/keycloak-theme.jar:ro
     # DEV-ONLY: start-dev disables HTTPS and skips the provider build cache.
     # Realm import owned by keycloak-config-cli (idempotent) — see ADR-0001.
     command: ["start-dev"]
