@@ -57,6 +57,7 @@ class UploadLifecycleIntegrationTest {
     @Autowired FileStorageService storage;
     @Autowired FileMetadataService metadata;
     @Autowired JdbcTemplate jdbc;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactions;
     @MockitoBean S3Client s3;
     @TempDir Path tmp;
     Path media;
@@ -71,6 +72,28 @@ class UploadLifecycleIntegrationTest {
         UUID id = UUID.randomUUID();
         return FileMetadata.builder().fileId(id).userId(owner).objectKey(id + ".mp4")
                 .originalName("clip.mp4").sizeBytes(size).mimetype("video/mp4").build();
+    }
+
+    @Test void lostCommitResponseMustNotDeleteTheCommittedObject() {
+        var uncertain = new org.springframework.transaction.PlatformTransactionManager() {
+            public org.springframework.transaction.TransactionStatus getTransaction(
+                    org.springframework.transaction.TransactionDefinition definition) {
+                return transactions.getTransaction(definition);
+            }
+            public void commit(org.springframework.transaction.TransactionStatus status) {
+                transactions.commit(status);
+                throw new org.springframework.transaction.TransactionSystemException("commit response lost");
+            }
+            public void rollback(org.springframework.transaction.TransactionStatus status) {
+                transactions.rollback(status);
+            }
+        };
+        var service = new FileStorageService(jdbc, repository, s3, uncertain, "deepfake-uploads", 10);
+        var upload = file("alice", 10);
+        assertThatThrownBy(() -> service.store(upload, media))
+                .isInstanceOf(org.springframework.transaction.TransactionSystemException.class);
+        assertThat(repository.findById(upload.getFileId())).isPresent();
+        verify(s3, never()).deleteObject(any(DeleteObjectRequest.class));
     }
 
     @Test void quotaIncludesOnlyOwnedRowsAndAcceptsExactBoundary() {

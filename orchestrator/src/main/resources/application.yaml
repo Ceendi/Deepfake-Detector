@@ -130,6 +130,9 @@ reliability:
     max-age-seconds: ${RELIABILITY_STUCK_JOB_MAX_AGE_SECONDS:7200}
     scan-interval-ms: ${RELIABILITY_STUCK_JOB_SCAN_INTERVAL_MS:300000}
     initial-delay: ${RELIABILITY_STUCK_JOB_INITIAL_DELAY:${reliability.stuck-job.threshold-seconds}s}
+security:
+  jwt:
+    allowed-clients: ${JWT_ALLOWED_CLIENTS:deepfake-web,deepfake-loadtest}
 management:
   metrics:
     distribution:
@@ -145,7 +148,8 @@ management:
         include: health,info,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
+      show-components: when_authorized
       probes:
         enabled: true
       group:

@@ -36,6 +36,10 @@ docker compose --profile core --profile auth up -d --build
 ```
 
 Wait for warmup, then **verify** before measuring:
+- `docker compose exec gateway wget -qO- http://localhost:9090/actuator/health/readiness`
+  → `UP`. This waits for the synchronous Redis limiter warm-up; Compose deliberately
+  checks liveness, which may already be `UP` during warm-up. E2E and other traffic
+  generators should use the same readiness gate before sending uploads.
 - `docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps`
   → exactly **1** `FILE-SERVICE` instance (Eureka has no published host port).
 - One manual upload returns **200** (not 422/401/429) — e.g. via the runner with `-Threads 1 -Duration 5`.
@@ -75,6 +79,38 @@ Open `report-r1/index.html` and `report-r2/index.html` (throughput + response-ti
 `kcPort`[8180] `sampleFile`[sample-5mb.mp4] `loadtestSecret`(required).
 
 ## Notes / validity
+
+### PID budget at 50 concurrent uploads
+
+Checked on 2026-10-16 on Docker Desktop/Windows in a fresh isolated core/auth project:
+one file-service replica, 1 vCPU/1 GiB, `pids_limit: 300` and
+`deploy.resources.limits.pids: 300`, `UPLOAD_MAX_CONCURRENT=50`,
+`UPLOAD_MAX_CONCURRENT_PER_USER=50`, 500 GiB quota and the raised gateway rate limit
+from the instructions above. JMeter used 50 threads, 60 seconds, 5-second ramp-up and
+the generated 5,224,380-byte MP4. Realm import, a real load-test token, gateway
+readiness and file-service registration were checked before the run.
+
+| Series | Uploads returning 200 | Upload errors | Increase in cgroup `pids.events` / `max` |
+|---|---:|---:|---:|
+| Warm-up | 289 | 0 | 0 |
+| Measured | 392 | 0 | 0 |
+
+The 300-PID budget covered Tomcat threads and ffprobe children under these conditions;
+the default and benchmark budgets remain unchanged. The conclusion uses the cgroup's
+PID-denial counter and JMeter HTTP results, without claiming a sampled peak or a
+universal safety margin. Repeat the check on the measurement host, for each replica:
+
+```bash
+docker compose exec -T file-service sh -c 'cat /sys/fs/cgroup/pids.max; cat /sys/fs/cgroup/pids.events'
+```
+
+Record `max` before and after the run. An increase means the cgroup denied task
+creation; inspect the file-service logs for process/thread startup failures.
+Any required increase belongs only in a benchmark Compose override, with both
+`pids_limit` and `deploy.resources.limits.pids` set consistently. Keep the production
+defaults. The isolated measurement project and its volumes were removed after the run.
+
+### Measurement conditions
 
 - Keep **identical** conditions across both runs (same sample, same `-J` params, fresh `up`, same warmup) — the only variable is `FILE_SERVICE_REPLICAS`.
 - **Windows:** exclude `%LOCALAPPDATA%\Docker\wsl` and the `vmmem`/`vmmemWSL` processes from Defender real-time

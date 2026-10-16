@@ -45,6 +45,24 @@ class FileValidatorTest {
         return new FileValidator(mediaProbe);
     }
 
+    @Test void mediaErrorsHaveStableCodesAndKeepLegacyText() throws IOException {
+        Path file = write("codes.mp4", MP4_MAGIC);
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", 1801.0)));
+        assertThatThrownBy(() -> validator().validate(file))
+                .hasMessageStartingWith("[MEDIA_TOO_LONG] media duration exceeds");
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("webm", 1.0)));
+        assertThatThrownBy(() -> validator().validate(file))
+                .hasMessageStartingWith("[UNSUPPORTED_MEDIA] unsupported container format");
+        when(mediaProbe.probe(any())).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> validator().validate(file))
+                .hasMessageStartingWith("[UNSUPPORTED_MEDIA] not a valid media container");
+        when(mediaProbe.probe(any())).thenReturn(Optional.of(new ProbeResult("mp4", Double.NaN)));
+        assertThatThrownBy(() -> validator().validate(file))
+                .hasMessageStartingWith("[INVALID_MEDIA_DURATION] invalid media duration");
+        assertThatThrownBy(() -> validator().validate(write("text", new byte[] {1, 2, 3})))
+                .hasMessageStartingWith("[UNSUPPORTED_MEDIA] unsupported media type");
+    }
+
     @Test
     void rejectsResolutionAbove4kAndAcceptsBothOrientationsAtBoundary() throws IOException {
         Path file = write("resolution.mp4", MP4_MAGIC);

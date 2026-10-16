@@ -50,6 +50,7 @@ x-pg-hardening: &pg-hardening
 x-jwt-env: &jwt-env
   JWT_ISSUER_URI: http://localhost:${KEYCLOAK_PORT:-8180}/realms/deepfake
   JWK_SET_URI: http://keycloak:8080/realms/deepfake/protocol/openid-connect/certs
+  JWT_ALLOWED_CLIENTS: ${JWT_ALLOWED_CLIENTS:-deepfake-web,deepfake-loadtest}
 
 # Tracing shared by every Java service. The tracer is always on (traceId/spanId in
 # logs = D2); only OTLP *export* is gated, so it stays off unless the monitoring

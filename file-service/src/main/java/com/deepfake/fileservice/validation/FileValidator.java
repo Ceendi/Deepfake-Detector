@@ -61,22 +61,22 @@ public class FileValidator {
     public Result validate(Path file) throws IOException {
         String mime = detectMime(file);
         if (!MIME_WHITELIST.contains(mime)) {
-            throw new InvalidFileException("unsupported media type: " + mime);
+            throw new InvalidFileException("[UNSUPPORTED_MEDIA] unsupported media type: " + mime);
         }
         MediaProbe.ProbeResult probe = mediaProbe.probe(file)
-                .orElseThrow(() -> new InvalidFileException("not a valid media container"));
+                .orElseThrow(() -> new InvalidFileException("[UNSUPPORTED_MEDIA] not a valid media container"));
         if (!formatAllowed(probe.formatName())) {
-            throw new InvalidFileException("unsupported container format: " + probe.formatName());
+            throw new InvalidFileException("[UNSUPPORTED_MEDIA] unsupported container format: " + probe.formatName());
         }
         Double duration = probe.durationSeconds();
         if (probe.maxPixels() > maxPixels) {
             throw new InvalidFileException("[MEDIA_RESOLUTION_TOO_HIGH] Rozdzielczość nagrania jest za wysoka (maks. 4K).");
         }
         if (duration != null && (!Double.isFinite(duration) || duration < 0)) {
-            throw new InvalidFileException("invalid media duration");
+            throw new InvalidFileException("[INVALID_MEDIA_DURATION] invalid media duration");
         }
         if (duration != null && duration > maxDurationSeconds) {
-            throw new InvalidFileException("media duration exceeds " + maxDurationSeconds + " seconds");
+            throw new InvalidFileException("[MEDIA_TOO_LONG] media duration exceeds " + maxDurationSeconds + " seconds");
         }
         return new Result(mime, probe.durationSeconds());
     }

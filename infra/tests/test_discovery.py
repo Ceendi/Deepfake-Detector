@@ -147,6 +147,7 @@ class DiscoveryIntegrationTest(unittest.TestCase):
                 service['environment'].update({
                     'JWT_ISSUER_URI': issuer,
                     'JWK_SET_URI': issuer + '/protocol/openid-connect/certs',
+                    'JWT_ALLOWED_CLIENTS': 'discovery-probe',
                     'OTEL_TRACING_EXPORT_ENABLED': 'false',
                 })
         services['file-service']['deploy']['replicas'] = 1
