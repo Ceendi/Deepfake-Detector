@@ -1,6 +1,10 @@
 server:
   port:
     8081
+  tomcat:
+    # Upload limits reject before the body is read. Tomcat drains only 2 MB by default and then
+    # resets the connection, so the gateway (still sending) reports 500 instead of the 429/503.
+    max-swallow-size: 500MB
 spring:
   application:
     name: file-service
