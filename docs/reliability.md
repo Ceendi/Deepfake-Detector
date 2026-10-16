@@ -562,6 +562,63 @@ verifies no in-process retry for deterministic exceptions while keeping retry me
 Also: `ResultPayloadValidationTest`, `AmqpFailurePolicyTest`, `DeadLetterListenerIntegrationTest`,
 `AmqpRecoveryControlTest`.
 
+### Operator runbook: DLQ and quarantine
+
+Use the RabbitMQ administrator through the loopback management UI
+(`http://localhost:15672`, or `RABBITMQ_UI_PORT`) for inspection. Application users
+have deliberately restricted permissions. Never grant detectors access to backend
+DLQs, change queue arguments, remove retry/dead-letter policies or manipulate analysis
+rows to make a replay succeed.
+
+1. Identify the exact Compose project and queue. Inspect queue counts/consumers with
+   `docker compose -p <project> exec -T rabbitmq rabbitmqctl -q list_queues name messages_ready messages_unacknowledged consumers`.
+   `analysis.backend.quarantine` has no consumer; the three terminal `*.dlq` queues
+   are normally drained by the orchestrator. If a stable inspection is needed, stop
+   that project's orchestrator during a maintenance window; new analyses will be
+   unavailable until it starts again. Do not stop or purge another project's queues.
+2. In Queues → the exact queue → Get messages, inspect a small batch with **Ack mode:
+   Nack message requeue true** (`ack_requeue_true` in the HTTP API). This puts inspected
+   copies back; message order may change. Do not use auto-ack or a non-requeue mode for
+   inspection. Store the original payload bytes (base64 for binary bodies), properties,
+   headers and queue name in a restricted incident archive before any destructive action.
+   Inspect `analysis_id`, `source`, `correlation_id`, `x-death`, `x-original-routingKey`
+   (also legacy `x-original-routing-key`) and `x-exception-*`. Treat bodies and error
+   details as sensitive; never paste them into public issues or logs.
+3. Check the analysis through its owner's API or a read-only database query. Terminal
+   states cannot be revived: a late result cannot replace FAILED/CANCELLED, and the
+   first accepted result per source wins. Database outages belong in the existing
+   requeue/pause path, never in a manual DLQ loop. Fix the root cause (credentials,
+   declaration mismatch, invalid payload or application bug) before considering replay.
+4. Prefer starting a **new analysis through the normal API**, with the owner's consent,
+   after fixing the cause. This uses admission limits and the transactional outbox.
+   Do not publish task messages by hand, remove cancel flags or reset database statuses.
+   A malformed/unidentifiable body or legacy advisory progress is evidence to archive
+   and discard, not a result to manufacture.
+5. For a valid retained **result** of an analysis that is still active and whose source
+   is expected and unaccepted, an operator may replay the unchanged body/properties to
+   `analysis.exchange` with routing key `analysis.results`. For a retained **terminal
+   dead letter** whose intent is to fail that source, use `analysis.dlx` with its
+   original `analysis.video.dlq`, `analysis.audio.dlq` or `analysis.results.dlq` key.
+   Determine the original queue from archived metadata and headers; quarantine alone
+   is not enough. Never republish to quarantine hoping it will drain, and never replay
+   advisory progress into a terminal queue.
+6. Replay needs an AMQP maintenance client with manual ACK, persistent delivery,
+   `mandatory=true` and publisher confirms/return handling: retain the original
+   unacknowledged delivery, publish one copy, wait for ACK with **no return**, then ACK
+   the original. On a return, NACK, timeout or disconnect, keep/requeue the original.
+   The UI's publish success alone does not provide this consume→confirm→ACK handoff.
+   No such replay tool ships here; if it is unavailable, retain the message and use a
+   new analysis instead. A crash between confirm and ACK may duplicate a delivery;
+   existing database idempotency and terminal CAS absorb it.
+7. Delete only after an archived copy and the recorded operator decision exist. A
+   selected message can be manually ACKed without replay after validation. Queue-wide
+   **Purge** removes every ready message and is appropriate only when every entry has
+   been reviewed and no publisher/consumer can race; it does not remove in-flight
+   deliveries. Never delete the queue/exchange. Restart the orchestrator, verify its
+   readiness and inspect DLQ/quarantine depth and analysis state before closing the
+   incident. Keep unresolved messages parked rather than discarding them to silence
+   `AnalysisDeadLetterBacklog`.
+
 ## Stuck-job recovery
 
 Code: `StuckJobRecoveryService`, `AnalysisRepository.failIfExpired`.

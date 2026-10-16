@@ -433,7 +433,7 @@ services:
       KC_DB_USERNAME: keycloak
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       # Locks the JWT iss claim to this URL regardless of caller's network.
-      # Backends inside docker reach it via host-gateway (extra_hosts).
+      # Backends validate this issuer but fetch keys from the internal JWK_SET_URI.
       KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8180}
       KC_HOSTNAME_STRICT: "false"
       KC_HEALTH_ENABLED: "true"

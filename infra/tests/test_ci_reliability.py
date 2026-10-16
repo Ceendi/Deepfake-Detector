@@ -7,6 +7,21 @@ from test_discovery import ROOT
 
 
 class CiReliabilityTest(unittest.TestCase):
+    def test_infrastructure_sources_and_benchmark_image_are_immutable(self):
+        dockerfile = (ROOT / 'infra/keycloak-config-cli/Dockerfile').read_text()
+        self.assertNotIn('api.github.com', dockerfile)
+        self.assertRegex(dockerfile, r'ADD --checksum=sha256:[0-9a-f]{64} '
+                                    r'https://codeload.github.com/adorsys/keycloak-config-cli/'
+                                    r'legacy.tar.gz/[0-9a-f]{40} ')
+    def test_benchmark_image_is_immutable(self):
+        benchmark = (ROOT / 'load-tests/bench/bench-http.ps1').read_text()
+        self.assertRegex(benchmark, r"'williamyeh/wrk@sha256:[0-9a-f]{64}'")
+
+    def test_live_harness_regressions_run_when_the_harness_changes(self):
+        workflow = (ROOT / '.github/workflows/infra-smoke.yml').read_text()
+        self.assertEqual(2, workflow.count('- tests/live/**'))
+        self.assertIn('python3 infra/tests/test_live_acceptance.py', workflow)
+
     def test_actions_are_pinned_and_main_runs_are_not_cancelled(self):
         for name in ('ci', 'infra-smoke', 'security-scan', 'e2e'):
             workflow = (ROOT / f'.github/workflows/{name}.yml').read_text()

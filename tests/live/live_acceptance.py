@@ -31,6 +31,7 @@ SAMPLE = Path(os.environ.get('LIVE_SAMPLE', ROOT / 'load-tests/jmeter/sample-5mb
 ANALYSIS_TIMEOUT = float(os.environ.get('LIVE_ANALYSIS_TIMEOUT', '900'))
 REPORT = os.environ.get('LIVE_REPORT')
 TERMINAL = {'COMPLETED', 'FAILED', 'CANCELLED'}
+INIT_SERVICES = {'rabbitmq-init', 'seaweedfs-init', 'seaweedfs-bucket-init', 'keycloak-config-cli'}
 RESULTS = []
 
 
@@ -224,21 +225,26 @@ class LiveAcceptance(unittest.TestCase):
             'video-detector crash': ('VIDEO', ['restart', '-t', '0', 'video-detector'], 0),
         }
         for name, (kind, command, delay) in faults.items():
-            with self.subTest(name):
-                path, mime = inputs[kind]
-                analysis_id = self.analyse(path, mime, kind)
-                if delay is not None:
-                    self.api.wait(analysis_id, until={'PROCESSING'} | TERMINAL, timeout=300)
-                    time.sleep(delay)
-                run(*COMPOSE, *command)
-                in_flight = self.api.get(analysis_id)['status'] not in TERMINAL
-                started = time.monotonic()
-                actual = outcome(self.api.wait(analysis_id))
-                record(f'fault: {name} ({kind})', baselines[kind], actual, time.monotonic() - started,
-                       note=None if in_flight else 'analysis finished before the fault landed')
-                self.assertTrue(in_flight, 'fault landed after the analysis had finished')
-                self.assertEqual(baselines[kind]['status'], actual['status'], actual)
-                self.assertEqual(baselines[kind]['verdict'], actual['verdict'], actual)
+            try:
+                with self.subTest(name):
+                    path, mime = inputs[kind]
+                    analysis_id = self.analyse(path, mime, kind)
+                    if delay is not None:
+                        self.api.wait(analysis_id, until={'PROCESSING'} | TERMINAL, timeout=300)
+                        time.sleep(delay)
+                    before = self.api.get(analysis_id)
+                    if before['status'] in TERMINAL:
+                        record(f'fault: {name} ({kind})', baselines[kind], outcome(before),
+                               note='analysis finished before the fault')
+                        self.fail('analysis finished before the fault')
+                    started = time.monotonic()
+                    run(*COMPOSE, *command)
+                    after = self.api.get(analysis_id)
+                    actual = outcome(after if after['status'] in TERMINAL else self.api.wait(analysis_id))
+                    record(f'fault: {name} ({kind})', baselines[kind], actual, time.monotonic() - started)
+                    self.assertEqual(baselines[kind]['status'], actual['status'], actual)
+                    self.assertEqual(baselines[kind]['verdict'], actual['verdict'], actual)
+            finally:
                 self.wait_healthy()
 
     def test_zz_no_new_dead_letters(self):
@@ -260,8 +266,13 @@ class LiveAcceptance(unittest.TestCase):
     def wait_healthy(self, timeout=300):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            rows = [json.loads(line) for line in run(*COMPOSE, 'ps', '--format', 'json').splitlines() if line.strip()]
-            if all(row.get('Health') in ('', 'healthy') for row in rows if row.get('State') == 'running'):
+            rows = [json.loads(line) for line in run(*COMPOSE, 'ps', '--all', '--format', 'json').splitlines() if line.strip()]
+            if rows and all(
+                (row.get('State') == 'running' and row.get('Health') in ('', 'healthy'))
+                or (row.get('Service') in INIT_SERVICES and row.get('State') == 'exited'
+                    and row.get('ExitCode') == 0)
+                for row in rows
+            ):
                 return
             time.sleep(5)
         self.fail('stack did not return to healthy')

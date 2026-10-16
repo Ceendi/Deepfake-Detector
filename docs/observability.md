@@ -76,12 +76,15 @@ and unavailable scrape targets. Inspect pending/firing rules at
 is configured. `ScrapeTargetDown` excludes `video-detector` and `audio-detector`,
 so disabling the optional `ml` profile with empty task queues does not trigger it.
 `DetectorUnavailable` fires after 2 minutes only when `analysis.video` or
-`analysis.audio` has ready messages and no healthy scrape target exists for the
-corresponding detector job. It derives the job from the queue name and matches
-healthy replicas by `job`, covering failed scrapes and completely absent DNS targets.
-One healthy replica suppresses this availability alert for its own job even if
-another replica is down. It clears when work drains or a replica becomes healthy.
-It measures scrape availability, not worker progress; stuck recovery remains independent.
+`analysis.audio` has ready messages and either no healthy scrape target exists for the
+corresponding detector job or `rabbitmq_queue_consumers` reports zero consumers for that queue.
+HTTP `/metrics` can remain healthy during an AMQP reconnect loop (bad credentials or
+`PRECONDITION_FAILED`). It derives the job from the queue name and matches replicas by `job`;
+an audio consumer cannot hide a video outage. One healthy replica suppresses scrape failure
+only for its own job; a measured zero consumer count still fires. It clears when work drains
+or both HTTP availability and consumer presence recover. If the consumer metric is absent,
+only the existing scrape check applies; absence is not interpreted as zero.
+Consumer presence does not prove worker progress; stuck recovery remains independent.
 If RabbitMQ queue metrics are unavailable, the detector alert cannot infer pending
 work; the broker's own `ScrapeTargetDown` reports that scrape failure instead.
 
@@ -96,7 +99,7 @@ next healthy evaluation. Recreate Prometheus after changing rules or scrape conf
 operator overrides and dashboard queries, then uses the Compose Prometheus image's
 `promtool check config` and `promtool test rules`. Fixtures prove alert activation,
 the 2-minute hold, resolution, counter resets, short-outage suppression, missing
-detector DNS targets, empty queues and partial replica outages.
+detector DNS targets, empty queues, partial replica outages and healthy HTTP without consumers.
 
 ## Traces
 

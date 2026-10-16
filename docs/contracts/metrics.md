@@ -93,11 +93,14 @@ The minimal rules in `infra/prometheus/alerts.yml` use existing metrics:
 5 minutes; `AnalysisDeadLetterBacklog` detects a nonempty DLQ/quarantine for 2 minutes;
 `ScrapeTargetDown` detects `up == 0` for 2 minutes, excluding the optional detector
 jobs. `DetectorUnavailable` detects ready messages in `analysis.video` or
-`analysis.audio` for 2 minutes without any `up == 1` target in the corresponding
-`video-detector` or `audio-detector` job, including absent DNS targets. Its labels
-are `job`, `queue` and `severity`; it uses the existing per-queue
-`rabbitmq_queue_messages_ready{job="rabbitmq"}` metric. A healthy replica or an empty
-queue resolves the alert. Missing broker metrics cannot establish pending work.
+`analysis.audio` for 2 minutes when either no `up == 1` target exists in the corresponding
+`video-detector` or `audio-detector` job (including absent DNS targets), or the queue's
+`rabbitmq_queue_consumers{job="rabbitmq"}` count is zero despite healthy HTTP. Its labels
+are `job`, `queue` and `severity`; ready work comes from the existing per-queue
+`rabbitmq_queue_messages_ready{job="rabbitmq"}` metric. An empty queue, or a healthy
+replica together with a consumer, resolves the alert. Absent consumer metrics preserve
+the scrape-only check; missing queue metrics cannot establish pending work.
+The broker already exports per-object metrics (`prometheus.return_per_object_metrics = true`).
 Detector targets use DNS A discovery on port 8000 (refresh 30 s), with one IP-based
 `instance` per replica; dashboards aggregate instances before p95/outcome display.
 Metric names and application labels remain unchanged. Alert rules do not change
