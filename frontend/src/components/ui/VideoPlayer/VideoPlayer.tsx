@@ -21,8 +21,6 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-// Własny odtwarzacz wideo (CSS Modules + tokeny) — bez natywnego <video controls>. Kontrolki na
-// overlayu (play/pauza, czas, przewijanie, wyciszenie, pełny ekran), chowane podczas odtwarzania.
 export function VideoPlayer({ src, className, onDuration, onError }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -33,7 +31,6 @@ export function VideoPlayer({ src, className, onDuration, onError }: VideoPlayer
   const [hovered, setHovered] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
 
-  // Nowy src → reset UI podczas renderu (wzorzec „adjust state on prop change", bez efektu).
   const [prevSrc, setPrevSrc] = useState(src)
   if (src !== prevSrc) {
     setPrevSrc(src)
@@ -42,7 +39,6 @@ export function VideoPlayer({ src, className, onDuration, onError }: VideoPlayer
     setDuration(0)
   }
 
-  // Synchronizacja ikony pełnego ekranu ze stanem przeglądarki (Esc, natywne przyciski).
   useEffect(() => {
     const onFsChange = () => setFullscreen(document.fullscreenElement === containerRef.current)
     document.addEventListener('fullscreenchange', onFsChange)

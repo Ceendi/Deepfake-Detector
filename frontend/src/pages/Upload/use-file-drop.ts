@@ -1,16 +1,8 @@
 import { useRef, useState } from 'react'
 
-/**
- * Enkapsuluje UX przeciągania pliku na strefę drop.
- *
- * dragenter/dragleave odpalają się też dla dzieci kontenera, więc gołe set(true/false)
- * miga. Trzymamy licznik wejść/wyjść w ref (zmiana licznika nie ma re-renderować) —
- * re-render robi dopiero pochodny boolean `isDragging`.
- *
- * Zwraca `dropHandlers` do rozłożenia na element strefy oraz `isDragging` do stylowania.
- */
 export function useFileDrop(onFiles: (files: FileList | null) => void) {
   const [isDragging, setIsDragging] = useState(false)
+  // Child elements also emit enter/leave, so track depth to avoid flickering.
   const depth = useRef(0)
 
   const dropHandlers = {
@@ -20,7 +12,6 @@ export function useFileDrop(onFiles: (files: FileList | null) => void) {
       if (depth.current === 1) setIsDragging(true)
     },
     onDragOver(e: React.DragEvent) {
-      // KLUCZOWE: bez preventDefault przeglądarka otworzy plik jako nawigację i drop nie odpali.
       e.preventDefault()
       e.dataTransfer.dropEffect = 'copy'
     },

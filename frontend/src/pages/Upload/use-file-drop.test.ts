@@ -4,7 +4,6 @@ import type { DragEvent } from 'react'
 
 import { useFileDrop } from './use-file-drop'
 
-// Minimalny fejk React.DragEvent — tylko to, czego dotyka hook (preventDefault + dataTransfer).
 function dragEvent(files: File[] = []): DragEvent {
   return {
     preventDefault: vi.fn(),
@@ -24,12 +23,11 @@ describe('useFileDrop', () => {
     expect(result.current.isDragging).toBe(true)
   })
 
-  // Sedno hooka: dragenter/leave odpalają się też dla dzieci → licznik głębokości nie miga.
   it('zagnieżdżony enter/leave nie miga (zostaje true dopóki głębokość > 0)', () => {
     const { result } = renderHook(() => useFileDrop(vi.fn()))
     act(() => result.current.dropHandlers.onDragEnter(dragEvent())) // depth 1
-    act(() => result.current.dropHandlers.onDragEnter(dragEvent())) // depth 2 (wejście w dziecko)
-    act(() => result.current.dropHandlers.onDragLeave(dragEvent())) // depth 1 (wyjście z dziecka)
+    act(() => result.current.dropHandlers.onDragEnter(dragEvent()))
+    act(() => result.current.dropHandlers.onDragLeave(dragEvent()))
     expect(result.current.isDragging).toBe(true)
   })
 
@@ -53,11 +51,11 @@ describe('useFileDrop', () => {
     const { result } = renderHook(() => useFileDrop(onFiles))
     const file = new File(['x'], 'clip.mp4', { type: 'video/mp4' })
 
-    act(() => result.current.dropHandlers.onDragEnter(dragEvent([file]))) // najpierw przeciąganie
+    act(() => result.current.dropHandlers.onDragEnter(dragEvent([file])))
     act(() => result.current.dropHandlers.onDrop(dragEvent([file])))
 
     expect(onFiles).toHaveBeenCalledOnce()
-    expect(onFiles.mock.calls[0][0]).toHaveLength(1) // FileList z jednym plikiem
+    expect(onFiles.mock.calls[0][0]).toHaveLength(1)
     expect(result.current.isDragging).toBe(false)
   })
 })

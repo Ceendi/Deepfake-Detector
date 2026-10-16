@@ -8,7 +8,8 @@ and an asynchronous RabbitMQ pipeline.
 
 ## Getting started
 
-You need Docker Engine 24+ with Compose v2, Node.js 22 LTS (or 20.19+) and npm. Allow about 8 GB
+You need Docker Engine 24+ with Compose v2, Node.js 22 LTS (or 20.19+), npm, Java 17+ and Maven
+(to build the Keycloak login theme). Allow about 8 GB
 of RAM for the backend and authentication, or 14–16 GB with both ML detectors.
 On Windows, WSL2 defaults to 50% of host RAM. On a 16 GB laptop, set
 `memory=14GB` in `%UserProfile%\.wslconfig`, run `wsl --shutdown`, and use
@@ -19,10 +20,12 @@ On Windows, WSL2 defaults to 50% of host RAM. On a 16 GB laptop, set
 **First time here?** Follow [SETUP.md](SETUP.md) for the complete walkthrough,
 including model downloads, configuration and troubleshooting.
 
-Start the backend:
+Build the login theme, then start the backend:
 
 ```bash
 cp .env.example .env
+cp frontend/.env.example frontend/.env
+(cd frontend && npm ci && npm run build-keycloak-theme)
 docker compose --profile core --profile auth up -d
 ```
 
@@ -30,8 +33,6 @@ Start the frontend in another terminal:
 
 ```bash
 cd frontend
-cp .env.example .env
-npm install
 npm run dev
 ```
 

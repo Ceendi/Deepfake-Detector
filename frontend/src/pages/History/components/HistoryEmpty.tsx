@@ -3,7 +3,6 @@ import { FolderPlus, UploadCloud } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 
-// Stan pusty: użytkownik nie ma jeszcze ŻADNEJ analizy — onboarding zamiast listy.
 export function HistoryEmpty() {
   return (
     <EmptyState

@@ -38,7 +38,7 @@ describe('analysis failure explanation', () => {
     expect(screen.getByText('Analiza nie powiodła się')).toBeInTheDocument()
     expect(screen.getAllByText(/Wgraj nagranie z wyraźnie słyszalną mową/)[0]).toBeInTheDocument()
     expect(screen.getByText(`Kod błędu: ${failure.error.code}`)).toBeInTheDocument()
-    // Surowa treść z detektora nie trafia do UI — tylko kod.
+
     expect(screen.queryByText(new RegExp(`\\[${failure.error.code}\\]`))).not.toBeInTheDocument()
     expect(screen.queryByText(/Plik może być uszkodzony/)).not.toBeInTheDocument()
     expect(screen.queryByText('REAL')).not.toBeInTheDocument()

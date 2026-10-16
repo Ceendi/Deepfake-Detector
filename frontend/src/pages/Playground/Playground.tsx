@@ -17,7 +17,6 @@ import styles from './Playground.module.css'
 
 type Theme = 'light' | 'system' | 'dark'
 
-// Atrapy obrazów do podglądu Card bez backendu (klatka = szary kadr, heatmap = plamy ciepła).
 const svgUri = (markup: string) => `data:image/svg+xml,${encodeURIComponent(markup)}`
 const FRAME_SRC = svgUri(
   "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 160 90'><rect width='160' height='90' fill='#dfe4ea'/><circle cx='80' cy='38' r='22' fill='#aeb9c5'/><rect x='54' y='58' width='52' height='36' rx='10' fill='#bcc5d0'/></svg>",
@@ -38,14 +37,12 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export default function Playground() {
   const [theme, setTheme] = useState<Theme>('system')
 
-  // tokens.css reaguje na [data-theme] na <html>. 'system' = brak atrybutu (decyduje OS).
   useEffect(() => {
     const root = document.documentElement
     if (theme === 'system') root.removeAttribute('data-theme')
     else root.setAttribute('data-theme', theme)
   }, [theme])
 
-  // Alert jest kontrolowany: X woła onClose, a rodzic (tu) decyduje o ukryciu.
   const [openAlerts, setOpenAlerts] = useState({
     success: true,
     danger: true,
@@ -87,7 +84,6 @@ export default function Playground() {
       </header>
 
       <main className={styles.grid}>
-        {/* ── PRZYKŁADY: tak wpinasz komponent ─────────────────────────── */}
         <Section title="Badge">
           <Badge variant="success" soft={false}>
             REAL
@@ -166,7 +162,6 @@ export default function Playground() {
         </Section>
 
         <Section title="LinkButton">
-          {/* Wszystkie nawigują do /upload — to <a>, nie <button> (Ctrl+klik, nowa karta, kopiuj link). */}
           <LinkButton to="/upload" variant="primary" size="sm">
             Primary small
           </LinkButton>
@@ -206,7 +201,6 @@ export default function Playground() {
             Przywróć alerty
           </Button>
 
-          {/* Z przyciskiem zamykania (onClose → ukrycie przez stan rodzica) */}
           {openAlerts.success && (
             <Alert
               variant="success"
@@ -236,12 +230,10 @@ export default function Playground() {
             </Alert>
           )}
 
-          {/* Bez onClose — przycisk X się nie renderuje (alert nieusuwalny) */}
           <Alert variant="info" title="Bez zamykania">
             Brak propsa onClose, więc nie ma przycisku X.
           </Alert>
 
-          {/* Własna ikona zamiast domyślnej z wariantu */}
           <Alert variant="info" title="Własna ikona" icon={Upload}>
             Ikonę nadpisano propsem <code>icon</code>.
           </Alert>
@@ -254,8 +246,6 @@ export default function Playground() {
         </Section>
 
         <Section title="FormField">
-          {/* id, aria-invalid i aria-describedby wstrzykuje FormField przez kontekst —
-              Input nie dostaje ich jawnie. */}
           <FormField label="Adres URL nagrania">
             <Input placeholder="https://…" />
           </FormField>
@@ -278,8 +268,6 @@ export default function Playground() {
         </Section>
 
         <Section title="ProgressBar">
-          {/* Pasek ma width:100%, więc w canvasie (flex-wrap) każdy bierze cały wiersz.
-              Realną szerokość kontrolujesz kontenerem (patrz ostatni przykład). */}
           <ProgressBar label="Pewność: REAL" value={72} showValue tone="accent" />
           <ProgressBar label="Pewność: FAKE" value={94} showValue tone="danger" />
           <ProgressBar label="Upload pliku" value={40} showValue />
@@ -288,14 +276,12 @@ export default function Playground() {
           <ProgressBar label="Clamp: value=150 → 100%" value={150} showValue />
           <ProgressBar label="Analiza w toku… (indeterminate)" />
 
-          {/* Szerokość kontroluje rodzic: tu sztuczne 200px */}
           <div style={{ width: 250 }}>
             <ProgressBar label="W kontenerze 200px" value={50} showValue />
           </div>
         </Section>
 
         <Section title="Card">
-          {/* Card jest width:100% — ograniczamy go kontenerem (tu 320px). */}
           <div style={{ width: 320 }}>
             <Card>
               <CardMedia>
@@ -317,7 +303,6 @@ export default function Playground() {
             </Card>
           </div>
 
-          {/* REAL — bez nakładki heatmapy (showHeatmap=false) */}
           <div style={{ width: 320 }}>
             <Card>
               <CardMedia>
@@ -340,7 +325,6 @@ export default function Playground() {
             </Card>
           </div>
 
-          {/* Klikalna — hover-lift; realny element interaktywny w środku, nie onClick na karcie */}
           <div style={{ width: 320 }}>
             <Card interactive>
               <CardMedia>
@@ -362,7 +346,6 @@ export default function Playground() {
             </Card>
           </div>
 
-          {/* Bez obrazu — aspect-ratio trzyma wysokość media (zero CLS) */}
           <div style={{ width: 320 }}>
             <Card>
               <CardMedia>

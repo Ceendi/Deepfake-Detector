@@ -14,8 +14,6 @@ interface Finding {
   text: string
 }
 
-// Wnioski to placeholder — realne uzasadnienia dojdą z backendu. Trzymane PER ŹRÓDŁO, żeby analiza
-// samego audio nie pokazywała wniosków o wideo (i odwrotnie); ton/treść wg werdyktu tego źródła.
 const VIDEO_FINDING: Record<Verdict, Finding> = {
   FAKE: {
     tone: 'warning',
@@ -51,8 +49,6 @@ export function SummarySection({ analysis }: { analysis: Analysis }) {
   const { videoProb, audioProb } = analysis
   const verdict = analysis.verdict ?? 'REAL'
 
-  // Wnioski tylko dla realnie przeanalizowanych źródeł (videoProb/audioProb != null);
-  // rekomendacja zawsze, wg werdyktu ogólnego.
   const findings: Finding[] = []
   if (videoProb != null) findings.push(VIDEO_FINDING[sourceOutcome(videoProb).verdict])
   if (audioProb != null) {
@@ -70,7 +66,6 @@ export function SummarySection({ analysis }: { analysis: Analysis }) {
   }
   findings.push(RECOMMENDATION[verdict])
 
-  // Modele i metadane — realne z details; każdy renderowany tylko dla obecnego źródła.
   const videoModel = analysis.details?.video?.modelVersion
   const audioModel = analysis.details?.audio?.modelVersion
   const frames = analysis.details?.video?.metadata?.frames_sampled

@@ -9,8 +9,6 @@ import { VideoPlayer } from '@/components/ui/VideoPlayer/VideoPlayer'
 import { isVideoFile, getExt, formatMB, formatDuration } from '../upload-utils'
 import styles from '../Upload.module.css'
 
-// Wspólny podgląd pliku (media + wiersz metadanych) — używany w Preview/Uploading/Analyzing.
-// Sam czyta długość mediów z onLoadedMetadata; `onDuration` przekazuje ją wyżej do walidacji limitu.
 export function MediaPreview({
   file,
   previewUrl,
@@ -21,7 +19,7 @@ export function MediaPreview({
   onDuration?: (seconds: number) => void
 }) {
   const [duration, setDurationState] = useState<number | null>(null)
-  // Przeglądarki nie odtwarzają np. AVI — plik jest poprawny, brakuje tylko podglądu.
+
   const [previewFailed, setPreviewFailed] = useState(false)
   function setDuration(seconds: number) {
     setDurationState(seconds)

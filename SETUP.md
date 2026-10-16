@@ -68,6 +68,19 @@ update and recreate the clients. Keep persistent data; `down -v` deletes it.
 Application broker passwords are reconciled on every `rabbitmq-init` run; update
 `.env` and recreate all affected clients (including the `ml` profile when used).
 See [broker users](docs/reliability.md#broker-users-and-internal-storage-apis).
+
+Build the login theme before starting the `auth` profile (Node.js, Java 17+ and Maven are required):
+
+```bash
+cd frontend
+npm ci
+npm run build-keycloak-theme
+cd ..
+```
+
+The generated `frontend/dist_keycloak/keycloak-theme.jar` stays local and is ignored by Git.
+Rebuild it after changing theme sources. CI builds it before its auth/E2E stack starts.
+
 Keycloak realm policy is synchronized separately by `keycloak-config-cli`.
 
 If you override `KEYCLOAK_PORT`, also set `VITE_KEYCLOAK_URL` in `frontend/.env`

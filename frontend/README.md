@@ -8,7 +8,12 @@ z backendem i Keycloak opisuje [SETUP.md](../SETUP.md#step-4--frontend-vite).
 Nagłówek wyniku pobiera oryginalną nazwę przez `GET /api/files/{fileId}/metadata`.
 Wspólny cache w `src/api/file-meta.ts` obsługuje wynik, historię i wyszukiwanie;
 równoległe żądania tego samego pliku są łączone. Odpowiedź 404 jest zapamiętywana
-jako brak metadanych. Błędy sieci i 429 pozwalają ponowić pobranie przy kolejnym montowaniu.
+jako brak metadanych. Błędy sieci, 429 i 5xx powodują jedno automatyczne ponowienie po 5 s, także bez
+opuszczania strony wyniku. Ponowienie znika przy zmianie pliku lub odmontowaniu;
+401/403/404 nie uruchamiają ponowień. Następne montowanie może spróbować ponownie.
+Wyszukiwanie nazw ma najwyżej 4 żądania naraz i zatrzymuje kolejkę po błędzie.
+Historia pokazuje wtedy ostrzeżenie „Wyniki mogą być niepełne”, również przy zerowej
+liczbie trafień. Zmiana samej frazy nie uruchamia ponownie pobierania wszystkich nazw.
 
 Podczas pobierania nagłówek ma placeholder o wysokości jednego wiersza. Długie nazwy
 są skracane z pełnym tekstem w `title`, a znaki sterujące i formatowania są usuwane.
@@ -17,6 +22,30 @@ klucz `{uuid}.{ext}` lub samo UUID daje „Plik bez nazwy”.
 
 Tytuł strony wyniku nie zawiera nazwy pliku. Raport PDF również jej nie używa;
 jego nazwa pobierania to `report-{analysisId}.pdf`.
+
+## Komunikaty i śledzenie analizy
+
+`UPLOAD_USER_LIMIT` (429) ma osobny komunikat o równoległych uploadach użytkownika.
+Kody `MEDIA_TOO_LONG` i `UNSUPPORTED_MEDIA` są obsługiwane zarówno w polu `code`, jak
+w prefiksie `[KOD]` komunikatu 422. Starsze odpowiedzi `INVALID_FILE` zachowują
+mapowanie po treści. Techniczne komunikaty 400/409/503 mają polskie odpowiedniki.
+
+Osiągnięcie `createdAt + 7200 s` kończy obserwowanie z komunikatem o czasie oczekiwania,
+oddzielnym od błędu połączenia. Frontend nie ustawia sam statusu FAILED; stan analizy
+pozostaje autorytatywnie w backendzie. Okna odzyskiwania, limity i backoff pozostają takie same.
+
+## Logowanie i motyw
+
+Deep link zachowuje ścieżkę, query i hash. Fragment jest zapamiętywany w `sessionStorage`
+bieżącej karty, a `redirect_uri` wysyłany do Keycloaka nie zawiera `#`. Po udanym
+`init` kotwica jest przywracana raz, tylko na pasującej ścieżce i query. Router dostaje
+powiadomienie o zmianie. Przy zablokowanym storage logowanie działa, ale kotwica może
+zostać pominięta. Zewnętrzne adresy powrotu są odrzucane.
+
+Przed uruchomieniem profilu `auth` zbuduj motyw przez `npm run build-keycloak-theme`
+(wymagane Node.js, Java 17+ i Maven). Plik `dist_keycloak/keycloak-theme.jar` jest lokalnym
+produktem budowania i nie trafia do Git; przebiegi E2E i testy Keycloaka w CI budują
+motyw ze źródeł. Po zmianie motywu zbuduj go ponownie.
 
 ## Wylogowanie
 

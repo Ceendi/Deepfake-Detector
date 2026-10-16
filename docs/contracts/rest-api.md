@@ -463,17 +463,19 @@ does not recycle capacity while a physical writer/request remains blocked. See
 client with a Bearer header. On EOF or a transient stream error without `result`, it immediately
 performs a GET catch-up. A result event also stops SSE and loads the complete terminal resource
 (the event omits details and errorMessage). If GET is still active or transiently fails, polling
-uses delays of 0, 500, 1000, 2000, 4000, 8000, 16000, 30000 and 30000 ms: exactly nine reads,
-with no automatic SSE reconnect. Each complete GET operation (including token refresh before fetch) has a 10-second timeout. Browser HTTP caching is
+uses delays of 0, 500, 1000, 2000, 4000, 8000, 16000, 30000 and 30000 ms: exactly nine reads
+in the bounded recovery window. Each complete GET operation (including token refresh before fetch) has a 10-second timeout. Browser HTTP caching is
 disabled for analysis GETs; active responses from the backend's 60-second Redis cache remain
 retryable. The 91.5-second backoff window extends beyond that TTL. The result screen uses the
 recovered full resource directly, avoiding an additional potentially stale GET.
 
 The caller's AbortSignal stops the stream, pending reads and backoff and suppresses late
 callbacks. HTTP 4xx other than 429 stop immediately (including missing/foreign analyses).
-Exhaustion presents a recoverable connection error on both screens instead of leaving the
-interface indefinitely running; it does not cancel the backend analysis. A manual page refresh
-starts a new subscription. Native `EventSource` cannot send Authorization headers, and a token
+If bounded recovery still sees an active analysis, the client reopens SSE with a 5 s to 30 s
+backoff and reads once when each reopened stream ends. It stops on a terminal resource or at
+`createdAt + 7200 s`. Reaching this age shows an analysis waiting-time message on both screens,
+separately from a connection failure; it does not cancel the backend analysis or assign FAILED.
+A manual page refresh starts a new subscription. Native `EventSource` cannot send Authorization headers, and a token
 in a query string would leak into logs.
 
 **Regression coverage:** `AnalysisStreamCompletionIntegrationTest` runs automatically in the

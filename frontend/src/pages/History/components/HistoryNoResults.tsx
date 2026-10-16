@@ -3,7 +3,6 @@ import { SearchX, X } from 'lucide-react'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button/Button'
 
-// Stan „brak wyników": użytkownik MA analizy, ale aktywne filtry nic nie zwracają. Dajemy wyjście.
 export function HistoryNoResults({ onClear }: { onClear: () => void }) {
   return (
     <EmptyState

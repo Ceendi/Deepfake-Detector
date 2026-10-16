@@ -13,14 +13,12 @@
   display: flex;
   align-items: center;
   gap: var(--spacing-5);
-  /* Nieprzezroczyste tło + warstwa nad menu mobilnym: panel wysuwa się
-     spod paska i chowa za nim (translateY ujemny), nie nachodząc na bar. */
+
   position: relative;
   z-index: 1;
   background: var(--color-background);
 }
 
-/* ---- Marka ------------------------------------------------------------- */
 .brand {
   display: inline-flex;
   align-items: center;
@@ -49,7 +47,6 @@
   white-space: nowrap;
 }
 
-/* ---- Nawigacja (desktop) ---------------------------------------------- */
 .nav {
   display: flex;
   align-items: center;
@@ -77,9 +74,8 @@
   background: var(--color-accent-surface);
 }
 
-/* ---- Prawa strona (użytkownik + hamburger) ---------------------------- */
 .right {
-  margin-left: auto; /* dopycha blok użytkownika do prawej krawędzi */
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: var(--spacing-2);
@@ -151,7 +147,7 @@
   font: inherit;
   font-size: var(--font-size-sm);
   text-align: left;
-  text-decoration: none; /* .dropdownItem bywa też <Link> — bez podkreślenia z global a */
+  text-decoration: none;
   cursor: pointer;
 }
 .dropdownItem:hover {
@@ -162,7 +158,7 @@
 
 .dropdownItemDanger,
 .dropdownItemDanger:hover {
-  color: var(--color-danger); /* ikona dziedziczy currentColor → też czerwona */
+  color: var(--color-danger);
 }
 .dropdownItemDanger:hover {
   background: var(--color-danger-surface);
@@ -176,7 +172,7 @@
 }
 
 .hamburger {
-  display: none; /* widoczny tylko poniżej breakpointu (patrz @media) */
+  display: none;
   align-items: center;
   justify-content: center;
   width: 40px;
@@ -191,9 +187,6 @@
   background: var(--color-surface);
 }
 
-/* ---- Nawigacja mobilna (rozwijana pod paskiem) ------------------------ */
-/* Panel i backdrop są zawsze w DOM — animujemy wejście i wyjście klasą
-   .*Open. Poza breakpointem mobilnym znikają całkowicie (display: none). */
 .mobileNav,
 .backdrop {
   display: none;
@@ -216,15 +209,14 @@
     gap: var(--spacing-1);
     padding: var(--spacing-2) var(--spacing-5) var(--spacing-4);
     border-top: 1px solid var(--color-border);
-    /* Poza flow — nie przesuwa treści pod nagłówkiem. Sticky .header jest
-       blokiem zawierającym dla absolute. */
+
     position: absolute;
     top: 100%;
     left: 0;
     right: 0;
     background: var(--color-background);
     box-shadow: var(--shadow-md);
-    /* Stan zamknięty: wsunięty za pasek, niewidoczny i nieklikalny. */
+
     transform: translateY(-100%);
     opacity: 0;
     visibility: hidden;
@@ -241,8 +233,6 @@
     pointer-events: auto;
   }
 
-  /* Ciemna nakładka na resztę ekranu — pod nagłówkiem (z-index 100),
-     nad treścią. Łapie kliknięcia → zamyka menu. */
   .backdrop {
     display: block;
     position: fixed;
@@ -275,7 +265,6 @@
   }
 }
 
-/* Szanuj preferencję ograniczenia ruchu — bez slajdu, tylko stan końcowy. */
 @media (prefers-reduced-motion: reduce) {
   .mobileNav,
   .backdrop {

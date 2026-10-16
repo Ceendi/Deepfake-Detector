@@ -11,8 +11,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<AuthUser | null>(null)
 
-  // Bootstrap: check-sso ustala, czy mamy aktywną sesję. `active` zabezpiecza przed
-  // setState po odmontowaniu (StrictMode montuje 2×; initAuth i tak jest idempotentne).
   useEffect(() => {
     let active = true
     initAuth()
@@ -35,9 +33,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Reakcja na zdarzenia keycloak-js: idle-refresh tokena oraz utrata sesji.
-  // (Aktywne żądania i tak odświeżają token przez getToken() w client.ts.)
-  // Chwilowy błąd odświeżenia → ponowienie z backoffem; wylogowanie tylko przy końcu sesji.
   useEffect(() => {
     const refresher = createTokenRefresher(keycloak, () => {
       setIsAuthenticated(false)

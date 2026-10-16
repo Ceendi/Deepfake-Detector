@@ -37,7 +37,6 @@ export default function History() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
   const [page, setPage] = useState(0)
 
-  // Każda zmiana kryteriów wraca na 1. stronę (setState w handlerze, nie w efekcie).
   function setFilter(key: FilterKey, value: string) {
     setFilters((prev) => ({ ...prev, [key]: value }))
     setPage(0)
@@ -56,7 +55,6 @@ export default function History() {
     else setFilter(id as FilterKey, 'all')
   }
 
-  // Chipy aktywnych filtrów — tylko odstępstwa od domyślnych + fraza wyszukiwania.
   const activeFilters: FilterChip[] = []
   if (filters.status !== 'all')
     activeFilters.push({
@@ -74,17 +72,16 @@ export default function History() {
     activeFilters.push({ id: 'range', label: `Zakres: ${labelOf(RANGE_OPTIONS, filters.range)}` })
   if (query.trim() !== '') activeFilters.push({ id: 'query', label: `„${query.trim()}”` })
 
-  // Nazwy wszystkich plików ładujemy dopiero przy pierwszym wyszukiwaniu (osobne żądanie na plik).
   const searching = query.trim() !== ''
   const fileIds = useMemo(() => items.map((it) => it.fileId), [items])
-  const { names: fileNames, loading: namesLoading } = useFileNames(fileIds, searching)
+  const { names: fileNames, loading: namesLoading, incomplete } = useFileNames(fileIds, searching)
   const filtered = useMemo(
     () => applyFilters(items, filters, query, fileNames),
     [items, filters, query, fileNames],
   )
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const safePage = Math.min(page, totalPages - 1) // klamruj bez setState (np. po zawężeniu filtra)
+  const safePage = Math.min(page, totalPages - 1)
   const pageItems = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
   const from = filtered.length === 0 ? 0 : safePage * PAGE_SIZE + 1
   const to = Math.min((safePage + 1) * PAGE_SIZE, filtered.length)
@@ -126,6 +123,12 @@ export default function History() {
             onRemoveFilter={removeFilter}
             onClear={clearAll}
           />
+
+          {searching && incomplete && (
+            <Alert variant="warning" title="Wyniki mogą być niepełne">
+              Nie udało się pobrać wszystkich nazw plików. Spróbuj ponownie za chwilę.
+            </Alert>
+          )}
 
           {filtered.length === 0 && searching && namesLoading ? (
             <div className={styles.center}>

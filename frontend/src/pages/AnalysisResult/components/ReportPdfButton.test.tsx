@@ -35,7 +35,7 @@ describe('ReportPdfButton', () => {
     expect(link.download).toBe('report-an-1.pdf')
     expect(link.href).toBe('blob:report')
 
-    expect(revokeObjectURL).not.toHaveBeenCalled() // pobieranie bywa asynchroniczne
+    expect(revokeObjectURL).not.toHaveBeenCalled()
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 40_000)
     const revoke = setTimeoutSpy.mock.calls.find(([, ms]) => ms === 40_000)![0] as () => void
     revoke()

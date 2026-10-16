@@ -18,11 +18,6 @@ const ALERT = {
   info: { Icon: Info, cls: styles.alertInfo },
 } as const
 
-// Wspólny shell wszystkich ekranów auth (Template Keycloakify). Brand jak w apce:
-// pełnoekranowe tło z poświatą, wyśrodkowana karta, logo ShieldCheck (jak Header),
-// stopka. Zachowana logika KC: useInitialize (ładuje wymagane skrypty/bundle i18n),
-// document.title, alerty `message`, strefa info (np. link rejestracji), tryAnotherWay,
-// selektor języka (gdy >1 język).
 export default function Template(props: TemplateProps<KcContext, I18n>) {
   const {
     displayInfo = false,
@@ -43,7 +38,7 @@ export default function Template(props: TemplateProps<KcContext, I18n>) {
 
   useEffect(() => {
     document.title = documentTitle ?? msgStr('loginTitle', realm.displayName || realm.name)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tytuł ustawiamy raz, na mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Keycloak renders one page per navigation
   }, [])
 
   const { isReadyToRender } = useInitialize({ kcContext, doUseDefaultCss })

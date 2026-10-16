@@ -6,7 +6,7 @@ dist
 dist-ssr
 *.local
 
-# Generated code (nie formatuj — nadpisywane przez openapi-typescript)
+# Generated code (overwritten by openapi-typescript)
 src/api/generated/
 
 # Lock files
@@ -27,7 +27,7 @@ logs
 *.min.js
 *.min.css
 
-# Lokalne pliki robocze (nie śledzone)
+# Local scratch files (untracked)
 PLAN.md
 DOBRE_PRAKTYKI.md
 CLAUDE-DESIGN.md

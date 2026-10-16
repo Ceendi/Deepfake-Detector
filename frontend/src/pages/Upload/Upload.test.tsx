@@ -96,3 +96,16 @@ describe('Upload', () => {
     expect(uploading.defaultPrevented).toBe(true)
   })
 })
+
+it('prevents browser navigation when a file is dropped outside the dropzone', () => {
+  const { unmount } = renderUpload()
+  const event = new Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'] } })
+  document.body.dispatchEvent(event)
+  expect(event.defaultPrevented).toBe(true)
+  unmount()
+  const after = new Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(after, 'dataTransfer', { value: { types: ['Files'] } })
+  document.body.dispatchEvent(after)
+  expect(after.defaultPrevented).toBe(false)
+})

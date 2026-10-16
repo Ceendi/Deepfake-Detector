@@ -1,12 +1,3 @@
-/* =========================================================================
-   Keycloakify login theme — brand shell + formularz, spójne z apką (tokens.css).
-   Wspólny Template dla WSZYSTKICH ekranów auth + custom Login/Register.
-   doUseDefaultCss=false → zero PatternFly; pełna kontrola przez te klasy
-   (część mapowana w KcPage na klucze kcClsx dla dynamicznych pól Register).
-   Dark mode: prefers-color-scheme (tokeny semantyczne flipują automatycznie).
-   ========================================================================= */
-
-/* ---- Pełnoekranowy ekran + poświata akcentu (jak Login.module.css apki) -- */
 .screen {
   display: flex;
   align-items: center;
@@ -20,7 +11,6 @@
   );
 }
 
-/* ---- Karta ------------------------------------------------------------- */
 .card {
   display: flex;
   flex-direction: column;
@@ -34,7 +24,6 @@
   box-shadow: var(--shadow-md);
 }
 
-/* ---- Marka + nagłówek (logo akcentu jak w Headerze) -------------------- */
 .brand {
   display: flex;
   flex-direction: column;
@@ -75,7 +64,6 @@
   color: var(--color-danger);
 }
 
-/* ---- Alerty (kcContext.message) --------------------------------------- */
 .alert {
   display: flex;
   align-items: flex-start;
@@ -111,7 +99,6 @@
   color: var(--color-accent);
 }
 
-/* ---- Formularz (Login custom + mapowane pola Register) ----------------- */
 .form {
   display: flex;
   flex-direction: column;
@@ -128,7 +115,6 @@
   color: var(--color-text-primary);
 }
 
-/* Input — wartości skopiowane z components/ui/Input/Input.module.css (parytet) */
 .input {
   width: 100%;
   color: var(--color-text-primary);
@@ -152,7 +138,6 @@
   border-color: var(--color-danger);
 }
 
-/* Grupa hasła (input + toggle podglądu) */
 .inputGroup {
   position: relative;
   display: flex;
@@ -182,7 +167,6 @@
   color: var(--color-danger);
 }
 
-/* ---- Opcje (remember me + zapomniane hasło) ---------------------------- */
 .options {
   display: flex;
   align-items: center;
@@ -202,7 +186,6 @@
   accent-color: var(--color-accent);
 }
 
-/* ---- Linki ------------------------------------------------------------- */
 .link {
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
@@ -213,13 +196,11 @@
   text-decoration: underline;
 }
 
-/* ---- Przycisk pełnej szerokości (klasa dla mojego <Button>) ------------ */
 .actionBtn {
   width: 100%;
   justify-content: center;
 }
 
-/* ---- Zmapowane kc-buttony (strony dziedziczące DefaultPage) ------------- */
 .kcButton {
   display: inline-flex;
   align-items: center;
@@ -248,7 +229,6 @@
   width: 100%;
 }
 
-/* ---- Strefa info (np. link do rejestracji) ---------------------------- */
 .info {
   padding-top: var(--spacing-3);
   border-top: 1px solid var(--color-border);
@@ -257,7 +237,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Stopka (hairline + nota Keycloak, jak chip „managed" w Profilu) --- */
 .footer {
   padding-top: var(--spacing-3);
   border-top: 1px solid var(--color-border);
@@ -276,7 +255,6 @@
   color: var(--color-accent);
 }
 
-/* ---- Selektor języka (minimalny, tylko gdy >1 język) ------------------- */
 .locale {
   align-self: flex-end;
   display: inline-flex;

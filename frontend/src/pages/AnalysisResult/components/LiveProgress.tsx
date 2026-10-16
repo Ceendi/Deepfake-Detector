@@ -4,6 +4,7 @@ import { Video, AudioLines, Check, Circle, LoaderCircle } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { CANCEL_FAILED_MESSAGE, cancelAndSettle } from '@/api/cancel-analysis'
+import { AnalysisAgeLimitError } from '@/api/watch-analysis'
 import type { Analysis } from '@/api/types'
 import { Button } from '@/components/ui/Button/Button'
 import { Alert } from '@/components/ui/Alert/Alert'
@@ -21,9 +22,6 @@ import {
 
 import styles from '../AnalysisResult.module.css'
 
-// Ekran „w toku" na żywo (PENDING/PROCESSING). Odwzorowuje makietę: badge NA ŻYWO → tytuł → linia
-// bieżącego etapu → pasek całości + % → checklista kroków → „Anuluj analizę". Dla FULL kroki są
-// rozbite na tor wideo i audio; dla VIDEO/AUDIO to jedna lista. `onSettled` = refetch w rodzicu.
 export function LiveProgress({
   analysis,
   onSettled,
@@ -31,11 +29,11 @@ export function LiveProgress({
   analysis: Analysis
   onSettled: (analysis?: Analysis) => void
 }) {
-  const [connectionError, setConnectionError] = useState(false)
+  const [watchError, setWatchError] = useState<'connection' | 'age' | null>(null)
   const bySource = useAnalysisStream(
     analysis.id,
     onSettled,
-    () => setConnectionError(true),
+    (error) => setWatchError(error instanceof AnalysisAgeLimitError ? 'age' : 'connection'),
     analysis.createdAt,
   )
   const [cancelling, setCancelling] = useState(false)
@@ -53,19 +51,26 @@ export function LiveProgress({
     setCancelling(true)
     setCancelError(null)
     try {
-      // 200 → CANCELLED, 409 → już zakończona: oba przełączają stronę na właściwy ekran.
       const settled = await cancelAndSettle(analysis.id)
       if (settled) {
         onSettled(settled)
         return
       }
     } catch {
-      setCancelError(CANCEL_FAILED_MESSAGE) // strumień zostaje otwarty, analiza dalej śledzona
+      setCancelError(CANCEL_FAILED_MESSAGE)
     }
     setCancelling(false)
   }
 
-  if (connectionError) {
+  if (watchError === 'age') {
+    return (
+      <Alert variant="warning" title="Przekroczono czas oczekiwania na analizę">
+        Upłynął maksymalny czas analizy. Odśwież stronę lub sprawdź jej stan w historii.
+      </Alert>
+    )
+  }
+
+  if (watchError === 'connection') {
     return (
       <Alert variant="warning" title="Utracono połączenie z analizą">
         Nie udało się odzyskać wyniku. Odśwież stronę, aby spróbować ponownie.

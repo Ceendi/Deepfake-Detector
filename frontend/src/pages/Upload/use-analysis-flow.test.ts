@@ -5,8 +5,6 @@ import { ApiError } from '@/api/errors'
 import type { Analysis, AnalysisProgressEvent, AnalysisResultEvent } from '@/api/types'
 import { useAnalysisFlow } from './use-analysis-flow'
 
-// --- Mock całej warstwy API (upload, orchestrator, SSE). upload-utils zostaje REALNE
-//     (pickAnalysisType / messageForError / isAbortError to czyste funkcje, już osobno przetestowane).
 vi.mock('@/api/files', () => ({ uploadFileWithProgress: vi.fn() }))
 vi.mock('@/api/analysis', () => ({
   startAnalysis: vi.fn(),
@@ -19,7 +17,6 @@ import { uploadFileWithProgress } from '@/api/files'
 import { startAnalysis, getAnalysis, cancelAnalysis } from '@/api/analysis'
 import { streamAnalysis } from '@/api/stream'
 
-// Przechwytujemy handlery przekazane do streamAnalysis, żeby z testu „odgrywać" zdarzenia SSE.
 let streamHandlers: {
   onProgress: (e: AnalysisProgressEvent) => void
   onResult: (e: AnalysisResultEvent) => void
@@ -55,7 +52,6 @@ function renderFlow() {
   return { ...view, onComplete }
 }
 
-// Doprowadza hook do stanu 'analyzing' (upload + start OK, stream otwarty i przechwycony).
 async function startUntilAnalyzing(result: ReturnType<typeof renderFlow>['result']) {
   await act(async () => {
     await result.current.start(videoFile())
@@ -72,7 +68,7 @@ beforeEach(() => {
   })
   vi.mocked(startAnalysis).mockResolvedValue(analysis({ id: 'an-1' }))
   vi.mocked(getAnalysis).mockResolvedValue(analysis({ status: 'COMPLETED' }))
-  // Domyślnie stream zostaje otwarty (pending) — wynik wstrzykujemy ręcznie przez streamHandlers.
+
   vi.mocked(streamAnalysis).mockImplementation((_id, handlers) => {
     return new Promise<void>((resolve) => {
       streamHandlers = {
@@ -314,7 +310,6 @@ describe('useAnalysisFlow', () => {
   })
 
   it('typ analizy wynika z MIME wykrytego przez backend, nie z rozszerzenia', async () => {
-    // `.mp4` z samą ścieżką dźwiękową — file-service wykrywa audio/mp4.
     vi.mocked(uploadFileWithProgress).mockResolvedValue({
       fileId: 'f1',
       fileKey: 'k1',
@@ -536,6 +531,7 @@ describe('useAnalysisFlow', () => {
       name: 'stillRunning',
       analysisId: 'an-1',
       watching: false,
+      timedOut: true,
     })
     await act(async () => {
       await result.current.cancel()

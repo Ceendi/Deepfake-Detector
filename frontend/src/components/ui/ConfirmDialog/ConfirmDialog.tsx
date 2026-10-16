@@ -12,9 +12,9 @@ interface ConfirmDialogProps {
   title: string
   confirmLabel: string
   cancelLabel?: string
-  // danger → czerwony przycisk potwierdzenia (akcja destrukcyjna, np. usunięcie).
+
   danger?: boolean
-  // Trwa żądanie potwierdzenia → spinner na przycisku + blokada zamknięcia (ESC/tło/anuluj).
+
   isLoading?: boolean
   confirmIcon?: LucideIcon
   onConfirm: () => void
@@ -22,9 +22,6 @@ interface ConfirmDialogProps {
   children: ReactNode
 }
 
-// Generyczny dialog potwierdzenia oparty na natywnym <dialog> (showModal): top-layer bez wojen
-// z z-index, ::backdrop, focus trap, ESC i powrót focusu na element wyzwalający — wszystko za darmo.
-// Sterujemy nim imperatywnie z propa `open`; rodzic trzyma stan i podaje onConfirm/onCancel.
 export function ConfirmDialog({
   open,
   title,
@@ -41,7 +38,6 @@ export function ConfirmDialog({
   const titleId = useId()
   const bodyId = useId()
 
-  // open → showModal() (rzuca, jeśli już otwarty → guard na dlg.open); !open → close().
   useEffect(() => {
     const dlg = ref.current
     if (!dlg) return
@@ -49,14 +45,11 @@ export function ConfirmDialog({
     else if (!open && dlg.open) dlg.close()
   }, [open])
 
-  // Natywny `cancel` (ESC). preventDefault → nie zamykamy natywnie, tylko przez zmianę `open`
-  // w rodzicu (jedno źródło prawdy). W trakcie żądania ESC ignorujemy, by nie porzucić akcji.
   function handleCancelEvent(e: SyntheticEvent<HTMLDialogElement>) {
     e.preventDefault()
     if (!isLoading) onCancel()
   }
 
-  // Klik w tło: backdrop nie jest osobnym elementem — trafia w sam <dialog> (padding ma .content).
   function handleBackdropClick(e: MouseEvent<HTMLDialogElement>) {
     if (e.target === ref.current && !isLoading) onCancel()
   }
@@ -78,7 +71,6 @@ export function ConfirmDialog({
           {children}
         </div>
         <div className={styles.actions}>
-          {/* autoFocus na „Anuluj" — bezpieczny domyślny focus; Enter/ESC nie wykona destrukcyjnej akcji */}
           <Button variant="ghost" size="md" onClick={onCancel} disabled={isLoading} autoFocus>
             {cancelLabel}
           </Button>

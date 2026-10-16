@@ -14,8 +14,6 @@ import {
   messageForError,
 } from './upload-utils'
 
-// Helper: tworzy fejkowy File bez alokowania realnych bajtów. `size` nadpisujemy ręcznie,
-// bo `new File([...], ...)` liczy rozmiar z treści, a nie chcemy alokować 500 MB w teście.
 function makeFile(name: string, sizeBytes = 1024): File {
   const file = new File(['x'], name, { type: 'application/octet-stream' })
   Object.defineProperty(file, 'size', { value: sizeBytes })
@@ -307,4 +305,29 @@ describe('messageForError', () => {
     expect(messageForError(new Error('cokolwiek'))).toBe('Coś poszło nie tak. Spróbuj ponownie.')
     expect(messageForError('string error')).toBe('Coś poszło nie tak. Spróbuj ponownie.')
   })
+})
+
+describe('stable upload error codes', () => {
+  it('explains the per-user concurrent upload limit', () => {
+    expect(
+      messageForError(
+        new ApiError({ status: 429, code: 'UPLOAD_USER_LIMIT', message: 'User upload limit' }),
+      ),
+    ).toBe(
+      'Trwa już zbyt wiele Twoich uploadów. Poczekaj, aż któryś się zakończy, i spróbuj ponownie.',
+    )
+  })
+
+  it.each(['MEDIA_TOO_LONG', 'UNSUPPORTED_MEDIA'])(
+    'maps %s in both HTTP code and message prefix without relying on English text',
+    (code) => {
+      const expected =
+        code === 'MEDIA_TOO_LONG' ? 'Materiał przekracza' : 'Nieobsługiwany lub uszkodzony plik'
+      for (const error of [
+        new ApiError({ status: 422, code, message: 'opaque diagnostic' }),
+        new ApiError({ status: 422, code: 'INVALID_FILE', message: `[${code}] opaque diagnostic` }),
+      ])
+        expect(messageForError(error)).toContain(expected)
+    },
+  )
 })

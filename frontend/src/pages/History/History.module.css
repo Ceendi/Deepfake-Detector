@@ -4,7 +4,6 @@
   gap: var(--spacing-6);
 }
 
-/* ---- Nagłówek strony --------------------------------------------------- */
 .head {
   display: flex;
   align-items: flex-start;
@@ -20,8 +19,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Pasek narzędzi (search + filtry) ---------------------------------- */
-/* Karta paska + rząd chipów aktywnych filtrów trzymane razem (mniejszy odstęp niż gap strony) */
 .toolbarWrap {
   display: flex;
   flex-direction: column;
@@ -39,7 +36,6 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* Pole wyszukiwania — ikona + input w jednej ramce (label = klik w ikonę fokusuje input) */
 .search {
   display: inline-flex;
   align-items: center;
@@ -72,7 +68,6 @@
   color: var(--color-text-muted);
 }
 
-/* Dropdown filtra — wrapper jest układem odniesienia dla menu (position: absolute) */
 .filterWrap {
   position: relative;
 }
@@ -97,7 +92,7 @@
   background: var(--color-surface);
   border-color: var(--color-text-muted);
 }
-/* Filtr aktywny (≠ wartość domyślna) — obwódka i tekst w akcencie */
+
 .filterActive {
   border-color: var(--color-accent);
   color: var(--color-accent);
@@ -106,7 +101,6 @@
   color: var(--color-text-muted);
 }
 
-/* Popover z opcjami */
 .menu {
   position: absolute;
   top: calc(100% + var(--spacing-1));
@@ -145,7 +139,6 @@
   font-weight: var(--font-weight-medium);
 }
 
-/* „Wyczyść" — tekstowy, wygaszony gdy brak aktywnych filtrów */
 .clear {
   display: inline-flex;
   align-items: center;
@@ -166,7 +159,6 @@
   cursor: not-allowed;
 }
 
-/* ---- Aktywne filtry (chipy) -------------------------------------------- */
 .activeFilters {
   display: flex;
   align-items: center;
@@ -195,8 +187,6 @@
   background: color-mix(in srgb, var(--color-accent) 16%, transparent);
 }
 
-/* ---- Toolbar: zwijanie filtrów na mobile -------------------------------- */
-/* Przycisk „Filtry" — tylko mobile (na desktopie filtry są zawsze widoczne). */
 .filtersToggle {
   display: inline-flex;
   align-items: center;
@@ -222,8 +212,6 @@
   color: var(--color-accent);
 }
 
-/* Grupa dropdownów: mobile = zwinięta (rozwijana przyciskiem); desktop = przezroczysty wrapper
-   (display:contents), więc selecty zachowują się jak bezpośrednie elementy paska. */
 .filterGroup {
   display: none;
 }
@@ -241,7 +229,6 @@
   justify-content: space-between;
 }
 
-/* ---- Lista analiz ------------------------------------------------------- */
 .list {
   background: var(--color-background);
   border: 1px solid var(--color-border);
@@ -249,12 +236,11 @@
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-/* Nagłówek kolumn — tylko desktop (na mobile układ jest samoopisowy) */
+
 .listHead {
   display: none;
 }
 
-/* Wiersz: MOBILE-FIRST. Domyślnie układ z mockupu — miniatura | nazwa+data | werdykt+status. */
 .row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -272,7 +258,7 @@
 .row + .row {
   border-top: 1px solid var(--color-border);
 }
-/* Nadpisuje globalne a:hover (podkreślenie + kolor akcentu) — hover wiersza to tylko zmiana tła */
+
 .row:hover {
   background: var(--color-surface);
   color: inherit;
@@ -292,7 +278,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text-muted);
-  /* paskowane (hatch) tło — ukośne kreski nad miękką powierzchnią */
+
   background-color: var(--color-surface);
   background-image: repeating-linear-gradient(
     -45deg,
@@ -302,7 +288,7 @@
     transparent 7px
   );
 }
-/* Etykieta typu w prawym dolnym rogu (mała plakietka nad paskami dla czytelności) */
+
 .thumbLabel {
   position: absolute;
   right: 3px;
@@ -325,7 +311,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Linia pod nazwą — czas trwania (+ data na mobile). */
+
 .sub {
   grid-area: sub;
   display: inline-flex;
@@ -336,7 +322,7 @@
   color: var(--color-text-muted);
   white-space: nowrap;
 }
-/* Osobna kolumna DATA — tylko desktop (na mobile data siedzi w .sub). */
+
 .date {
   grid-area: date;
   display: none;
@@ -393,7 +379,6 @@
   display: none;
 }
 
-/* ---- Stopka listy: licznik + paginacja (wewnątrz karty .list) ---------- */
 .listFooter {
   display: flex;
   align-items: center;
@@ -454,7 +439,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Ładowanie --------------------------------------------------------- */
 .center {
   display: flex;
   justify-content: center;
@@ -462,13 +446,13 @@
 }
 
 /* ======================================================================== */
-/* DESKTOP (≥ 768px) — toolbar rozłożony, wiersz w kolumny tabeli           */
+
 /* ======================================================================== */
 @media (min-width: 768px) {
   .filtersToggle {
     display: none;
   }
-  /* wrapper znika z layoutu → selecty + „Wyczyść" są bezpośrednimi elementami paska jak wcześniej */
+
   .filterGroup,
   .filterGroupOpen {
     display: contents;
@@ -497,7 +481,7 @@
     row-gap: 0;
     padding: var(--spacing-4) var(--spacing-5);
   }
-  /* DATA wraca jako osobna kolumna; data znika z .sub (zostaje sam czas trwania) */
+
   .date {
     display: flex;
     align-items: center;
@@ -522,14 +506,13 @@
   }
 }
 
-/* Szukajka pełnej szerokości na całym mobile (do 767px) */
 @media (max-width: 767px) {
   .search {
     flex-basis: 100%;
   }
-  /* Na wąskich ekranach chowamy czas trwania, który się nie mieści w linii pod nazwą */
+
   .subDot,
   .subDuration {
-    display: none; /* linia pod nazwą = sama data (bez czasu trwania) */
+    display: none;
   }
 }

@@ -10,7 +10,6 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* Play / pauza — okrągły przycisk akcentowy */
 .playButton {
   flex-shrink: 0;
   display: grid;
@@ -32,7 +31,6 @@
   outline-offset: 2px;
 }
 
-/* Czas — mono, tabular, żeby nie skakał przy odliczaniu */
 .time {
   flex-shrink: 0;
   min-width: 3.4ch;
@@ -46,11 +44,10 @@
   color: var(--color-text-muted);
 }
 
-/* Pasek przewijania — natywny range ostylowany pod tokeny; fill = gradient do --pct */
 .seek {
   flex: 1;
   min-width: 0;
-  height: 16px; /* obszar trafienia większy niż sam tor */
+  height: 16px;
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
@@ -76,7 +73,7 @@
 }
 .seek::-webkit-slider-thumb {
   -webkit-appearance: none;
-  margin-top: -4px; /* wyśrodkuj 14px gałkę na 6px torze */
+  margin-top: -4px;
   width: 14px;
   height: 14px;
   border-radius: var(--radius-full);
@@ -102,7 +99,6 @@
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
-/* Wyciszenie — przycisk-ikona */
 .iconButton {
   flex-shrink: 0;
   display: grid;

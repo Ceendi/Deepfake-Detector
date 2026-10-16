@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { LinkProps } from 'react-router-dom'
 
-//Link Button beirze style z zwykłęgo Button'a
 import styles from '@/components/ui/Button/Button.module.css'
 
 import { clsx } from 'clsx'

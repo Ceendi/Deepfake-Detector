@@ -3,18 +3,13 @@ import { useEffect, useState } from 'react'
 import { fetchArtifact } from '@/api/analysis'
 
 export interface GradcamImage {
-  url: string // oryginalna ścieżka endpointu (klucz pozycji)
-  objectUrl: string | null // blob: URL gotowy do <img src> (null dopóki nie pobrane)
+  url: string
+  objectUrl: string | null
   status: 'loading' | 'ready' | 'error'
 }
 
 type Loaded = Record<string, { objectUrl: string | null; status: 'ready' | 'error' }>
 
-// Pobiera listę artefaktów Grad-CAM (każdy wymaga Bearer) jako blob → object URL.
-// Wynik trzymamy w mapie url→stan, aktualizowanej TYLKO asynchronicznie w callbackach fetcha
-// (synchroniczny setState w efekcie jest zabroniony — cascading renders). Tablicę wynikową
-// wyliczamy podczas renderu: pozycje bez wpisu w mapie są jeszcze 'loading'. Object URL-e
-// rewokujemy przy zmianie listy / odmontowaniu, żeby nie wyciekały. `urls.join` daje stabilny dep.
 export function useGradcamImages(urls: string[]): GradcamImage[] {
   const key = urls.join('|')
   const [loaded, setLoaded] = useState<Loaded>({})

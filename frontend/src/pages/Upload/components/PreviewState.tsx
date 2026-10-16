@@ -9,8 +9,6 @@ interface PreviewStateProps {
   onAnalyze: () => void
 }
 
-// Stopka stanu „plik gotowy". Media (podgląd) renderuje wspólna karta w Upload.tsx — dzięki temu
-// <video> ma stałą tożsamość między fazami i nie przeładowuje się przy zmianie stanu.
 export function PreviewState({ onReset, onAnalyze }: PreviewStateProps) {
   return (
     <div className={styles.footer}>

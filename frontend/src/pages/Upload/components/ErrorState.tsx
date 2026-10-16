@@ -9,7 +9,6 @@ interface ErrorStateProps {
   onPick: () => void
 }
 
-// Stan błędu walidacji — komunikat + ponowna próba (otwiera ten sam picker co Dropzone).
 export function ErrorState({ message, onPick }: ErrorStateProps) {
   return (
     <div className={styles.errorCard}>

@@ -1,4 +1,3 @@
-// Share SSE recovery with upload and pass the complete terminal resource to the page.
 import { useEffect, useRef, useState } from 'react'
 
 import { watchAnalysis } from '@/api/watch-analysis'
@@ -15,9 +14,8 @@ export function useAnalysisStream(
   createdAt?: string,
 ): ProgressBySource {
   const [bySource, setBySource] = useState<ProgressBySource>({})
-  // onResult przez ref — żeby zmiana jego tożsamości nie restartowała strumienia (dep tylko [id]).
-  // Aktualizacja w efekcie (nie w renderze) — wymóg react-hooks/refs. Reset bySource przy zmianie
-  // analizy załatwia `key={analysis.id}` na <LiveProgress> (remount → świeży useState).
+
+  // Callback changes must not reopen SSE; key={analysis.id} resets progress on navigation.
   const onResultRef = useRef(onResult)
   const onErrorRef = useRef(onError)
   useEffect(() => {

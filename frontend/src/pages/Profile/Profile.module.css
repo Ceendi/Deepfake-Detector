@@ -1,9 +1,3 @@
-/* =========================================================================
-   Profil — mobile-first.
-   Baza = widok telefonu (stos pionowy, wyśrodkowanie).
-   @media (min-width: 560px) dokłada układ poziomy na szersze ekrany.
-   ========================================================================= */
-
 .page {
   display: flex;
   flex-direction: column;
@@ -20,7 +14,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Karta (wspólny kontener sekcji) ---------------------------------- */
 .card {
   padding: var(--spacing-4);
   background: var(--color-background);
@@ -38,7 +31,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Tożsamość (mobile: wyśrodkowana kolumna) ------------------------- */
 .identity {
   display: flex;
   flex-direction: column;
@@ -74,7 +66,7 @@
 }
 .email {
   display: inline-flex;
-  align-items: flex-start; /* ikona przy 1. linii, gdy długi mail się zawija */
+  align-items: flex-start;
   gap: var(--spacing-2);
   margin: 0;
   max-width: 100%;
@@ -87,7 +79,7 @@
   margin-top: 3px;
 }
 .email span {
-  overflow-wrap: anywhere; /* długi adres łamie się zamiast rozpychać kartę */
+  overflow-wrap: anywhere;
 }
 .managedBadge {
   display: inline-flex;
@@ -105,10 +97,6 @@
   color: var(--color-accent);
 }
 
-/* ---- Wiersz ustawienia ------------------------------------------------
-   Mobile: [ikona] [tekst] w jednej linii, akcja (.settingAction) zawija
-   się na własną, pełną linię pod spodem — niezależnie od szerokości akcji.
-   ----------------------------------------------------------------------- */
 .settingRow {
   display: flex;
   flex-wrap: wrap;
@@ -143,11 +131,10 @@
   color: var(--color-text-muted);
 }
 .settingAction {
-  flex: 1 0 100%; /* basis 100% → zawsze schodzi do nowej linii na mobile */
-  margin-left: calc(40px + var(--spacing-4)); /* wyrównanie do startu tekstu (za ikoną) */
+  flex: 1 0 100%;
+  margin-left: calc(40px + var(--spacing-4));
 }
 
-/* Plakietka „wkrótce" — neutralny, mono chip (nie pasuje do semantycznego Badge) */
 .soon {
   padding: 2px var(--spacing-2);
   border: 1px solid var(--color-border);
@@ -182,7 +169,6 @@
   border-top: 1px solid var(--color-border);
 }
 
-/* ---- Segmentowany przełącznik ----------------------------------------- */
 .segment {
   display: inline-flex;
   border: 1px solid var(--color-border);
@@ -211,7 +197,7 @@
 .segmentBtn:not(:disabled):hover {
   color: var(--color-text-primary);
 }
-/* Aktywny segment „wyskakuje" na kolor tła karty (biały/ciemny zależnie od motywu) */
+
 .segmentBtnActive,
 .segmentBtnActive:hover {
   background: var(--color-background);
@@ -219,17 +205,16 @@
   font-weight: var(--font-weight-semibold);
 }
 .segmentBtn:disabled {
-  cursor: not-allowed; /* dotyczy jeszcze przełącznika języka (V2) */
+  cursor: not-allowed;
 }
 
-/* ---- Karta wylogowania (mobile: stos) --------------------------------- */
 .logoutCard {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--spacing-3);
 }
-/* Outline danger — Button ma tylko wypełniony wariant, więc lokalny przycisk */
+
 .logoutButton {
   display: inline-flex;
   align-items: center;
@@ -257,9 +242,6 @@
   outline-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
 }
 
-/* ======================================================================
-   ≥ 560px — układ poziomy (tablet / desktop)
-   ====================================================================== */
 @media (min-width: 560px) {
   .page {
     gap: var(--spacing-5);
@@ -268,7 +250,6 @@
     padding: var(--spacing-5);
   }
 
-  /* Tożsamość wraca do rzędu, wyrównana do lewej */
   .identity {
     flex-direction: row;
     align-items: center;
@@ -285,7 +266,6 @@
     margin-top: 0;
   }
 
-  /* Akcja wraca w prawo, w tej samej linii co tekst */
   .settingAction {
     flex: 0 0 auto;
     margin-left: 0;

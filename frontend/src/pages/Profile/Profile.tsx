@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/Button/Button'
 
 import styles from './Profile.module.css'
 
-// 2 pierwsze litery z imienia+nazwiska, a w razie braku — z nazwy/maila (jak w nagłówku).
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
@@ -29,7 +28,6 @@ export default function Profile() {
         <p className={styles.subtitle}>Twoje dane konta i ustawienia aplikacji.</p>
       </header>
 
-      {/* --- Tożsamość -------------------------------------------------------- */}
       <section className={styles.card}>
         <div className={styles.identity}>
           <span className={styles.avatar} aria-hidden="true">
@@ -51,7 +49,6 @@ export default function Profile() {
         </div>
       </section>
 
-      {/* --- Ustawienia konta ------------------------------------------------- */}
       <section className={styles.card}>
         <h3 className={styles.sectionLabel}>Ustawienia konta</h3>
         <div className={styles.settingRow}>
@@ -84,7 +81,6 @@ export default function Profile() {
         </p>
       </section>
 
-      {/* --- Preferencje aplikacji (placeholdery V2) -------------------------- */}
       <section className={styles.card}>
         <h3 className={styles.sectionLabel}>Preferencje aplikacji</h3>
 
@@ -145,7 +141,6 @@ export default function Profile() {
         </div>
       </section>
 
-      {/* --- Wyloguj ---------------------------------------------------------- */}
       <section className={clsx(styles.card, styles.logoutCard)}>
         <div className={styles.settingText}>
           <div className={styles.settingTitle}>Wyloguj się</div>

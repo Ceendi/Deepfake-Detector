@@ -8,8 +8,6 @@ export interface FieldContextValue {
 
 export const FieldContext = createContext<FieldContextValue | null>(null)
 
-// Wiring dla kontrolki w środku FormField (Input, później Select/Textarea).
-// Zwraca null, gdy kontrolka użyta poza FormField — wtedy działa standalone.
 export function useFieldControl() {
   return useContext(FieldContext)
 }

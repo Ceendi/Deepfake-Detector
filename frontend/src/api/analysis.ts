@@ -1,22 +1,17 @@
-// Orchestrator — start analizy, pobranie, lista (paginacja), anulowanie.
-// Kontrakt: docs/contracts/rest-api.md. SSE (stream postępu) → stream.ts / watch-analysis.ts.
 import { apiFetch, apiErrorFrom } from './client'
 import { env } from '@/config/env'
 import { getToken } from '@/auth/keycloak'
 import { newCorrelationId } from '@/utils/correlationId'
 import type { Analysis, AnalysisSummary, Paged, StartAnalysisRequest, UserStats } from './types'
 
-// POST /api/analysis → 201 Analysis. 429 = backpressure (ApiError.backpressure) lub rate-limit.
 export function startAnalysis(request: StartAnalysisRequest): Promise<Analysis> {
   return apiFetch<Analysis>('/analysis', { method: 'POST', body: request })
 }
 
-// GET /api/analysis/{id} → pełny Analysis. 404 gdy brak / cudzy (IDOR).
 export function getAnalysis(id: string, signal?: AbortSignal): Promise<Analysis> {
   return apiFetch<Analysis>(`/analysis/${id}`, { signal, cache: 'no-store' })
 }
 
-// GET /api/analysis?page&size → strona lekkich AnalysisSummary (createdAt DESC).
 export function listAnalyses(
   page = 0,
   size = 20,
@@ -26,29 +21,18 @@ export function listAnalyses(
   return apiFetch<Paged<AnalysisSummary>>(`/analysis?${query.toString()}`, { signal })
 }
 
-// GET /api/analysis/stats → agregaty analiz usera (dashboard). Scoped do jwt.sub (brak IDOR).
 export function getStats(signal?: AbortSignal): Promise<UserStats> {
   return apiFetch<UserStats>('/analysis/stats', { signal })
 }
 
-// DELETE /api/analysis/{id} → 200 Analysis (CANCELLED). Idempotentne; 409 gdy już skończona.
 export function cancelAnalysis(id: string, signal?: AbortSignal): Promise<Analysis> {
   return apiFetch<Analysis>(`/analysis/${id}`, { method: 'DELETE', signal })
 }
 
-// DELETE /api/analysis/{id}/record → 204. Trwałe (hard) usunięcie ZAKOŃCZONEJ analizy z historii
-// (znika z list/get/stats/stream + sprzątane artefakty Grad-CAM z S3). 409 gdy wciąż w toku
-// (anuluj najpierw przez cancelAnalysis), 404 gdy brak/usunięta/cudza (IDOR). To INNA trasa niż
-// cancelAnalysis (DELETE /{id}) — soft-cancel działającej vs hard-delete skończonej.
 export function deleteAnalysisRecord(id: string): Promise<void> {
   return apiFetch<void>(`/analysis/${id}/record`, { method: 'DELETE' })
 }
 
-// GET artefaktu Grad-CAM (image/png). `url` pochodzi z `details.*.gradcamUrls` i ZAWIERA już
-// prefiks '/api', więc NIE idzie przez apiFetch (który dokleiłby env.apiBaseUrl drugi raz).
-// Endpoint wymaga Bearer → pobieramy surowo jako Blob z tokenem; wołający robi URL.createObjectURL
-// (przeglądarka nie doda nagłówka Authorization do zwykłego <img src>). Prefiks '/api' podmieniamy
-// na env.apiBaseUrl, żeby działało i za proxy ('/api'), i przy pełnym hoście gatewaya.
 export async function fetchArtifact(url: string, signal?: AbortSignal): Promise<Blob> {
   const correlationId = newCorrelationId()
   const token = await getToken()
@@ -67,8 +51,6 @@ export async function fetchArtifact(url: string, signal?: AbortSignal): Promise<
   return response.blob()
 }
 
-// GET /api/analysis/{id}/report.pdf → PDF jako Blob. Wymaga Bearer, więc zwykły <a href> nie zadziała
-// (przeglądarka nie doda nagłówka Authorization). 409 = raport niegotowy (analiza nie COMPLETED).
 export async function fetchReportPdf(
   id: string,
   signal?: AbortSignal,
@@ -77,7 +59,6 @@ export async function fetchReportPdf(
   const token = await getToken()
 
   const headers: Record<string, string> = {
-    // JSON obok PDF — inaczej odpowiedź błędu (409/404) nie ma akceptowalnego typu i serwer zwraca 406.
     Accept: 'application/pdf, application/json',
     'X-Correlation-Id': correlationId,
   }

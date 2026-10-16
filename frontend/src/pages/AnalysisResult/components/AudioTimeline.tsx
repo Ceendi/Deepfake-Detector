@@ -7,8 +7,6 @@ import { parseAudioSegments, riskColor } from '../result-utils'
 
 import styles from '../AnalysisResult.module.css'
 
-// Ciągły przebieg mowy (segmenty stykające się / nachodzące) → jeden pasek z PŁYNNYM gradientem.
-// Cisza (luka czasowa) rozbija przebieg na osobne paski, więc kolory nie mieszają się przez przerwy.
 interface Run {
   startPct: number
   widthPct: number
@@ -26,7 +24,6 @@ function buildRuns(segments: AudioSegmentPrediction[], duration: number): Run[] 
     const end = Math.max(...group.map((s) => s.end_time))
     const span = end - start || 1
 
-    // Stop koloru w środku każdego segmentu (lokalne % grupy); CSS interpoluje między nimi gładko.
     const background =
       group.length === 1
         ? riskColor(group[0].prob_fake)
@@ -48,7 +45,7 @@ function buildRuns(segments: AudioSegmentPrediction[], duration: number): Run[] 
   }
 
   for (const s of segments) {
-    if (group.length > 0 && s.start_time > groupEnd) flush() // luka = cisza → nowy pasek
+    if (group.length > 0 && s.start_time > groupEnd) flush()
     group.push(s)
     groupEnd = Math.max(groupEnd, s.end_time)
   }
@@ -56,8 +53,6 @@ function buildRuns(segments: AudioSegmentPrediction[], duration: number): Run[] 
   return runs
 }
 
-// Oś czasu ryzyka audio — pasek-heatmapa z `details.audio.metadata.segment_predictions`.
-// X = czas, kolor = prob_fake (zielony→czerwony), płynnie przechodzący w obrębie ciągłej mowy.
 export function AudioTimeline({ metadata }: { metadata: Record<string, unknown> | undefined }) {
   const segments = parseAudioSegments(metadata)
   if (segments.length === 0) return null
@@ -69,8 +64,6 @@ export function AudioTimeline({ metadata }: { metadata: Record<string, unknown> 
 
   const runs = buildRuns(segments, duration)
 
-  // Fragment o najwyższym ryzyku — wyróżniony w podpisie, bo przy materiale REAL kolory są niemal
-  // jednolicie zielone i pojedynczy pik trudno wypatrzeć samym okiem.
   const peak = segments.reduce((max, s) => (s.prob_fake > max.prob_fake ? s : max), segments[0])
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * duration)
 
@@ -98,7 +91,6 @@ export function AudioTimeline({ metadata }: { metadata: Record<string, unknown> 
               peak.prob_fake * 100,
             )}% w ${peak.start_time}–${peak.end_time} s`}
           >
-            {/* Warstwa kolorów — ujawniana lewo→prawo przy wejściu */}
             <div className={styles.audioRuns}>
               {runs.map((run, i) => (
                 <span
@@ -115,7 +107,6 @@ export function AudioTimeline({ metadata }: { metadata: Record<string, unknown> 
               ))}
             </div>
 
-            {/* Warstwa interakcji — przezroczyste pola per segment, dają tooltip z czasem i % */}
             <div className={styles.audioHits}>
               {segments.map((s, i) => (
                 <span

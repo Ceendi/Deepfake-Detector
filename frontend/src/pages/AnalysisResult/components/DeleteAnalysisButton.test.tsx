@@ -13,7 +13,6 @@ import { deleteAnalysisRecord } from '@/api/analysis'
 import { deleteFile } from '@/api/files'
 
 beforeAll(() => {
-  // jsdom nie implementuje <dialog>.showModal/close.
   HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
     this.open = true
   }
@@ -43,7 +42,7 @@ function renderButton() {
 async function confirmDelete() {
   fireEvent.click(screen.getByRole('button', { name: 'Usuń analizę' }))
   const buttons = screen.getAllByRole('button', { name: 'Usuń analizę', hidden: true })
-  fireEvent.click(buttons[buttons.length - 1]) // przycisk potwierdzenia w dialogu
+  fireEvent.click(buttons[buttons.length - 1])
 }
 
 describe('DeleteAnalysisButton', () => {

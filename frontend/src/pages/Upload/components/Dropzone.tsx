@@ -12,8 +12,6 @@ interface DropzoneProps {
   onPick: () => void
 }
 
-// Strefa drag&drop (stan idle). Drag UX trzyma w sobie (hook), picking deleguje propsem
-// do współdzielonego <input> w rodzicu.
 export function Dropzone({ onFiles, onPick }: DropzoneProps) {
   const { isDragging, dropHandlers } = useFileDrop(onFiles)
 

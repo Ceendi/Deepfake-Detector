@@ -52,7 +52,6 @@
   border: 1px solid var(--color-accent);
 }
 
-/* Przycisk zamknięcia — przezroczysty, dziedziczy kolor wariantu (currentColor) */
 .close {
   grid-row: 1 / 2;
   grid-column: 3 / 4;
@@ -74,7 +73,6 @@
   background-color: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-/* Ring dopasowany do wariantu — currentColor = kolor wariantu (przez color: inherit z .alert) */
 .close:focus-visible {
   outline-color: color-mix(in srgb, currentColor 45%, transparent);
 }

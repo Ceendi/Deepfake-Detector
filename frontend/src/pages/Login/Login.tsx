@@ -8,19 +8,15 @@ import { Spinner } from '@/components/ui/Spinner/Spinner'
 
 import styles from './Login.module.css'
 
-// Pełnoekranowy ekran wejścia (renderowany poza Layoutem/Headerem). Logowanie
-// i rejestracja delegowane do Keycloaka (redirect PKCE) — nie budujemy własnego
-// formularza, tylko dwa wejścia w hostowany flow.
 export default function Login() {
   const { isAuthenticated, isLoading, login, register } = useAuth()
   const location = useLocation()
-  // Deep link: ProtectedRoute zapisuje w state stronę, na którą użytkownik chciał wejść.
+
   const fromLocation = (location.state as { from?: Partial<Location> } | null)?.from
   const from = fromLocation?.pathname
     ? `${fromLocation.pathname}${fromLocation.search ?? ''}${fromLocation.hash ?? ''}`
     : '/'
 
-  // Sprawdzanie sesji — spinner wyśrodkowany na tym samym tle co karta.
   if (isLoading) {
     return (
       <div className={styles.screen}>
@@ -29,7 +25,6 @@ export default function Login() {
     )
   }
 
-  // Już zalogowany → wracamy tam, skąd ProtectedRoute przekierował (albo na dashboard).
   if (isAuthenticated) {
     return <Navigate to={from} replace />
   }

@@ -22,6 +22,14 @@ export class AnalysisStillRunningError extends Error {
   }
 }
 
+/** The frontend stopped watching at the backend's absolute age limit. */
+export class AnalysisAgeLimitError extends Error {
+  constructor() {
+    super('Przekroczono czas oczekiwania na analizę. Sprawdź jej stan w historii.')
+    this.name = 'AnalysisAgeLimitError'
+  }
+}
+
 export interface WatchOptions {
   /** Server creation time; bounds how long an active analysis is watched. */
   createdAt?: string
@@ -167,7 +175,7 @@ export async function watchAnalysis(
         if (!(error instanceof AnalysisStillRunningError)) throw error
       }
       if (!announced) {
-        if (Date.now() >= deadline) throw new AnalysisStillRunningError()
+        if (Date.now() >= deadline) throw new AnalysisAgeLimitError()
         announced = true
         options.onStillRunning?.()
       }
@@ -190,6 +198,6 @@ export async function watchAnalysis(
       }
     }
 
-    if (Date.now() >= deadline) throw new AnalysisStillRunningError()
+    if (Date.now() >= deadline) throw new AnalysisAgeLimitError()
   }
 }

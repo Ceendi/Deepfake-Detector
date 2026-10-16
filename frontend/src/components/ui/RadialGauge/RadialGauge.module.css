@@ -5,11 +5,10 @@
   width: var(--size, 160px);
   height: var(--size, 160px);
   border-radius: var(--radius-full);
-  /* Pierścień: --value% w kolorze --gauge-color, reszta = neutralny track. */
+
   background: conic-gradient(var(--gauge-color) calc(var(--value, 0) * 1%), var(--color-border) 0);
 }
 
-/* Wycięty środek → donut. inset = grubość pierścienia. */
 .gauge::before {
   content: '';
   position: absolute;
@@ -19,7 +18,7 @@
 }
 
 .inner {
-  position: relative; /* nad ::before */
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,7 +40,6 @@
   color: var(--color-text-muted);
 }
 
-/* Tony — tylko kolor wypełnienia/liczby. */
 .accent {
   --gauge-color: var(--color-accent);
 }

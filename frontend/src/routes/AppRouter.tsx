@@ -63,7 +63,7 @@ const router = createBrowserRouter([
     ),
     errorElement: <RouteError />,
   },
-  // Publiczny podgląd prymitywów — tylko w dev (znika z prod buildu).
+
   ...(import.meta.env.DEV
     ? [
         {

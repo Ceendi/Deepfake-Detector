@@ -38,7 +38,7 @@ describe('useFileNames', () => {
       ['a', 'a.mp4'],
       ['b', 'b.mp4'],
     ])
-    expect(getFileMetadata).toHaveBeenCalledTimes(3) // 'a' tylko raz
+    expect(getFileMetadata).toHaveBeenCalledTimes(3)
   })
 
   it('zatrzymuje ładowanie po 429 zamiast wysyłać żądania dla całej historii', async () => {
@@ -48,7 +48,7 @@ describe('useFileNames', () => {
     const { result } = renderHook(() => useFileNames(ids, true))
 
     await waitFor(() => expect(result.current.loading).toBe(false))
-    // Każdy z równoległych workerów kończy najwyżej jedno żądanie.
+
     expect(vi.mocked(getFileMetadata).mock.calls.length).toBeLessThanOrEqual(4)
   })
 })

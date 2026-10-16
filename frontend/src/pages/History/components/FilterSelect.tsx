@@ -7,14 +7,12 @@ import type { FilterOption } from '../filters'
 import styles from '../History.module.css'
 
 interface FilterSelectProps {
-  label: string // prefiks na przycisku, np. „Status"
+  label: string
   value: string
   options: FilterOption[]
   onChange: (value: string) => void
 }
 
-// Dropdown filtra: przycisk „label: wybrane ▾" + popover z opcjami. Zamyka się kliknięciem poza
-// obszar i Escape. Aktywny (≠ wartość domyślna) podświetlamy akcentem.
 export function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)

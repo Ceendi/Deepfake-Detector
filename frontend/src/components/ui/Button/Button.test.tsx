@@ -65,8 +65,6 @@ describe('Button', () => {
     expect(onClick).not.toHaveBeenCalled()
   })
 
-  // Wariant nie ma zachowania, tylko styl — to JEST kontrakt design-systemu. Używamy tego samego
-  // obiektu `styles` co komponent, więc test jest odporny na zahashowane nazwy klas CSS Modules.
   it('nakłada klasę wariantu', () => {
     render(
       <Button variant="danger" size="sm">
