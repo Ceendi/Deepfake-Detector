@@ -26,6 +26,7 @@ before moving these generations together. Project-specific checks:
 | Gateway / Redis | Cloud Gateway remains 5.0.3. Warm-up still executes its bundled Lua script with rate, burst, time and requested-token arguments. Rate-limit integration tests cover real Redis, isolation and outage behavior; the readiness test checks warm-up ordering. |
 | Eureka | Keep the existing server/client configuration and `lb://` routes. The server context test and infrastructure discovery test exercise startup, registration and routing. |
 | Flyway / JPA | Boot manages Flyway 12.4 and Hibernate 7.4. Keep the Flyway starter and PostgreSQL module; use the default JPA bootstrap mode. Existing migrations remain immutable; migration and repository integration tests cover real PostgreSQL. |
+| Process tests on Windows | Pass the outbox subprocess classpath through a Java argument file: the expanded dependency classpath exceeds the Windows command-line limit. The crash-after-confirm and restart assertions remain unchanged. |
 | Actuator / observability | Keep health exposure, probes, tracing export and Prometheus configuration. Context tests scrape latency histograms; infrastructure and E2E tests check health and readiness. |
 | Other upgrade notes | No layertools, Derby, jOOQ, gRPC, custom Tomcat base directory or deferred JPA bootstrap are configured. The application does not enable lazy JDBC connection fetching or new JWT authority expressions. |
 

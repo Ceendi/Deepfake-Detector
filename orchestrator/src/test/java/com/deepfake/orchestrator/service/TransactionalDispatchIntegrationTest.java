@@ -510,8 +510,12 @@ class TransactionalDispatchIntegrationTest {
     private Process orchestrator(String name, boolean crash) throws Exception {
         Path state = directory.resolve(name);
         Files.createDirectories(state);
+        // The dependency classpath exceeds Windows' process command-line limit.
+        Path classpathArgs = state.resolve("classpath.args");
+        String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
+        Files.writeString(classpathArgs, "-cp\n\"" + classpath.replace("\\", "\\\\").replace("\"", "\\\"") + "\"\n");
         var arguments = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin/java").toString(),
-                "-cp", System.getProperty("surefire.test.class.path", System.getProperty("java.class.path")),
+                "@" + classpathArgs,
                 OutboxProcessProbe.class.getName(), "--server.port=0", "--eureka.client.enabled=false",
                 "--spring.datasource.url=" + postgres.getJdbcUrl(), "--spring.datasource.username=" + postgres.getUsername(),
                 "--spring.datasource.password=" + postgres.getPassword(), "--spring.data.redis.host=" + redisContainer.getHost(),
