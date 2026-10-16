@@ -123,7 +123,10 @@ class KeycloakSecurityTest(unittest.TestCase):
             self.assertEqual(0, status['ExitCode'])
 
         self.eventually(assert_import_finished)
-        self.admin = self.token('master', {
+        self.admin = self.admin_token()
+
+    def admin_token(self):
+        return self.token('master', {
             'grant_type': 'password', 'client_id': 'admin-cli',
             'username': 'admin', 'password': 'changeme_dev',
         })
@@ -163,12 +166,15 @@ class KeycloakSecurityTest(unittest.TestCase):
             '/config/dev/realm-export.json'
         )
         self.compose_file.write_text(json.dumps(config))
-        self.compose('up', '-d', '--force-recreate', 'keycloak-config-cli')
+        # Rerun only the importer: recreating Keycloak would drop the admin session.
+        self.compose('up', '-d', '--no-deps', '--force-recreate', 'keycloak-config-cli')
         self.compose('wait', 'keycloak-config-cli')
         status = json.loads(self.compose('ps', '-a', '--format', 'json', 'keycloak-config-cli'))
         if isinstance(status, list):
             status = status[0]
         self.assertEqual(0, status['ExitCode'])
+        # The master admin token lives 60 s; the import alone can take longer on CI.
+        self.admin = self.admin_token()
         users = self.request('/admin/realms/deepfake/users', token=self.admin)
         self.assertTrue({'alice', 'bob', 'registered-user'} <= {user['username'] for user in users})
 
