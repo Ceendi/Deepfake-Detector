@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.8</version>
+		<version>4.1.1</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.deepfake</groupId>
@@ -35,7 +35,6 @@
 		<jackson-bom.version>3.2.3</jackson-bom.version>
 		<netty.version>4.2.18.Final</netty.version>
 		<tomcat.version>11.0.26</tomcat.version>
-		<micrometer.version>1.16.7</micrometer.version>
 		<httpcore5.version>5.4.4</httpcore5.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 		<freemarker.version>2.3.35</freemarker.version>
@@ -99,7 +98,7 @@
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>3.0.3</version>
+			<version>3.1.1</version>
 		</dependency>
 
 		<dependency>

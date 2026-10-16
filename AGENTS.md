@@ -58,9 +58,11 @@ cd frontend && npm ci && npm run lint && npm run test:run && npm run build      
 Źródłem prawdy dla wersji są `*/pom.xml`, `frontend/package.json`, `*/pyproject.toml` i `docker-compose.yml`.
 Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 
-- **Spring Boot 4.0 / Java 25:** Jackson 3 (`tools.jackson.*`, oprócz `com.fasterxml` dla adnotacji), nie mieszaj
+- **Spring Boot 4.1 / Java 25:** Jackson 3 (`tools.jackson.*`, oprócz `com.fasterxml` dla adnotacji), nie mieszaj
   z Jackson 2; w AMQP `JacksonJsonMessageConverter`, nie `Jackson2JsonMessageConverter`. Spring Cloud **2025.1**
-  (2025.0 nie działa z SB 4.0). Flyway przez `spring-boot-starter-flyway`. Null safety: JSpecify.
+  obsługuje Boot 4.1 od **2025.1.2** (2025.0 jest dla Boot 3.5); springdoc **3.1**.
+  Micrometer z BOM Boot (linia 1.17), bez starszego nadpisania 1.16.
+  Flyway przez `spring-boot-starter-flyway`. Null safety: JSpecify.
   Retry listenerów: `max-retries` (SB 4.0 po cichu ignoruje `max-attempts`).
 - Każdy Dockerfile Java ustawia
   `JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders -XX:MaxRAMPercentage=75"` (budżet RAM 16 GB).
