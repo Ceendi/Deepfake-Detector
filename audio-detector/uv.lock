@@ -702,7 +702,7 @@ requires-dist = [
     { name = "redis", specifier = "==8.1.0" },
     { name = "seaborn", marker = "extra == 'training'", specifier = ">=0.13.2" },
     { name = "soundfile", specifier = "==0.14.0" },
-    { name = "starlette", specifier = "==1.7.0" },
+    { name = "starlette", specifier = "==1.8.0" },
     { name = "structlog", specifier = "==25.5.0" },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = "==2.12.0" },
     { name = "torch", marker = "sys_platform == 'linux'", specifier = "==2.12.0", index = "https://download.pytorch.org/whl/cpu" },
@@ -3068,8 +3068,8 @@ name = "standard-aifc"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "audioop-lts", marker = "python_full_version >= '3.13'" },
-    { name = "standard-chunk", marker = "python_full_version >= '3.13'" },
+    { name = "audioop-lts" },
+    { name = "standard-chunk" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c4/53/6050dc3dde1671eb3db592c13b55a8005e5040131f7509cef0215212cb84/standard_aifc-3.13.0.tar.gz", hash = "sha256:64e249c7cb4b3daf2fdba4e95721f811bde8bdfc43ad9f936589b7bb2fae2e43", size = 15240, upload-time = "2024-10-30T16:01:31.772Z" }
 wheels = [
@@ -3090,7 +3090,7 @@ name = "standard-sunau"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "audioop-lts", marker = "python_full_version >= '3.13'" },
+    { name = "audioop-lts" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/66/e3/ce8d38cb2d70e05ffeddc28bb09bad77cfef979eb0a299c9117f7ed4e6a9/standard_sunau-3.13.0.tar.gz", hash = "sha256:b319a1ac95a09a2378a8442f403c66f4fd4b36616d6df6ae82b8e536ee790908", size = 9368, upload-time = "2024-10-30T16:01:41.626Z" }
 wheels = [
@@ -3099,15 +3099,15 @@ wheels = [
 
 [[package]]
 name = "starlette"
-version = "1.7.0"
+version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7b/2b/3850dc6bf7ef71b088962eba31dafc6cffd2f96e577ebb0bb316df96da3e/starlette-1.7.0.tar.gz", hash = "sha256:c79f74ea63cff761804fbbfb182f1e0b440c2d07b164d24700c5a1bab5d6ff5d", size = 2736246, upload-time = "2026-09-23T07:30:26.35Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e9/0c/6efb252d091ecccd7d62048ae11f0ea35cd75a4fbaeea5e30f9c3bf91d10/starlette-1.8.0.tar.gz", hash = "sha256:1565dc0b35d5737a271ed1e0e04e949f4e81198799f216d2667b0a0fb9cf9522", size = 2730457, upload-time = "2026-10-13T07:54:39.53Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4e/d6/1ec1b290f9e0fb067899b61e1d37a30c923068bad260b216dbe37a7d2967/starlette-1.7.0-py3-none-any.whl", hash = "sha256:67f8e99895493dd2911a03f11314af6ceebeae4e704bb9f43dfc6a9db151c93e", size = 78980, upload-time = "2026-09-23T07:30:24.567Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/b0/5742e4ac7af5eb58ec3470a537a49d7aa507e5539413e504b3a65ef50ba8/starlette-1.8.0-py3-none-any.whl", hash = "sha256:dfdd6b29c26483288088d990eee59631dedadd66ce20d203402a7ca8e3c4656f", size = 79612, upload-time = "2026-10-13T07:54:38.019Z" },
 ]
 
 [[package]]
@@ -3180,13 +3180,13 @@ resolution-markers = [
     "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "filelock", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "fsspec", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "jinja2", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "networkx", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "setuptools", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "sympy", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "typing-extensions", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "jinja2" },
+    { name = "networkx" },
+    { name = "setuptools" },
+    { name = "sympy" },
+    { name = "typing-extensions" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ef/bb/285d643f254731294c9b595a007eac39db4600a98682d7bca688f42ca164/torch-2.12.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:b41339df93d491435e790ff8bcbae1c0ce777175889bfd1281d119862793e6a2", size = 88010197, upload-time = "2026-05-13T14:55:35.414Z" },
@@ -3209,13 +3209,13 @@ resolution-markers = [
     "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'linux'",
 ]
 dependencies = [
-    { name = "filelock", marker = "sys_platform == 'linux'" },
-    { name = "fsspec", marker = "sys_platform == 'linux'" },
-    { name = "jinja2", marker = "sys_platform == 'linux'" },
-    { name = "networkx", marker = "sys_platform == 'linux'" },
-    { name = "setuptools", marker = "sys_platform == 'linux'" },
-    { name = "sympy", marker = "sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "sys_platform == 'linux'" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "jinja2" },
+    { name = "networkx" },
+    { name = "setuptools" },
+    { name = "sympy" },
+    { name = "typing-extensions" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torch-2.12.0%2Bcpu-cp312-cp312-linux_s390x.whl", hash = "sha256:b9d0e8eed0af9321ffb12b75f4aca371b071254f12cf75875d5a8e7cc8f52b51", upload-time = "2026-05-12T23:16:33Z" },
@@ -3248,13 +3248,13 @@ resolution-markers = [
     "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "filelock", marker = "sys_platform == 'win32'" },
-    { name = "fsspec", marker = "sys_platform == 'win32'" },
-    { name = "jinja2", marker = "sys_platform == 'win32'" },
-    { name = "networkx", marker = "sys_platform == 'win32'" },
-    { name = "setuptools", marker = "sys_platform == 'win32'" },
-    { name = "sympy", marker = "sys_platform == 'win32'" },
-    { name = "typing-extensions", marker = "sys_platform == 'win32'" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "jinja2" },
+    { name = "networkx" },
+    { name = "setuptools" },
+    { name = "sympy" },
+    { name = "typing-extensions" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cu126/torch-2.12.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:194f5bd0721b968e769777b8ab4dbe51dd7ffdfdf295db045093b94a1b9765bb", upload-time = "2026-05-12T23:28:57Z" },
@@ -3359,9 +3359,9 @@ resolution-markers = [
     "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "numpy", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "pillow", marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "torch", version = "2.12.0", source = { registry = "https://pypi.org/simple" } },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/c8/5cd91932f7f3671b0743dc4ae1a4c16b1d0b45bf4087976277d325bda718/torchvision-0.27.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:1a6dd742a150645126df9e0b2e449874c1d635897c773b322c2e067e98382dfe", size = 1758824, upload-time = "2026-05-13T14:57:15.227Z" },
@@ -3384,9 +3384,9 @@ resolution-markers = [
     "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'linux'",
 ]
 dependencies = [
-    { name = "numpy", marker = "sys_platform == 'linux'" },
-    { name = "pillow", marker = "sys_platform == 'linux'" },
-    { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux'" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "torch", version = "2.12.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" } },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cpu/torchvision-0.27.0%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:1b06f42d48b62098114923d8a3fe9fa864182715db06584a515155db0aa8eb30", upload-time = "2026-05-12T16:20:36Z" },
@@ -3414,9 +3414,9 @@ resolution-markers = [
     "python_full_version < '3.13' and platform_machine == 's390x' and sys_platform == 'win32'",
 ]
 dependencies = [
-    { name = "numpy", marker = "sys_platform == 'win32'" },
-    { name = "pillow", marker = "sys_platform == 'win32'" },
-    { name = "torch", version = "2.12.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" }, marker = "sys_platform == 'win32'" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "torch", version = "2.12.0+cu126", source = { registry = "https://download.pytorch.org/whl/cu126" } },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cu126/torchvision-0.27.0%2Bcu126-cp312-cp312-win_amd64.whl", hash = "sha256:038691814aef031fddb1c654cc514168b375067840ce189f03de0382f6a72c13", upload-time = "2026-05-13T02:00:38Z" },
