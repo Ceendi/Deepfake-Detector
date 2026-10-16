@@ -1,5 +1,4 @@
 import json
-import math
 import os
 import re
 import sys
@@ -17,6 +16,7 @@ import structlog
 from opentelemetry.trace import SpanKind, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from .config import number
 from .connection import ConnectionChannel
 from .errors import DetectorError, ModelUnavailableError, StorageUnavailableError
 from .storage import is_transient_storage_error, required_env
@@ -34,10 +34,7 @@ _FILE_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F
 
 
 def _task_hard_limit_seconds():
-    limit = float(os.getenv("DETECTOR_TASK_HARD_LIMIT_SECONDS", "3600"))
-    if not math.isfinite(limit) or limit <= 0:
-        raise ValueError("Detector task hard limit must be finite and positive")
-    return limit
+    return number("DETECTOR_TASK_HARD_LIMIT_SECONDS", 3600, exclusive=True)
 
 
 class AnalysisCancelled(Exception):
@@ -71,9 +68,11 @@ class DetectorRuntime:
         self.propagator = TraceContextTextMapPropagator()
         self.rabbit_host = os.getenv("RABBITMQ_HOST", "rabbitmq")
         self.rabbit_user = os.getenv("RABBITMQ_USER", "deepfake")
+        self.rabbit_password = required_env("RABBITMQ_PASSWORD")
         self.task_hard_limit_seconds = _task_hard_limit_seconds()
         self.exit_process = os._exit
         self._task_started = None
+        self._task_context = {}
         self._redis_retry_at = 0.0
         self._storage_failures = 0
         self._watchdog = None
@@ -127,7 +126,8 @@ class DetectorRuntime:
                     # An outage must not complete the analysis without its heatmaps.
                     if is_transient_storage_error(e):
                         raise StorageUnavailableError("Artifact upload failed") from e
-                    self.log.exception("gradcam_upload_failed", error=str(e), **artifact.log_fields)
+                    self.log.error("gradcam_upload_failed", error_type=type(e).__name__,
+                                   **artifact.log_fields)
                 finally:
                     if not artifact.missing_ok or os.path.exists(artifact.path):
                         os.remove(artifact.path)
@@ -154,13 +154,14 @@ class DetectorRuntime:
             correlation_id = msg.get("correlation_id", "")
         except (ValueError, KeyError, TypeError, RecursionError) as e:
             # ValueError also covers non-UTF-8 bodies; RecursionError covers deep nesting.
-            self.log.error("bad_message_to_dlq", error=str(e), error_type=type(e).__name__)
+            self.log.error("bad_message_to_dlq", error_type=type(e).__name__)
             ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
             return
 
         upstream = self.propagator.extract(carrier=properties.headers or {})
         with self.tracer.start_as_current_span(
                 f"{self.queue} process", context=upstream, kind=SpanKind.CONSUMER,
+                record_exception=False, set_status_on_exception=False,
                 attributes={"analysis.id": analysis_id, "analysis.source": self.source}) as span:
             sc = span.get_span_context()
             trace_fields = ({"trace_id": format(sc.trace_id, "032x"),
@@ -228,13 +229,16 @@ class DetectorRuntime:
                     raise
                 except StorageUnavailableError as e:
                     # No traceback: botocore endpoint URLs carry the object key (user file name).
+                    span.set_status(StatusCode.ERROR)
+                    span.set_attribute("error.type", type(e.__cause__).__name__)
                     self.log.warning("storage_unavailable_redelivering",
                                      error_type=type(e.__cause__).__name__)
                     raise
-                except Exception as e:
-                    self.log.exception("processing_failed")
-                    span.record_exception(e)
-                    span.set_status(StatusCode.ERROR, str(e))
+                except Exception as e:  # noqa: BLE001
+                    # SDK exception text and tracebacks can contain legacy S3 object names.
+                    self.log.error("processing_failed", error_type=type(e).__name__)
+                    span.set_attribute("error.type", type(e).__name__)
+                    span.set_status(StatusCode.ERROR)
                     # Foreign exceptions may carry numeric codes and paths (e.g. cv2.error).
                     domain = isinstance(e, DetectorError) and isinstance(e.code, str)
                     payload = {
@@ -254,6 +258,10 @@ class DetectorRuntime:
                                   prob_fake=result["prob_fake"])
                 else:
                     self.record_outcome("failed", None)
+            except pika.exceptions.AMQPError as error:
+                span.set_status(StatusCode.ERROR)
+                span.set_attribute("error.type", type(error).__name__)
+                raise
             finally:
                 structlog.contextvars.clear_contextvars()
 
@@ -276,11 +284,18 @@ class DetectorRuntime:
         ch.queue_bind(queue="analysis.progress", exchange=EXCHANGE, routing_key="analysis.progress")
 
     def run_task(self, ch, method, properties, body):
+        try:
+            msg = json.loads(body)
+            self._task_context = {key: msg.get(key, "")
+                                  for key in ("analysis_id", "correlation_id")}
+        except (ValueError, TypeError, AttributeError, RecursionError):
+            self._task_context = {}
         self._task_started = time.monotonic()
         try:
             return self.handle_message(ch, method, properties, body)
         finally:
             self._task_started = None
+            self._task_context = {}
 
     def check_task_deadline(self, health_state=None):
         started = self._task_started
@@ -291,7 +306,8 @@ class DetectorRuntime:
         (health_state if health_state is not None else self.health_state)["ok"] = False
         self.log.critical("task_hard_limit_exceeded",
                           limit_seconds=self.task_hard_limit_seconds,
-                          elapsed_seconds=round(time.monotonic() - started))
+                          elapsed_seconds=round(time.monotonic() - started),
+                          source=self.source, **self._task_context)
         sys.stdout.flush()
         sys.stderr.flush()
         self.exit_process(1)
@@ -326,7 +342,7 @@ class DetectorRuntime:
             deliveries = []
             delay = RECONNECT_DELAY_SECONDS
             try:
-                creds = pika.PlainCredentials(self.rabbit_user, required_env("RABBITMQ_PASSWORD"))
+                creds = pika.PlainCredentials(self.rabbit_user, self.rabbit_password)
                 params = pika.ConnectionParameters(
                     host=self.rabbit_host,
                     port=int(os.getenv("RABBITMQ_PORT", "5672")), credentials=creds,
@@ -358,14 +374,14 @@ class DetectorRuntime:
                             delivery.result()
                             deliveries.remove(delivery)
                     health_state["last_beat"] = time.time()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 health_state["ok"] = False
                 delay = self.reconnect_delay(e)
                 if isinstance(e, StorageUnavailableError):
                     self.log.warning("storage_unavailable_reconnecting", backoff_seconds=delay)
                 else:
-                    self.log.exception("consumer_crashed_reconnecting", error=str(e),
-                                       backoff_seconds=delay)
+                    self.log.error("consumer_crashed_reconnecting", error_type=type(e).__name__,
+                                   backoff_seconds=delay)
             finally:
                 health_state["ok"] = False
                 if channel is not None:

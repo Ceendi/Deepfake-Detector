@@ -24,7 +24,7 @@ USER app
 FROM runtime-base AS runtime
 USER root
 
-COPY --chown=app:app pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock ./
 COPY --from=detector_runtime /pyproject.toml /detector-runtime/pyproject.toml
 # Production image is CPU-only (ONNX CPUExecutionProvider). Pulling CPU wheels
 # instead of CUDA drops ~4.5 GB (nvidia/* libs + triton) from the image.
@@ -38,17 +38,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 # Pack RetinaFace (buffalo_l) zapieczony w obrazie na etapie builda — kontener nie
 # moze zalezec od dostepu do sieci przy pierwszym zadaniu (demo offline).
 RUN python -c "from insightface.app import FaceAnalysis; \
-    FaceAnalysis(name='buffalo_l', root='/app/.insightface', allowed_modules=['detection'])" \
-    && chown -R app:app /app/.insightface
+    FaceAnalysis(name='buffalo_l', root='/app/.insightface', allowed_modules=['detection'])"
 
 COPY --from=detector_runtime /detector_runtime /detector-runtime/detector_runtime
 RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
 
-COPY --chown=app:app src ./src
+COPY src ./src
 # training/ wnosi defy modelu (training/model.py) + checkpointy effnet_lstm
 # (last.ckpt do atencji/Grad-CAM, backbone.onnx + temporal.onnx do inferencji);
 # dataset cache / grid / venv wyciete w .dockerignore.
-COPY --chown=app:app training ./training
+COPY training ./training
+
+# uv leaves its advisory lock writable; runtime never installs packages.
+RUN chmod go-w /opt/venv/.lock
 
 USER app
 EXPOSE 8000

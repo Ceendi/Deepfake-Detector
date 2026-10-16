@@ -1,29 +1,10 @@
 """Exercise production frame guards and confirmed failures without ML checkpoints."""
-import importlib.util
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-
-
-@pytest.fixture
-def load_inference(monkeypatch):
-    import sys
-
-    for name in ("cv2", "torch", "onnxruntime", "training", "training.model",
-                 "prometheus_client"):
-        monkeypatch.setitem(sys.modules, name, MagicMock())
-
-    def load():
-        spec = importlib.util.spec_from_file_location(
-            "src._media_limits_inference", Path(__file__).parents[1] / "src/inference.py")
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-
-    return load
 
 
 @pytest.fixture
@@ -47,7 +28,10 @@ def capture(module, monkeypatch, total, fps, actual=None, width=1280, height=720
     cap.grab.side_effect = grab
     cap.retrieve.return_value = (True, np.zeros((height, width, 3), np.uint8)
                                  if frame is None else frame)
-    monkeypatch.setattr(module.cv2, "VideoCapture", MagicMock(return_value=cap))
+    second = MagicMock()
+    second.grab.side_effect = [True] * (total if actual is None else actual) + [False]
+    second.retrieve.return_value = cap.retrieve.return_value
+    monkeypatch.setattr(module.cv2, "VideoCapture", MagicMock(side_effect=[cap, second]))
     return cap
 
 
@@ -342,3 +326,63 @@ def test_analyze_forwards_progress_and_limits_gradcam_to_real_faces(module, monk
     model.analyze("input", progress_callback=callback)
     model._read_frames.assert_called_once_with("input", callback)
     assert top.call_args.args[2] == 5
+
+
+def test_resolution_change_on_unsampled_frame_is_rejected(module, monkeypatch):
+    cap = capture(module, monkeypatch, total=100, fps=25)
+    frames = [np.zeros((2, 2, 3), np.uint8), np.zeros((2161, 3840, 3), np.uint8)]
+    cap.retrieve.side_effect = lambda: (True, frames[1 if cap.grab.call_count == 2 else 0])
+    with pytest.raises(RuntimeError) as error:
+        analyzer(module)._read_frames("input")
+    assert error.value.code == "MEDIA_RESOLUTION_TOO_HIGH"
+    assert cap.retrieve.call_count == 2
+    cap.release.assert_called_once()
+
+
+@pytest.mark.parametrize("reported", [0, 2, 200])
+def test_uniform_sampling_uses_decoded_count(module, monkeypatch, reported):
+    captures = []
+    def open_capture(path):
+        cap = MagicMock()
+        props = {module.cv2.CAP_PROP_FRAME_COUNT: reported, module.cv2.CAP_PROP_FPS: 25,
+                 module.cv2.CAP_PROP_FRAME_WIDTH: 2, module.cv2.CAP_PROP_FRAME_HEIGHT: 2}
+        cap.get.side_effect = props.__getitem__
+        index = [-1]
+        def grab():
+            index[0] += 1
+            return index[0] < 100
+        cap.grab.side_effect = grab
+        cap.retrieve.side_effect = lambda: (True, np.full((2, 2, 3), index[0], np.uint8))
+        captures.append(cap)
+        return cap
+    monkeypatch.setattr(module.cv2, "VideoCapture", open_capture)
+    frames, duration, _ = analyzer(module)._read_frames("input")
+    expected = module.sample_indices(100, 25).tolist()
+    assert [int(frame[0, 0, 0]) for _, frame in frames] == expected
+    assert duration == 4
+    for cap in captures:
+        cap.release.assert_called_once()
+
+
+def test_real_image_sequence_resolution_change_before_face_detection(
+        load_inference, monkeypatch, tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    small = np.zeros((32, 32, 3), np.uint8)
+    large = np.zeros((2161, 3840, 3), np.uint8)
+    ok, ordinary = cv2.imencode(".png", small)
+    assert ok
+    ok, oversized = cv2.imencode(".png", large)
+    assert ok
+    # Image-sequence decoding preserves resolution changes rather than rescaling to frame 0.
+    packets = [ordinary.tobytes(), oversized.tobytes()] + [ordinary.tobytes()] * 98
+    for index, packet in enumerate(packets):
+        (tmp_path / f"frame_{index:03}.png").write_bytes(packet)
+    capture_video = cv2.VideoCapture
+    module = load_inference()
+    monkeypatch.setattr(module, "cv2", cv2)
+    monkeypatch.setattr(cv2, "VideoCapture", lambda path: capture_video(path, cv2.CAP_IMAGES))
+    model = analyzer(module)
+    model._crop_faces = MagicMock()
+    with pytest.raises(module.ResolutionTooHighError):
+        model.analyze(str(tmp_path / "frame_%03d.png"))
+    model._crop_faces.assert_not_called()

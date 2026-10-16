@@ -36,6 +36,7 @@ from detector_runtime import MediaTooLongError
 from detector_runtime.metrics import inference_duration_buckets
 from prometheus_client import Gauge, Histogram
 
+from .config import load_config
 from .utils import (
     IMAGENET_MEAN,
     IMAGENET_STD,
@@ -60,31 +61,26 @@ BACKBONE_ONNX_PATH = os.path.join(MODEL_DIR, "backbone.onnx")
 TEMPORAL_ONNX_PATH = os.path.join(MODEL_DIR, "temporal.onnx")
 CKPT_PATH = os.path.join(MODEL_DIR, "last.ckpt")
 MODEL_VERSION = os.getenv("MODEL_VERSION", "effnetb4-bilstm-v1.0.0")
-MEDIA_MAX_DURATION_SECONDS = float(os.getenv("MEDIA_MAX_DURATION_SECONDS", "1800"))
-if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <= 0:
-    raise ValueError("Media duration limit must be finite and positive")
+SETTINGS = load_config()
+MEDIA_MAX_DURATION_SECONDS = SETTINGS["MEDIA_MAX_DURATION_SECONDS"]
 # Without usable FPS metadata, assume a high frame rate: the frame budget still bounds decoding
 # without rejecting ordinary 24-60 fps clips that fit the duration limit.
 FALLBACK_FPS = 60.0
 # Inflated FPS metadata (e.g. 90000) must not inflate the decoding budget.
 MAX_BUDGET_FPS = 240.0
 # Orientation-independent width*height limit (default 3840x2160).
-MEDIA_MAX_PIXELS = int(os.getenv("MEDIA_MAX_PIXELS", "8294400"))
-if MEDIA_MAX_PIXELS <= 0:
-    raise ValueError("Media pixel limit must be positive")
+MEDIA_MAX_PIXELS = SETTINGS["MEDIA_MAX_PIXELS"]
 # Sampled frames are held until face detection; bound their memory (DET_SIZE is far smaller).
 MAX_FRAME_SIDE = 1920
 # Decoding long or high-resolution clips can exceed the stuck-job idle budget without ticks.
 DECODE_PROGRESS_INTERVAL_SECONDS = 5.0
 
-# Prog decyzyjny z ewaluacji (training/eval.py); 0.5 = brak przesuniecia.
-# Wkalibrowany w prob_fake, zeby Orchestrator (sztywne 0.5) mowil tym samym jezykiem.
-DECISION_THRESHOLD = float(os.getenv("DECISION_THRESHOLD", "0.5"))
-FRAME_STRATEGY = os.getenv("FRAME_STRATEGY", "uniform")  # uniform | middle2s (benchmark MO)
-ONNX_INTRA_THREADS = int(os.getenv("ONNX_INTRA_THREADS", "4"))
-DET_SIZE = int(os.getenv("DET_SIZE", "640"))      # rozdzielczosc detekcji RetinaFace (jak prep_cache)
-MIN_FACES = int(os.getenv("MIN_FACES", "4"))      # ponizej -> NO_FACE_DETECTED (cache treningowy: 8/16)
-GRADCAM_TOPK = int(os.getenv("GRADCAM_TOPK", "3"))
+DECISION_THRESHOLD = SETTINGS["DECISION_THRESHOLD"]
+FRAME_STRATEGY = SETTINGS["FRAME_STRATEGY"]
+ONNX_INTRA_THREADS = SETTINGS["ONNX_INTRA_THREADS"]
+DET_SIZE = SETTINGS["DET_SIZE"]
+MIN_FACES = SETTINGS["MIN_FACES"]
+GRADCAM_TOPK = SETTINGS["GRADCAM_TOPK"]
 # Sciezka na pack buffalo_l; FaceAnalysis dociaga go przy pierwszym prepare(), jesli brak.
 INSIGHTFACE_ROOT = os.getenv("INSIGHTFACE_ROOT", os.path.expanduser("~/.insightface"))
 
@@ -126,6 +122,7 @@ def _bounded_frame(frame: np.ndarray) -> np.ndarray:
 class VideoInference:
     def __init__(self):
         start_load = time.time()
+        torch.set_num_threads(ONNX_INTRA_THREADS)
         opts = ort.SessionOptions()
         opts.intra_op_num_threads = ONNX_INTRA_THREADS
         self.backbone_session = ort.InferenceSession(
@@ -147,9 +144,12 @@ class VideoInference:
         if self.face_app is None:
             from insightface.app import FaceAnalysis
 
+            opts = ort.SessionOptions()
+            opts.intra_op_num_threads = ONNX_INTRA_THREADS
             app = FaceAnalysis(name="buffalo_l", root=INSIGHTFACE_ROOT,
-                               allowed_modules=["detection"])
-            app.prepare(ctx_id=0, det_size=(DET_SIZE, DET_SIZE))  # bez GPU spada na CPU EP
+                               allowed_modules=["detection"], sess_options=opts,
+                               providers=["CPUExecutionProvider"])
+            app.prepare(ctx_id=-1, det_size=(DET_SIZE, DET_SIZE))
             self.face_app = app
         return self.face_app
 
@@ -161,7 +161,8 @@ class VideoInference:
         zamiast seekowania — szybsze i odporne na zepsute indeksy (jak prep_cache)."""
         cap = cv2.VideoCapture(video_path)
         try:
-            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            reported = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+            total = int(reported) if math.isfinite(reported) and reported > 0 else 0
             fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
             fps = fps if math.isfinite(fps) and fps > 0 else 0.0
             width = cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0.0
@@ -170,12 +171,9 @@ class VideoInference:
             if math.isfinite(duration) and duration > MEDIA_MAX_DURATION_SECONDS:
                 raise MediaTooLongError()
             _check_resolution(width, height)
-            if total <= 0:
-                log.warning("video_decode_failed", reason="no_frame_count")
-                raise VideoDecodeError()
             # Only the guard uses the fallback; result timestamps keep fps 0.
             budget_fps = min(fps or FALLBACK_FPS, MAX_BUDGET_FPS)
-            wanted = set(sample_indices(total, fps, FRAME_STRATEGY).tolist())
+            wanted = set(sample_indices(total, fps, FRAME_STRATEGY).tolist()) if total else set()
             frames = []
             i = 0
             last_tick = time.monotonic()
@@ -183,23 +181,45 @@ class VideoInference:
             while cap.grab():
                 if (i + 1) / budget_fps > MEDIA_MAX_DURATION_SECONDS:
                     raise MediaTooLongError()
+                ok, frame = cap.retrieve()
+                if not ok or frame is None:
+                    raise VideoDecodeError()
+                _check_resolution(frame.shape[1], frame.shape[0])
                 if i in wanted:
-                    ok, frame = cap.retrieve()
-                    if ok:
-                        frames.append((i / fps if fps > 0 else 0.0, _bounded_frame(frame)))
+                    frames.append((i / fps if fps > 0 else 0.0, _bounded_frame(frame)))
                 i += 1
                 now = time.monotonic()
                 if progress_callback and now - last_tick >= DECODE_PROGRESS_INTERVAL_SECONDS:
                     # The runtime callback also raises AnalysisCancelled for cancelled analyses.
-                    progress_callback(10 + min(4, 5 * i // total), "PREPROCESSING",
+                    progress_callback(10 + min(4, 5 * i // max(total, i, 1)), "PREPROCESSING",
                                       {"step": "extract_frames", "frame": i})
                     last_tick = now
         finally:
             cap.release()
+        if i and i != total:
+            # Reopen rather than seek: corrupt container indexes must not choose the samples.
+            wanted = set(sample_indices(i, fps, FRAME_STRATEGY).tolist())
+            frames = []
+            cap = cv2.VideoCapture(video_path)
+            try:
+                for index in range(i):
+                    if not cap.grab():
+                        raise VideoDecodeError()
+                    if index in wanted:
+                        ok, frame = cap.retrieve()
+                        if not ok or frame is None:
+                            raise VideoDecodeError()
+                        frames.append((index / fps if fps > 0 else 0.0, _bounded_frame(frame)))
+                    now = time.monotonic()
+                    if progress_callback and now - last_tick >= DECODE_PROGRESS_INTERVAL_SECONDS:
+                        progress_callback(14, "PREPROCESSING", {"step": "extract_frames"})
+                        last_tick = now
+            finally:
+                cap.release()
         if not frames:
             log.warning("video_decode_failed", reason="no_sampled_frames", frames_read=i)
             raise VideoDecodeError()
-        return frames, duration, fps
+        return frames, i / fps if fps > 0 else 0.0, fps
 
     def _crop_faces(self, frames, progress_callback=None):
         """Najwieksza twarz per klatka -> norm_crop 224 BGR. Klatki bez twarzy pomijane."""

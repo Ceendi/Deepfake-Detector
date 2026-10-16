@@ -72,3 +72,12 @@ virtual-hosted style (`bucket.endpoint/key`). Set
   `Admin`, so listing the bucket _contents_ (`aws s3 ls s3://bucket/`)
   works but enumerating the bucket _list_ returns `AccessDenied`. Use the
   `admin` key when you need a bucket inventory.
+
+## Detector telemetry privacy
+
+Legacy object keys may include original filenames. Detector download logs retain only the
+file UUID; logs and consumer spans never record SDK exception messages, tracebacks, object
+URLs or original upload keys. Generated Grad-CAM keys contain only technical IDs and may
+remain in artifact-failure logs. Errors retain the exception type and span error status.
+Botocore is not automatically instrumented, so it cannot attach object keys to S3 child spans. The watchdog
+copies `analysis_id` and `correlation_id` from the active delivery across its thread boundary.

@@ -243,20 +243,11 @@ def test_redis_outage_skips_cancel_checks_for_five_seconds(runtime, monkeypatch)
 
 def test_missing_broker_password_never_falls_back_to_a_default(runtime, monkeypatch):
     monkeypatch.delenv("RABBITMQ_PASSWORD")
-    connecting = MagicMock()
-    monkeypatch.setattr(runtime_module.pika, "BlockingConnection", connecting)
-
-    class Stop(BaseException):
-        pass
-
-    def stop(seconds):
-        raise Stop()
-
-    monkeypatch.setattr(runtime_module.time, "sleep", stop)
-    with pytest.raises(Stop):
-        runtime.run_consumer()
-    connecting.assert_not_called()
-    assert runtime.health_state["ok"] is False
+    with pytest.raises(RuntimeError, match="RABBITMQ_PASSWORD"):
+        type(runtime)(source=runtime.source, queue=runtime.queue, log=runtime.log,
+                      tracer=runtime.tracer, s3_client=runtime.s3_client,
+                      redis_client=runtime.redis_client, process_task=runtime.process_task,
+                      record_outcome=runtime.record_outcome)
 
 
 def test_missing_storage_credentials_never_fall_back_to_defaults(monkeypatch):
@@ -266,3 +257,87 @@ def test_missing_storage_credentials_never_fall_back_to_defaults(monkeypatch):
     monkeypatch.setenv("S3_SECRET_KEY", "secret")
     with pytest.raises(RuntimeError, match="S3_ACCESS_KEY"):
         create_s3_client("http://localhost:8333")
+
+
+@pytest.mark.parametrize("transient", [True, False])
+def test_storage_failure_traces_and_logs_omit_private_names(runtime, transient):
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    runtime.tracer = provider.get_tracer("privacy")
+    private = "Jan Kowalski wywiad.mp4"
+    runtime.s3_client.download_file.side_effect = (
+        EndpointConnectionError(endpoint_url=f"http://s3/uploads/{private}") if transient else
+        ClientError({"Error": {"Code": "AccessDenied", "Message": private},
+                     "ResponseMetadata": {"HTTPStatusCode": 403}}, "GetObject"))
+    _use_real_process(runtime)
+    if transient:
+        with pytest.raises(StorageUnavailableError):
+            _deliver(runtime)
+    else:
+        _deliver(runtime)
+    spans = exporter.get_finished_spans()
+    assert spans and all(private not in span.to_json() for span in spans)
+    assert spans[0].status.status_code.name == "ERROR"
+    assert private not in repr(runtime.log.mock_calls)
+    runtime.log.exception.assert_not_called()
+    provider.shutdown()
+
+
+def test_watchdog_logs_running_analysis_context_from_another_thread(runtime):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    entered, release = Event(), Event()
+    def handle(*args):
+        entered.set()
+        assert release.wait(5)
+    runtime.handle_message = handle
+    runtime.exit_process = MagicMock()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(runtime.run_task, MagicMock(), MagicMock(), MagicMock(), _body())
+        try:
+            assert entered.wait(5)
+            runtime._task_started -= runtime.task_hard_limit_seconds + 1
+            runtime.check_task_deadline()
+            fields = runtime.log.critical.call_args.kwargs
+            assert fields["analysis_id"] == ANALYSIS_ID
+            assert fields["correlation_id"] == "corr-1"
+        finally:
+            release.set()
+        future.result(timeout=5)
+
+
+@pytest.mark.parametrize("failure", ["progress", "result", "ack"])
+def test_transport_failure_keeps_safe_error_status(runtime, failure):
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    runtime.tracer = provider.get_tracer("transport")
+    private = "Jan Kowalski wywiad.mp4"
+    channel = MagicMock()
+    error = pika.exceptions.AMQPConnectionError(private)
+    if failure == "ack":
+        channel.basic_ack.side_effect = error
+    else:
+        channel.basic_publish.side_effect = error
+    def process(msg, progress_callback):
+        if failure == "progress":
+            progress_callback(50, "INFERENCE")
+        return {"prob_fake": .9, "verdict": "FAKE", "gradcam_keys": []}
+    runtime.process_task = process
+    with pytest.raises(pika.exceptions.AMQPError):
+        _deliver(runtime, channel)
+    span, = exporter.get_finished_spans()
+    assert span.status.status_code.name == "ERROR"
+    assert span.attributes["error.type"] == "AMQPConnectionError"
+    assert private not in span.to_json()
+    provider.shutdown()
