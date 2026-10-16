@@ -195,7 +195,10 @@ headers without JSON negotiation or warning logs.
 
 The gateway validates `X-Correlation-ID` against `^[A-Za-z0-9-]{1,64}$`, replacing invalid
 or absent values with a UUID and echoing the downstream ID. Both servlet services apply
-the same rule to direct requests. The file claim call forwards the request's MDC correlation ID.
+the same rule to direct requests. The file claim call forwards the request's MDC correlation ID
+and injects the active OpenTelemetry W3C context (`traceparent`, and `tracestate` when present).
+File-service's Spring HTTP observation extracts this context; its correlation filter reads
+`X-Correlation-ID`. The existing complete-response deadline, no redirects and no retries remain.
 
 Security's CORS filter answers permitted preflights before JWT authentication. Origin
 configuration has one source in the gateway, so routing cannot duplicate CORS headers.
@@ -517,7 +520,8 @@ Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `Confirmed
   (`spring.rabbitmq.listener.simple.retry`, `max-retries: 3`), then confirmed republish to
   `analysis.results.dlq`.
   Invalid `analysis_id`, missing/malformed `result.prob_fake`, invalid scores,
-  `ClassCastException` and `NumberFormatException` bypass these retries and go directly
+  class casts, illegal arguments (including number parsing), Bean Validation and AMQP/messaging
+  conversion errors bypass these retries and go directly
   through the confirmed results DLQ recoverer. Payload validation runs before dedup/SQL.
 - **Progress** is advisory: 3 attempts (100 ms, 200 ms), then logged and ACKed. It never fails an
   analysis. The `PROCESSING` heartbeat commits before cache eviction and SSE.
@@ -538,6 +542,8 @@ Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `Confirmed
   its listener is stopped, and restart waits for shutdown completion with 1 s / 2 s / 4 s
   exponential delays capped at 30 s, without an attempt limit. Successful processing resets
   the backoff. Results and DLQs pause independently; progress retains its advisory policy.
+  Redis exceptions anywhere in the cause/application-exception chain are excluded before
+  examining shared Spring DAO types or SQLState. Optional Redis operations remain fail-open.
   Recovery does not extend analysis deadlines: a long outage can still make an active analysis
   eligible for stuck recovery after PostgreSQL returns. Whichever terminal CAS commits first
   wins; a retained late result cannot revive FAILED/CANCELLED records. On return, the next

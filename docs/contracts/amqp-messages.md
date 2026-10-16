@@ -316,7 +316,9 @@ Contract:
 
 - **Results retry:** permanent `analysis.results` processing failures use 4 attempts with
   1s/4s/15s backoff. Malformed payloads, invalid IDs/scores, class casts, number parsing and
-  message conversion bypass retry and go straight to the confirmed recoverer.
+  illegal arguments, Bean Validation and AMQP/messaging conversion bypass retry and go straight
+  to the confirmed recoverer. Redis failures do not qualify as database outages even when
+  wrapped in shared Spring DAO exceptions.
 - **Database outages:** transient database failures (connection loss, server restart,
   timeouts) on results and terminal DLQs requeue the original and pause only that listener,
   restarting after 1s/2s/4s up to 30s with no attempt limit. They never reach a DLQ or quarantine.

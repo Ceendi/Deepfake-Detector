@@ -84,6 +84,13 @@ class AnalysisServiceDeleteIntegrationTest {
     AnalysisMetrics metrics;
 
     @Test
+    void oversizedHistoryOffsetIsValidationFailureInsteadOfJpaError() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.list("alice",
+                        org.springframework.data.domain.PageRequest.of(Integer.MAX_VALUE, 20)))
+                .isInstanceOf(org.springframework.beans.TypeMismatchException.class);
+    }
+
+    @Test
     void deleteRemovesRowAndStatsExcludeIt() {
         Instant now = Instant.now();
         Instant since = now.minus(7, ChronoUnit.DAYS);

@@ -62,6 +62,7 @@ class AnalysisFileResolutionIntegrationTest {
     static volatile String method;
     static volatile String authorization;
     static volatile String correlation;
+    static volatile String traceparent;
     static volatile String identityHeader;
     static final HttpServer server = startServer();
 
@@ -73,6 +74,7 @@ class AnalysisFileResolutionIntegrationTest {
                 method = exchange.getRequestMethod();
                 authorization = exchange.getRequestHeaders().getFirst("Authorization");
                 correlation = exchange.getRequestHeaders().getFirst("X-Correlation-ID");
+                traceparent = exchange.getRequestHeaders().getFirst("traceparent");
                 identityHeader = exchange.getRequestHeaders().getFirst("X-User-ID");
                 try {
                     if (slowHeaders) Thread.sleep(1500);
@@ -151,6 +153,18 @@ class AnalysisFileResolutionIntegrationTest {
         try {
             facade.create(request(null), "alice", "verified-token");
             assertThat(correlation).isEqualTo("request-123");
+        } finally { org.slf4j.MDC.remove("correlationId"); }
+    }
+
+    @Test void metadataLookupPropagatesActiveTraceAndCorrelation() {
+        var context = io.opentelemetry.api.trace.SpanContext.create(
+                "12345678901234567890123456789012", "1234567890123456",
+                io.opentelemetry.api.trace.TraceFlags.getSampled(), io.opentelemetry.api.trace.TraceState.getDefault());
+        org.slf4j.MDC.put("correlationId", "traced-request-123");
+        try (var ignored = io.opentelemetry.api.trace.Span.wrap(context).makeCurrent()) {
+            facade.create(request(null), "alice", "verified-token");
+            assertThat(traceparent).isEqualTo("00-12345678901234567890123456789012-1234567890123456-01");
+            assertThat(correlation).isEqualTo("traced-request-123");
         } finally { org.slf4j.MDC.remove("correlationId"); }
     }
 

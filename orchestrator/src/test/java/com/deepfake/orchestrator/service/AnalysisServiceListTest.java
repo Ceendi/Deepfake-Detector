@@ -1,6 +1,8 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -46,6 +48,22 @@ class AnalysisServiceListTest {
 
     @InjectMocks
     AnalysisService service;
+
+    @Test
+    void offsetBeyondJpaIntegerRangeIsRejectedBeforeQuerying() {
+        assertThatThrownBy(() -> service.list("alice", PageRequest.of(Integer.MAX_VALUE, 20)))
+                .isInstanceOf(org.springframework.beans.TypeMismatchException.class);
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void largestJpaOffsetIsAccepted() {
+        Pageable pageable = PageRequest.of(Integer.MAX_VALUE, 1);
+        Pageable expected = PageRequest.of(Integer.MAX_VALUE, 1, Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+        when(repository.findByUserId("alice", expected)).thenReturn(Page.empty(expected));
+        assertThat(service.list("alice", pageable)).isEmpty();
+        verify(repository).findByUserId("alice", expected);
+    }
 
     @Test
     void listDelegatesToRepositoryScopedToTheCurrentUser() {

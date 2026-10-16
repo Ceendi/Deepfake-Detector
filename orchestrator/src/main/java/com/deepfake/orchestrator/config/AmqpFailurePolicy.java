@@ -14,6 +14,8 @@ public final class AmqpFailurePolicy {
     private AmqpFailurePolicy() { }
 
     public static boolean databaseUnavailable(Throwable failure) {
+        // Redis shares Spring DAO exception types with JDBC, but cannot pause a database listener.
+        if (redisFailure(failure)) return false;
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
             if (cause instanceof CannotCreateTransactionException
                     || cause instanceof CannotGetJdbcConnectionException
@@ -25,6 +27,17 @@ public final class AmqpFailurePolicy {
                     || cause instanceof TransactionSystemException tx && (rollbackFailed(tx.getMessage())
                         || tx.getApplicationException() != null && tx.getApplicationException() != tx
                             && databaseUnavailable(tx.getApplicationException()))) return true;
+        }
+        return false;
+    }
+
+    private static boolean redisFailure(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof org.springframework.data.redis.RedisConnectionFailureException
+                    || cause instanceof org.springframework.data.redis.RedisSystemException
+                    || cause instanceof io.lettuce.core.RedisException) return true;
+            if (cause instanceof TransactionSystemException tx && tx.getApplicationException() != null
+                    && tx.getApplicationException() != tx && redisFailure(tx.getApplicationException())) return true;
         }
         return false;
     }
@@ -48,7 +61,10 @@ public final class AmqpFailurePolicy {
         if (databaseUnavailable(failure)) return false;
         for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
             if (cause instanceof InvalidResultException || cause instanceof PoisonDeadLetterException
-                    || cause instanceof ClassCastException || cause instanceof NumberFormatException) return false;
+                    || cause instanceof ClassCastException || cause instanceof IllegalArgumentException
+                    || cause instanceof jakarta.validation.ValidationException
+                    || cause instanceof org.springframework.amqp.support.converter.MessageConversionException
+                    || cause instanceof org.springframework.messaging.converter.MessageConversionException) return false;
         }
         return true;
     }

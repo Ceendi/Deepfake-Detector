@@ -123,7 +123,11 @@ class AnalysisResultRetryIntegrationTest {
 
     static Stream<RuntimeException> deterministicFailures() {
         return Stream.of(new InvalidResultException("Invalid analysis_id"),
-                new ClassCastException("Invalid field type"), new NumberFormatException("Invalid number"));
+                new ClassCastException("Invalid field type"), new NumberFormatException("Invalid number"),
+                new IllegalArgumentException("Invalid value"),
+                new jakarta.validation.ValidationException("Invalid result"),
+                new org.springframework.amqp.support.converter.MessageConversionException("Invalid JSON"),
+                new org.springframework.messaging.converter.MessageConversionException("Invalid payload"));
     }
 
     @Configuration
