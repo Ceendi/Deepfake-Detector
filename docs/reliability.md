@@ -815,7 +815,8 @@ object or metadata is stored.
 Cleanup kills the child and waits at most 5 s in total for process exit and reader termination,
 restoring the caller's interrupt flag. Failure to exit or stop the reader logs WARN; a still-live
 child's pipes are not closed synchronously because a blocked read can hold their lock. The reader
-is a daemon so a stuck subprocess cannot keep the JVM alive. The upload limit is 500 MB.
+is a daemon so a stuck subprocess cannot keep the JVM alive. The file limit is 500 MiB;
+the request limit is 501 MiB to reserve room for multipart headers and boundaries.
 
 Tests need `ffmpeg` and `ffprobe` installed: `FfprobeMediaProbeIntegrationTest`,
 `FfprobeMediaProbeProcessTest`, `FfprobeMediaProbeFailureTest`. `FfprobeUploadHttpTest`
@@ -836,8 +837,8 @@ multipart requests (they can reach `permitAll` routes such as actuator health) t
 replica slot, never a user slot. The filter covers every multipart request,
 including unknown routes, other methods and mixed-case content types: MVC parses
 multipart before selecting a handler. The slot is released after successful or failed
-request processing. A rejected body is still drained (Tomcat `max-swallow-size` 500MB, equal to
-the multipart limit): with Tomcat's 2 MB default the connection was reset mid-body and the gateway
+request processing. A rejected body is still drained (Tomcat `max-swallow-size` 501MB, equal to
+the multipart request limit, also enforced by the gateway): with Tomcat's 2 MB default the connection was reset mid-body and the gateway
 answered 500 instead of the 429/503 (about 3 % of rejections in the 2026-10-16 soak test). Upload spool uses a dedicated directory; transferTo(File) moves
 Tomcat's disk part for validation and S3, and the file is removed in finally. ffprobe
 allows only the file protocol and checks each stream's pixel product against 4K.
@@ -848,8 +849,14 @@ pg_advisory_xact_lock(114546, hashtext(user_id)), the sum of size_bytes of all s
 rows, and the metadata insert; overflow returns 409 STORAGE_QUOTA_EXCEEDED. Exact quota
 fits. Concurrent uploads of one owner therefore write to S3 in parallel and serialize only
 on the quota check, so replicas cannot spend the same space twice and a slow S3 write never
-holds the lock or a pooled connection. A rejected or failed admission deletes the object;
-if that delete fails, the orphan sweep removes it. An overflow that slips past the early
+holds the lock or a pooled connection. A rejection before the admission callback finishes
+(including quota rejection) deletes the object; if deletion fails, the orphan sweep removes it.
+Once the insert returns, a transaction exception can mean the commit succeeded but its response
+was lost. Such uncertain outcomes retain the object and propagate the original error. The
+existing orphan sweep checks metadata references after its minimum age (24 h by default):
+it preserves committed uploads and reclaims only unreferenced objects. No immediate absence
+check is used, since the database can still be unavailable or the commit pending.
+An overflow that slips past the early
 check is briefly stored in S3. Hash collisions only serialize unrelated owners. Soft-deleted files keep counting until the purge removes the object
 and row (72 h by default), so delete-and-reupload cannot exceed the quota on disk.
 

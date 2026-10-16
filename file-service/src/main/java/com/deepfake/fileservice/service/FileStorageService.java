@@ -17,6 +17,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
 public class FileStorageService {
@@ -53,6 +54,7 @@ public class FileStorageService {
         s3.putObject(PutObjectRequest.builder().bucket(bucket).key(metadata.getObjectKey())
                 .contentType(metadata.getMimetype()).contentLength(metadata.getSizeBytes())
                 .metadata(Map.of("user-id", metadata.getUserId())).build(), RequestBody.fromFile(file));
+        var commitPossible = new AtomicBoolean();
         try {
             admission.executeWithoutResult(status -> {
                 jdbc.execute((ConnectionCallback<Void>) connection -> {
@@ -64,13 +66,17 @@ public class FileStorageService {
                 });
                 if (exceedsQuota(metadata)) throw new StorageQuotaExceededException();
                 repository.save(metadata);
+                commitPossible.set(true);
             });
         } catch (RuntimeException rejected) {
-            // A failed delete or commit leaves an unreferenced object for the existing orphan sweep.
-            try {
-                s3.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(metadata.getObjectKey()).build());
-            } catch (RuntimeException cleanup) {
-                rejected.addSuppressed(cleanup);
+            // A commit response can be lost after PostgreSQL persisted the row. The orphan sweep
+            // checks references later, so retaining uncertain objects cannot break committed uploads.
+            if (!commitPossible.get()) {
+                try {
+                    s3.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(metadata.getObjectKey()).build());
+                } catch (RuntimeException cleanup) {
+                    rejected.addSuppressed(cleanup);
+                }
             }
             throw rejected;
         }

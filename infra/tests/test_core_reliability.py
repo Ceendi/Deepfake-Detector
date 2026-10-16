@@ -387,7 +387,8 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
             def readiness_down():
                 status, body = self.request(self.orchestrator_url, '/actuator/health/readiness')
                 self.assertEqual(503, status)
-                self.assertEqual('DOWN', body['components']['amqpRecovery']['status'])
+                self.assertEqual('DOWN', body['status'])
+                self.assertTrue(set(body) <= {'status', 'groups'}, body)
 
             self.eventually(readiness_down)
             failed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')

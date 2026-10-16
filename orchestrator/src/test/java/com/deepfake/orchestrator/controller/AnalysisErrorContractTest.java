@@ -195,7 +195,7 @@ class AnalysisErrorContractTest {
     // Unmapped path must stay 404 (NoResourceFoundException), not fall into the catch-all 500.
     @Test
     void unmappedPathReturns404NotInternalError() throws Exception {
-        mvc.perform(get("/v3/api-docs"))
+        mvc.perform(get("/v3/api-docs").with(jwt()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("NOT_FOUND"));
     }

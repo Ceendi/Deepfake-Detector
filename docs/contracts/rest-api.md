@@ -6,6 +6,23 @@ never forwarded to clients as-is.
 
 Base path: `/api`. Auth: Bearer JWT (Keycloak OIDC, PKCE).
 
+File-service and orchestrator validate the signature, issuer, timestamps and client.
+`JWT_ALLOWED_CLIENTS` is a comma-separated allowlist (default
+`deepfake-web,deepfake-loadtest`). When present, `azp` must be a non-empty allowed
+client ID; an allowed `aud` cannot override a foreign or malformed `azp`.
+Without `azp`, at least one `aud` must be allowed. Missing client claims and tokens
+for another client in the same realm return `401`. Roles and ownership checks still apply.
+
+Both services expose aggregate health and Prometheus on their internal application
+ports without authentication so Compose healthchecks and Prometheus discovery keep working.
+Anonymous health responses hide components/details. OpenAPI (`/v3/api-docs/**`) and
+Swagger UI require a valid token. No file-service application port is published by Compose.
+Gateway diagnostics are available only on its internal management port 9090.
+Traffic generators and E2E harnesses must wait for gateway
+`http://gateway:9090/actuator/health/readiness`, not liveness: readiness stays refusing
+until the synchronous limiter warm-up completes (success, failure or the existing 5 s
+budget). Redis failure policy is unchanged. Compose intentionally checks liveness.
+
 `X-Correlation-ID` accepts only `^[A-Za-z0-9-]{1,64}$`; missing or invalid values
 are replaced with a UUID. Gateway forwards and echoes the accepted/generated ID.
 Orchestrator and file-service apply the same validation on direct requests;
@@ -40,7 +57,8 @@ Body: file=@<file>
 
 Two-stage validation (magic bytes via Tika, then `ffprobe`) runs before the file
 is stored; `mimetype` is the **detected** type, not the client-supplied one.
-Rejections: `413` (over the 500 MB limit), `422` (not a whitelisted A/V container —
+Rejections: `413` (file over 500 MiB = 524288000 bytes, or multipart request over
+501 MiB; the extra 1 MiB is reserved for boundaries/headers), `422` (not a whitelisted A/V container —
 MP4/MOV/AVI/WAV/MP3/FLAC, invalid duration, or known duration above
 `MEDIA_MAX_DURATION_SECONDS`, default 1800 seconds for both audio and video, or
 any video stream above `MEDIA_MAX_PIXELS`, default 8294400 = 3840×2160).
@@ -49,6 +67,14 @@ Resolution compares width×height regardless of orientation; the `INVALID_FILE` 
 Exactly the limit is accepted. Unknown duration remains accepted; the audio detector
 also bounds decoding and checks the decoded WAV before allocating its waveform.
 `422` body uses code `INVALID_FILE`; no S3 object or metadata row is stored.
+Its message has a stable prefix: `[UNSUPPORTED_MEDIA]` for unsupported MIME,
+container or unreadable media; `[INVALID_MEDIA_DURATION]` for invalid duration;
+`[MEDIA_TOO_LONG]` for duration above the configured maximum. The existing
+`[MEDIA_RESOLUTION_TOO_HIGH]` remains unchanged. English text after the new prefixes
+is retained so older frontend text matching still works; `MEDIA_TOO_LONG` already
+exists in `frontend/src/api/error-codes.ts`, while unknown format/duration codes use
+the existing text fallback until the frontend mapping is extended. HTTP statuses and
+the outer `INVALID_FILE` code are unchanged.
 Non-zero ffprobe exit, malformed JSON and output above `MEDIA_PROBE_MAX_OUTPUT_BYTES`
 also return `422 INVALID_FILE`. A probe timeout, interruption, startup I/O failure or
 stdout I/O failure returns `503 SERVICE_UNAVAILABLE` with `Retry-After: 5` instead:
@@ -61,7 +87,9 @@ Owner quota: stored `size_bytes` (including soft-deleted files until their physi
 Exhaustion returns `409` with code `STORAGE_QUOTA_EXCEEDED` and message
 `Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.`
 The authoritative check is serialized across replicas per owner after the S3 write; the
-object is deleted when the upload is rejected.
+object is deleted when admission is certainly rejected before commit. An uncertain
+commit outcome retains the object for reference-aware orphan cleanup; a committed
+metadata row must never point to an object deleted as compensation.
 The gateway permits 5 uploads/minute with burst 5 by default (429). Before multipart
 parsing, authenticated uploads first acquire a per-`jwt.sub` slot on this replica
 (`UPLOAD_MAX_CONCURRENT_PER_USER`, default 2), then a global replica slot

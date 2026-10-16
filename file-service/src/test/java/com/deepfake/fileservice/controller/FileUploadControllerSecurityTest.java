@@ -191,10 +191,9 @@ class FileUploadControllerSecurityTest {
     }
 
     @Test
-    void openApiDocsPathIsPublic() throws Exception {
-        // Security must not reject the docs path with 401 (no springdoc handler in the slice,
-        // so the exact downstream status is irrelevant — only "not blocked by auth" matters).
-        mvc.perform(get("/v3/api-docs"))
-                .andExpect(r -> assertThat(r.getResponse().getStatus()).isNotEqualTo(401));
+    void openApiDocsPathRequiresAuthentication() throws Exception {
+        mvc.perform(get("/v3/api-docs")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/v3/api-docs").with(jwt()))
+                .andExpect(status().isNotFound());
     }
 }

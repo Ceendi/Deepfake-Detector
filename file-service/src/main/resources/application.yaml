@@ -4,7 +4,7 @@ server:
   tomcat:
     # Upload limits reject before the body is read. Tomcat drains only 2 MB by default and then
     # resets the connection, so the gateway (still sending) reports 500 instead of the 429/503.
-    max-swallow-size: 500MB
+    max-swallow-size: 501MB
 spring:
   application:
     name: file-service
@@ -34,7 +34,8 @@ spring:
     multipart:
       location: ${UPLOAD_SPOOL_DIRECTORY:${java.io.tmpdir}/deepfake-uploads}
       max-file-size: 500MB
-      max-request-size: 500MB
+      # Keep 1 MiB for multipart boundaries and headers; the file itself remains capped at 500 MiB.
+      max-request-size: 501MB
 eureka:
   instance:
     # D4: register the docker-network IP, not the auto container-ID hostname (not DNS-resolvable),
@@ -70,6 +71,9 @@ media:
 upload:
   max-concurrent: ${UPLOAD_MAX_CONCURRENT:4}
   max-concurrent-per-user: ${UPLOAD_MAX_CONCURRENT_PER_USER:2}
+security:
+  jwt:
+    allowed-clients: ${JWT_ALLOWED_CLIENTS:deepfake-web,deepfake-loadtest}
 management:
   metrics:
     distribution:
@@ -83,7 +87,8 @@ management:
         include: health,info,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when_authorized
+      show-components: when_authorized
   tracing:
     sampling:
       probability: 1.0          # dev: sample everything; prod → ~0.1
