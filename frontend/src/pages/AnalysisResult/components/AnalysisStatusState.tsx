@@ -9,8 +9,6 @@ import { Spinner } from '@/components/ui/Spinner/Spinner'
 
 import styles from '../AnalysisResult.module.css'
 
-// Stany inne niż COMPLETED — duży placeholder zamiast cienkiego alertu: wypełnia przestrzeń karty
-// i jasno komunikuje status. `deleteAction` — przycisk usunięcia rekordu (tylko stany terminalne).
 export function AnalysisStatusState({
   analysis,
   deleteAction,
@@ -19,7 +17,6 @@ export function AnalysisStatusState({
   deleteAction?: ReactNode
 }) {
   if (analysis.status === 'FAILED') {
-    // Pokazujemy tylko kod — treść errorMessage bywa techniczna (starsze rekordy, detektory).
     const code = parseErrorMessage(analysis.errorMessage).code
     return (
       <div className={styles.statusCard}>
@@ -34,7 +31,7 @@ export function AnalysisStatusState({
             Wróć do historii
           </LinkButton>
           {deleteAction}
-          {/* Brak endpointu re-run — „Spróbuj ponownie" = nowe zgłoszenie przez /upload */}
+
           <LinkButton to="/upload" variant="primary" size="md" leftIcon={RotateCcw}>
             Spróbuj ponownie
           </LinkButton>

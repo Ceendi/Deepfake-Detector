@@ -17,7 +17,12 @@ on:
       - infra/alloy/**
       - infra/loki/**
       - infra/grafana/**
-      - frontend/dist_keycloak/**
+      - frontend/src/keycloak-theme/**
+      - frontend/package.json
+      - frontend/package-lock.json
+      - frontend/vite.config.ts
+      - frontend/src/styles/**
+      - frontend/src/index.tsx
       - .github/workflows/ci.yml
       - infra/seaweedfs/**
       - infra/tempo/**
@@ -46,7 +51,12 @@ on:
       - infra/alloy/**
       - infra/loki/**
       - infra/grafana/**
-      - frontend/dist_keycloak/**
+      - frontend/src/keycloak-theme/**
+      - frontend/package.json
+      - frontend/package-lock.json
+      - frontend/vite.config.ts
+      - frontend/src/styles/**
+      - frontend/src/index.tsx
       - .github/workflows/ci.yml
       - infra/seaweedfs/**
       - infra/tempo/**

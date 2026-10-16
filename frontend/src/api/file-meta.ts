@@ -50,9 +50,23 @@ export function useFileMeta(fileId: string): FileMeta | null {
     const publish = (meta: FileMeta) => {
       if (active) setResult({ fileId, meta })
     }
-    loadFileMeta(fileId).then(publish, () => publish(UNAVAILABLE))
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    const load = (retry: boolean) => {
+      loadFileMeta(fileId).then(publish, (error: unknown) => {
+        if (!active) return
+        publish(UNAVAILABLE)
+        const transient =
+          error instanceof TypeError ||
+          (error instanceof ApiError &&
+            (error.status === 0 || error.status === 429 || error.status >= 500))
+        // One delayed retry recovers short outages without polling the gateway.
+        if (retry && transient) retryTimer = setTimeout(() => load(false), 5000)
+      })
+    }
+    load(true)
     return () => {
       active = false
+      clearTimeout(retryTimer)
     }
   }, [fileId])
 
@@ -65,13 +79,15 @@ const SEARCH_CONCURRENCY = 4
 export interface FileNames {
   names: ReadonlyMap<string, string>
   loading: boolean
+  incomplete: boolean
 }
 
-// Stop background search after a transient error to avoid exhausting the gateway rate limit.
+// Stop after a transient failure to avoid exhausting the gateway rate limit.
 export function useFileNames(fileIds: string[], enabled: boolean): FileNames {
   const [result, setResult] = useState<FileNames & { source: string[] | null }>({
     names: new Map(),
     loading: false,
+    incomplete: false,
     source: null,
   })
 
@@ -88,7 +104,7 @@ export function useFileNames(fileIds: string[], enabled: boolean): FileNames {
         const name = cache.get(id)?.name
         if (name) names.set(id, name)
       }
-      setResult({ names, loading, source: fileIds })
+      setResult({ names, loading, incomplete: stopped, source: fileIds })
     }
 
     async function worker() {
@@ -112,5 +128,9 @@ export function useFileNames(fileIds: string[], enabled: boolean): FileNames {
   }, [fileIds, enabled])
 
   const current = result.source === fileIds
-  return { names: result.names, loading: enabled && (!current || result.loading) }
+  return {
+    names: result.names,
+    loading: enabled && (!current || result.loading),
+    incomplete: enabled && current && result.incomplete,
+  }
 }

@@ -2,12 +2,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import type { AnalysisSummary } from '@/api/types'
 import { applyFilters, labelOf, DEFAULT_FILTERS, STATUS_OPTIONS, type Filters } from './filters'
 
-// Stały „teraz" dla testów zależnych od czasu (filtr range). 2026-06-13 12:00 UTC.
 const NOW = new Date('2026-06-13T12:00:00.000Z').getTime()
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 
-// Fabryka fixture z sensownymi domyślnymi — w teście nadpisujemy tylko istotne pole.
 function summary(overrides: Partial<AnalysisSummary> = {}): AnalysisSummary {
   return {
     id: 'id-1',
@@ -114,7 +112,7 @@ describe('applyFilters', () => {
     const items = [
       summary({ id: 'a', fileId: 'f-1' }),
       summary({ id: 'b', fileId: 'f-2' }),
-      summary({ id: 'c', fileId: 'f-3' }), // nazwa nieznana (np. plik usunięty)
+      summary({ id: 'c', fileId: 'f-3' }),
     ]
     const names = new Map([
       ['f-1', 'Wywiad_Prezes.mp4'],

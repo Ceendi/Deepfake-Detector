@@ -33,7 +33,8 @@ class CiReliabilityTest(unittest.TestCase):
     def test_smoke_covers_monitoring_security_and_theme_changes_on_push_and_pr(self):
         workflow = (ROOT / '.github/workflows/infra-smoke.yml').read_text()
         for path in ('infra/rabbitmq/**', 'infra/security/**', 'infra/alloy/**',
-                     'infra/loki/**', 'infra/grafana/**', 'frontend/dist_keycloak/**',
+                     'infra/loki/**', 'infra/grafana/**', 'frontend/src/keycloak-theme/**', 'frontend/package.json', 'frontend/package-lock.json',
+                     'frontend/vite.config.ts', 'frontend/src/styles/**', 'frontend/src/index.tsx',
                      '.github/workflows/ci.yml'):
             with self.subTest(path=path):
                 self.assertEqual(2, workflow.count('- ' + path))

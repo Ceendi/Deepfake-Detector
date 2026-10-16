@@ -5,7 +5,6 @@ import { ApiError } from '@/api/errors'
 import type { AnalysisSummary, Paged } from '@/api/types'
 import { useHistory } from './use-history'
 
-// Mockujemy warstwę API — hook testujemy w izolacji od HTTP.
 vi.mock('@/api/analysis', () => ({
   listAnalyses: vi.fn(),
 }))
@@ -63,7 +62,7 @@ describe('useHistory', () => {
       Promise.resolve(
         page === 0
           ? paged([summary('c'), summary('b')], 2)
-          : paged([summary('b'), summary('a')], 2), // 'b' przesunięte na stronę 2
+          : paged([summary('b'), summary('a')], 2),
       ),
     )
 
@@ -86,7 +85,6 @@ describe('useHistory', () => {
 
     const { result } = renderHook(() => useHistory())
 
-    // Pozwól odrzuceniu się rozpropagować, potem sprawdź że NIE wpadliśmy w error.
     await act(async () => {
       await Promise.resolve()
       await Promise.resolve()

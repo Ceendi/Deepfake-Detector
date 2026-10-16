@@ -5,7 +5,6 @@ import { AUDIO_FORMATS_LABEL, VIDEO_FORMATS_LABEL } from '@/pages/Upload/upload-
 
 import styles from '../Dashboard.module.css'
 
-// Stan pusty: użytkownik nie ma jeszcze żadnych analiz — onboarding zamiast dashboardu.
 export function DashboardEmpty({ firstName }: { firstName: string }) {
   return (
     <div className={styles.page}>

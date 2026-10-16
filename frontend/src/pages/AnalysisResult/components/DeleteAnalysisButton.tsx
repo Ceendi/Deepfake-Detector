@@ -12,7 +12,6 @@ import { Alert } from '@/components/ui/Alert/Alert'
 import { Button } from '@/components/ui/Button/Button'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog/ConfirmDialog'
 
-// Zwolnienie pliku w kwocie użytkownika po usunięciu rekordu. 404 = plik już usunięty (cel osiągnięty).
 async function releaseFile(fileId: string): Promise<void> {
   try {
     await deleteFile(fileId)
@@ -21,20 +20,19 @@ async function releaseFile(fileId: string): Promise<void> {
   }
 }
 
-// Trwałe usunięcie zakończonej analizy (COMPLETED/FAILED/CANCELLED) razem z jej plikiem.
 export function DeleteAnalysisButton({ analysis }: { analysis: Pick<Analysis, 'id' | 'fileId'> }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Rekord już usunięty, ale plik nie — ponowienie zwalnia tylko plik (rekordu nie da się usunąć 2×).
+
   const [recordDeleted, setRecordDeleted] = useState(false)
 
-  const leave = () => navigate('/history', { replace: true }) // „wstecz" nie wraca na usunięty zasób
+  const leave = () => navigate('/history', { replace: true })
 
   function close() {
-    if (deleting) return // nie zamykaj w trakcie żądania
-    if (recordDeleted) return leave() // analizy już nie ma — strona wyniku jest nieaktualna
+    if (deleting) return
+    if (recordDeleted) return leave()
     setOpen(false)
     setError(null)
   }
@@ -44,17 +42,16 @@ export function DeleteAnalysisButton({ analysis }: { analysis: Pick<Analysis, 'i
     setError(null)
     if (!recordDeleted) {
       try {
-        // Rekord najpierw: 409 (analiza w toku) nie może zostawić działającej analizy bez pliku.
+        // Delete the record first: a running analysis must keep its input file.
         await deleteAnalysisRecord(analysis.id)
       } catch (err) {
-        // 404 = już usunięta (lub cudza) → efekt docelowy ten sam, ale plik nadal zwalniamy.
         if (!(err instanceof ApiError && err.isNotFound)) {
           setError(
             err instanceof ApiError && err.isConflict
               ? 'Analiza jest jeszcze w toku — anuluj ją przed usunięciem.'
               : 'Nie udało się usunąć analizy. Spróbuj ponownie.',
           )
-          setDeleting(false) // zostań w modalu, pozwól ponowić
+          setDeleting(false)
           return
         }
       }

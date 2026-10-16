@@ -4,43 +4,38 @@ import { uploadFileWithProgress } from '@/api/files'
 import { startAnalysis, cancelAnalysis } from '@/api/analysis'
 import { CANCEL_FAILED_MESSAGE, cancelAndSettle } from '@/api/cancel-analysis'
 import { ApiError } from '@/api/errors'
-import { watchAnalysis } from '@/api/watch-analysis'
+import { AnalysisAgeLimitError, watchAnalysis } from '@/api/watch-analysis'
 import { analysisFailureMessage } from '@/api/error-codes'
 import type { Analysis, AnalysisProgressEvent, AnalysisStatus, AnalysisType } from '@/api/types'
 
 import { isAbortError, messageForError, pickAnalysisType } from './upload-utils'
 
-// --- Postęp analizy per źródło (dwa paski: video + audio) --------------------
 type Source = AnalysisProgressEvent['source'] // 'video' | 'audio'
 export interface SourceProgress {
   progress: number // 0..100
-  stage: string // surowy stage z backendu — NA RAZIE bez mapowania na tekst (patrz STAGE_LABELS)
+  stage: string
   status: AnalysisStatus
 }
 export type ProgressBySource = Partial<Record<Source, SourceProgress>>
 
-// --- Faza cyklu analizy (po kliknięciu „Analizuj plik") ----------------------
 export type FlowState =
-  | { name: 'idle' } // jeszcze nie ruszył (PreviewState z „Analizuj plik")
-  | { name: 'uploading' } // POST /files/upload w locie (postęp w uploadProgress)
-  | { name: 'starting' } // POST /analysis w locie (krótko)
-  | { name: 'analyzing'; analysisId: string } // SSE otwarty (postęp w bySource)
-  // Dłużej niż odzyskiwanie. watching=false: przekroczony limit wieku, śledzenie zakończone.
-  | { name: 'stillRunning'; analysisId: string; watching: boolean }
-  // retry: 'start' = plik już jest na serwerze, ponów tylko POST /analysis; 'reset' = wróć do podglądu.
+  | { name: 'idle' }
+  | { name: 'uploading' }
+  | { name: 'starting' }
+  | { name: 'analyzing'; analysisId: string }
+  | { name: 'stillRunning'; analysisId: string; watching: boolean; timedOut?: boolean }
   | { name: 'failed'; message: string; retry: 'start' | 'reset' }
 
 // Distinguishes the user's cancel from unmount: only the former cancels a just-created analysis.
 const USER_CANCEL = new DOMException('Cancelled by user', 'AbortError')
 
-// --- Kompozycja: upload → start → stream → wynik -----------------------------
 export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   const [state, setState] = useState<FlowState>({ name: 'idle' })
   const [uploadProgress, setUploadProgress] = useState(0)
   const [bySource, setBySource] = useState<ProgressBySource>({})
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
-  // Typ wynika z MIME wykrytego przez backend — decyduje, które paski postępu pokazać.
+
   const [analysisType, setAnalysisType] = useState<AnalysisType | null>(null)
 
   // One controller per run covers upload, start, stream and recovery; unmount aborts it.
@@ -79,11 +74,11 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
         },
       }))
     } catch (err) {
-      if (signal.aborted) return // cancel() już ustawił idle albo komponent zniknął
+      if (signal.aborted) return
       if (isAbortError(err)) return setState({ name: 'idle' })
       return setState({ name: 'failed', message: messageForError(err), retry: 'reset' })
     }
-    if (signal.aborted) return // cancel tuż po zakończeniu uploadu nie tworzy analizy
+    if (signal.aborted) return
 
     const type = pickAnalysisType(mimetype)
     setAnalysisType(type)
@@ -138,9 +133,14 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
       },
     ).catch((err) => {
       if (signal.aborted || isAbortError(err)) return
-      // The analysis exists: unless it is gone, link to it instead of offering a re-upload.
+
       if (!(err instanceof ApiError && err.isNotFound)) {
-        return setState({ name: 'stillRunning', analysisId, watching: false })
+        return setState({
+          name: 'stillRunning',
+          analysisId,
+          watching: false,
+          ...(err instanceof AnalysisAgeLimitError ? { timedOut: true } : {}),
+        })
       }
       setState({ name: 'failed', message: messageForError(err), retry: 'reset' })
     })

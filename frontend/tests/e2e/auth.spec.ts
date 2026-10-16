@@ -4,40 +4,41 @@ import { ALICE, BOB } from './fixtures/users'
 import { ANONYMOUS_STATE } from './fixtures/storage'
 import { login, logout, expectAuthenticated, expectOnLoginScreen } from './helpers/auth'
 
-// Testy autoryzacji startują WYLOGOWANE — nadpisujemy domyślny storageState (zalogowana alice).
 test.use({ storageState: ANONYMOUS_STATE })
 
 test.describe('auth', () => {
   test('niezalogowany użytkownik jest przekierowany na /login', async ({ page }) => {
     await page.goto('/dashboard')
-    // ProtectedRoute czeka aż check-sso ustali brak sesji, potem przekierowuje na ekran wejścia.
+
     await expectOnLoginScreen(page)
   })
 
-  // Realne logowanie/wylogowanie odpalamy na JEDNEJ przeglądarce: realm ma brute-force ON
-  // (quickLoginCheckMilliSeconds=1000), więc współbieżne logowania tego samego usera dałyby
-  // tymczasową blokadę konta. Renderowanie cross-browser pokrywają pozostałe testy (storageState).
   test.describe('flow logowania', () => {
     test.beforeEach(({ browserName }) => {
       test.skip(browserName !== 'chromium', 'flow logowania tylko na chromium (brute-force KC)')
     })
 
-    test('logowanie przez Keycloak prowadzi na Dashboard', async ({ page }) => {
-      await login(page, ALICE)
+    test('logowanie zachowuje deep link z query i hash', async ({ page }) => {
+      await page.goto('/history?view=all#top')
+      await page.getByRole('button', { name: 'Zaloguj się', exact: true }).click()
+      await page.waitForURL(/\/realms\/deepfake\//)
+      const authorizationUrl = new URL(page.url())
+      expect(new URL(authorizationUrl.searchParams.get('redirect_uri')!).hash).toBe('')
+      await page.locator('#username').fill(ALICE.username)
+      await page.locator('#password').fill(ALICE.password)
+      await page.locator('#kc-form-login button[type="submit"]').click()
 
       await expectAuthenticated(page)
-      // Po zalogowaniu lądujemy na dashboardzie — powitanie „Cześć, …" jest wspólne dla stanu
-      // pustego (onboarding) i stanu z danymi, więc nie zależy od tego, czy alice ma już analizy.
-      await expect(page.getByRole('heading', { name: /Cześć/, level: 1 })).toBeVisible()
+
+      await expect(page).toHaveURL(/\/history\?view=all#top$/)
+      await expect(page.getByRole('heading', { name: 'Historia analiz', level: 1 })).toBeVisible()
     })
 
     test('wylogowanie wraca na ekran logowania', async ({ page }) => {
-      // Bob (nie alice) — świeże logowanie tutaj nie koliduje z równoległym testem logowania alice.
       await login(page, BOB)
       await logout(page)
       await expectOnLoginScreen(page)
 
-      // Sesja faktycznie zamknięta: próba wejścia na chronioną trasę znów ląduje na /login.
       await page.goto('/history')
       await expectOnLoginScreen(page)
     })

@@ -6,7 +6,6 @@ import { useGradcamImages } from '../use-gradcam-images'
 
 import styles from '../AnalysisResult.module.css'
 
-// Tylko klatki wideo — gradcam audio jest błędny i ma osobną wizualizację (oś czasu ryzyka audio).
 export function GradcamSection({ details }: { details: AnalysisDetails | null }) {
   const urls = details?.video?.gradcamUrls ?? []
   const images = useGradcamImages(urls)

@@ -3,6 +3,7 @@ import { ApiError } from './errors'
 import type { Analysis } from './types'
 import {
   AnalysisStillRunningError,
+  AnalysisAgeLimitError,
   MAX_ANALYSIS_AGE_MS,
   recoverAnalysis,
   watchAnalysis,
@@ -235,7 +236,7 @@ describe('long-running analysis watching', () => {
       new AbortController().signal,
       { createdAt, onStillRunning },
     )
-    const rejected = expect(pending).rejects.toBeInstanceOf(AnalysisStillRunningError)
+    const rejected = expect(pending).rejects.toBeInstanceOf(AnalysisAgeLimitError)
     await vi.advanceTimersByTimeAsync(120000)
     await rejected
     expect(onStillRunning).toHaveBeenCalledOnce()
@@ -255,7 +256,7 @@ describe('long-running analysis watching', () => {
       new AbortController().signal,
       { createdAt, onStillRunning },
     )
-    const rejected = expect(pending).rejects.toBeInstanceOf(AnalysisStillRunningError)
+    const rejected = expect(pending).rejects.toBeInstanceOf(AnalysisAgeLimitError)
     await vi.advanceTimersByTimeAsync(91500)
     await rejected
     expect(onStillRunning).not.toHaveBeenCalled()

@@ -11,34 +11,26 @@ import type { ProgressBySource } from '../use-analysis-flow'
 import styles from '../Upload.module.css'
 
 interface AnalyzingStateProps {
-  file: File // fallback dla źródeł, dopóki nie znamy typu analizy
-  analysisType?: AnalysisType | null // typ z MIME wykrytego przez backend (AUDIO → tylko audio)
+  file: File
+  analysisType?: AnalysisType | null
   bySource: ProgressBySource
-  onCancel?: () => void // brak = faza `starting` (analiza jeszcze nieanulowalna)
+  onCancel?: () => void
   cancelling?: boolean
   cancelError?: string | null
-  // Ustawione w stanie „nadal trwa": link do wyniku zamiast ponownego wgrywania.
+
   stillRunningId?: string
-  watching?: boolean // false = śledzenie zakończone, wynik tylko na stronie analizy
+  timedOut?: boolean
+  watching?: boolean
 }
 
 const SOURCE_LABEL = { video: 'Wideo', audio: 'Audio' } as const
 
-// Mapa stage (surowy string z SSE) → przyjazny tekst. Renderowana z prawej etykiety paska
-// jako „{źródło} · {stageLabel}"; nieznany stage → fallback na sam label źródła (patrz niżej).
-// Pokrywamy DWA zestawy nazw, bo na wire są oba:
-//  • audio (faktyczne komunikaty z audio-detektora, message.txt) — opisowe nazwy,
-//  • zamknięty zbiór z kontraktu (docs/contracts/amqp-messages.md §Progress) — emituje go
-//    video-detektor (LOADING/INFERENCE) i committed audio-inference.
-// UWAGA: audio-detektor łamie kontrakt (zbiór miał być zamknięty) — do uzgodnienia z Osobą 4
-// (albo detektor wraca do zamkniętego zbioru, albo aktualizujemy kontrakt + ten komentarz).
 const STAGE_LABELS: Record<string, string> = {
-  // — zamknięty zbiór z kontraktu (video + ewentualnie audio po realignmencie) —
   LOADING: 'Wczytywanie',
   PREPROCESSING: 'Przetwarzanie wstępne',
   INFERENCE: 'Analiza',
   POSTPROCESSING: 'Finalizacja',
-  // — audio-detektor (aktualne nazwy na wire) —
+
   EXTRACTING_AUDIO: 'Ekstrakcja audio',
   PREPROCESSING_AUDIO: 'Przetwarzanie wstępne',
   ANALYZING_SEGMENTS: 'Analiza fragmentów',
@@ -46,8 +38,6 @@ const STAGE_LABELS: Record<string, string> = {
   ANALYSIS_COMPLETED: 'Finalizacja',
 }
 
-// Sekcja postępu + stopka fazy „analyzing"/„starting". Media renderuje wspólna karta w Upload.tsx.
-// Dla wideo dwa paski (video+audio), dla audio jeden; źródła znamy z typu pliku, więc paski są od razu.
 export function AnalyzingState({
   file,
   analysisType,
@@ -57,6 +47,7 @@ export function AnalyzingState({
   cancelError = null,
   stillRunningId,
   watching = true,
+  timedOut = false,
 }: AnalyzingStateProps) {
   const audioOnly = analysisType ? analysisType === 'AUDIO' : !isVideoFile(file)
   const sources = audioOnly ? (['audio'] as const) : (['video', 'audio'] as const)
@@ -70,7 +61,7 @@ export function AnalyzingState({
           return (
             <ProgressBar
               key={source}
-              value={sp?.progress} // brak danych → tryb nieokreślony
+              value={sp?.progress}
               label={stageLabel ? `${SOURCE_LABEL[source]} · ${stageLabel}` : SOURCE_LABEL[source]}
               showValue
             />
@@ -88,9 +79,11 @@ export function AnalyzingState({
       <div className={styles.footer}>
         {stillRunningId ? (
           <span className={styles.footerNote} role="status">
-            {watching
-              ? 'Analiza nadal trwa… Wynik pojawi się tutaj albo na stronie analizy.'
-              : 'Analiza nadal trwa… Sprawdź jej stan na stronie analizy.'}
+            {timedOut
+              ? 'Przekroczono czas oczekiwania na analizę. Sprawdź jej stan na stronie analizy.'
+              : watching
+                ? 'Analiza nadal trwa… Wynik pojawi się tutaj albo na stronie analizy.'
+                : 'Analiza nadal trwa… Sprawdź jej stan na stronie analizy.'}
           </span>
         ) : (
           <span className={styles.footerNote}>

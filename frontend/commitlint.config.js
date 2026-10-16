@@ -1,31 +1,24 @@
-/**
- * Commitlint — Conventional Commits dla DeepfakeDetector.
- * Format: <type>(<scope>): <opis>   np. `feat(frontend): dodaj ekran logowania`
- * Hook commit-msg podpięty przez husky (zob. .husky/commit-msg).
- * Docs: https://www.conventionalcommits.org
- */
 export default {
   extends: ['@commitlint/config-conventional'],
   rules: {
-    // Dozwolone typy commitów (błąd, jeśli inny)
     'type-enum': [
       2,
       'always',
       [
-        'feat', // nowa funkcjonalność
-        'fix', // poprawka błędu
-        'docs', // dokumentacja
-        'style', // formatowanie, bez zmian logiki
-        'refactor', // refaktor bez zmiany zachowania
-        'perf', // optymalizacja wydajności
-        'test', // testy
-        'build', // build / zależności
+        'feat',
+        'fix',
+        'docs',
+        'style',
+        'refactor',
+        'perf',
+        'test',
+        'build',
         'ci', // CI/CD
-        'chore', // utrzymanie, drobne zadania
-        'revert', // cofnięcie zmiany
+        'chore',
+        'revert',
       ],
     ],
-    // Scope opcjonalny; jeśli podany — sugerowane moduły repo (warning, nie blokuje)
+
     'scope-enum': [
       1,
       'always',
@@ -44,7 +37,7 @@ export default {
         'release',
       ],
     ],
-    'subject-case': [0], // pozwól na polskie zdania / dowolny case w temacie
+    'subject-case': [0],
     'header-max-length': [2, 'always', 100],
   },
 }

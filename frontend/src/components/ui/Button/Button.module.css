@@ -56,7 +56,6 @@ a.button:hover {
   color: var(--color-on-danger);
 }
 
-/* Focus dopasowany do wariantu — nadpisuje tylko kolor; grubość/styl (3px solid) zostają z global.css */
 .danger:focus-visible {
   outline-color: color-mix(in srgb, var(--color-danger) 45%, transparent);
 }
@@ -73,7 +72,6 @@ a.button:hover {
   color: var(--color-text-primary);
 }
 
-/* Ghost jest neutralny → ring z currentColor (= text-primary, adaptuje się w dark mode) */
 .ghost:focus-visible {
   outline-color: color-mix(in srgb, currentColor 40%, transparent);
 }

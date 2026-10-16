@@ -48,8 +48,6 @@ jobs:
           grep -qx 'UPLOAD_MAX_CONCURRENT_PER_USER=4' e2e.env
           grep -qx 'KEYCLOAK_REALM_CONFIG=dev/realm-export.json' e2e.env
           grep -qx 'UPLOAD_RL_BURST=6000' e2e.env
-      - name: Start core and auth
-        run: $COMPOSE up -d --build --wait --wait-timeout 600
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
@@ -57,6 +55,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci && cp .env.example .env
         working-directory: frontend
+      - name: Start core and auth
+        run: $COMPOSE up -d --build --wait --wait-timeout 600
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
       - run: npx playwright test --project=chromium

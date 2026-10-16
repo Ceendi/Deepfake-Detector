@@ -1,9 +1,6 @@
-/* ============================================================
-   ConfirmDialog — natywny <dialog> w top-layer (showModal)
-   ============================================================ */
 .dialog {
-  margin: auto; /* centrowanie w viewport (dialog w top-layer) */
-  padding: 0; /* padding na .content, by klik w tło = target === <dialog> */
+  margin: auto;
+  padding: 0;
   border: none;
   border-radius: var(--radius-lg);
   background: var(--color-background);
@@ -14,7 +11,7 @@
 }
 
 .dialog::backdrop {
-  background: rgba(15, 23, 42, 0.55); /* neutral-900 @ 55% — przyciemnienie tła */
+  background: rgba(15, 23, 42, 0.55);
 }
 
 .content {

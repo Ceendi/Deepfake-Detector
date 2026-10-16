@@ -1,7 +1,3 @@
-// DTO API DeepfakeDetector — pisane ręcznie z docs/contracts/rest-api.md (świadomie bez OpenAPI
-// codegen). Konwencja REST/JSON: camelCase. Zmiana kontraktu backendu → zsynchronizuj ten plik.
-
-// --- Enumy domenowe (domknięte unie zamiast string) --------------------------
 export type AnalysisType = 'VIDEO' | 'AUDIO' | 'FULL'
 
 export type AnalysisStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'CANCELLED'
@@ -13,15 +9,15 @@ export interface UploadResponse {
   fileId: string
   fileKey: string
   size: number
-  mimetype: string // typ WYKRYTY przez backend (Tika/ffprobe), nie zgłoszony przez klienta
+  mimetype: string
 }
 
 export interface FileMetadata {
   fileId: string
   objectKey: string
-  name: string | null // oryginalna nazwa uploadu; może być null
+  name: string | null
   size: number
-  duration: number | null // długość mediów w sekundach (ffprobe); null gdy nieznana
+  duration: number | null
   mimetype: string
 }
 
@@ -33,7 +29,7 @@ export type FileClaimResponse = FileMetadata
 // 413 PAYLOAD_TOO_LARGE: file > 500 MiB or multipart request > 501 MiB.
 // 429 UPLOAD_USER_LIMIT and 503 SERVICE_UNAVAILABLE (replica full or probe failure), both Retry-After: 5.
 export interface PresignResponse {
-  url: string // host osiągalny z przeglądarki, nie wewnętrzny endpoint storage
+  url: string
   expiresAt: string // ISO 8601
 }
 
@@ -43,9 +39,6 @@ export interface StartAnalysisRequest {
   type: AnalysisType
 }
 
-// Wynik jednego źródła (video/audio) w `Analysis.details`. `gradcamUrls` to gotowe ścieżki
-// endpointu artefaktów (TO czytamy), `gradcamKeys` = surowe klucze w buckecie (audyt),
-// `metadata` = wolnoformatowy obiekt detektora (snake_case, np. `frames_analyzed`).
 export interface SourceDetails {
   verdict?: Verdict
   confidence?: number // Distance from the decision boundary for the versioned audio contract.
@@ -58,7 +51,6 @@ export interface SourceDetails {
   metadata?: Record<string, unknown>
 }
 
-// `details` grupuje wyniki per źródło — obecne są tylko te, które zdążyły zaraportować.
 export interface AnalysisDetails {
   video?: SourceDetails
   audio?: SourceDetails
@@ -66,14 +58,13 @@ export interface AnalysisDetails {
 
 // Audio windows on the versioned shared decision scale, not calibrated probabilities.
 // raw_prob_fake is retained in metadata for audit; only prob_fake drives timeline colors.
-// Windows overlap (1 s window, 0.5 s step), skip silence and may be downsampled to 500 entries.
+
 export interface AudioSegmentPrediction {
   start_time: number
   end_time: number
   prob_fake: number
 }
 
-// Pełny zasób — GET /api/analysis/{id}. Nullowalność pól zależy od statusu (patrz komentarze).
 export interface Analysis {
   id: string
   userId: string
@@ -81,18 +72,17 @@ export interface Analysis {
   fileKey: string
   type: AnalysisType
   status: AnalysisStatus
-  verdict: Verdict | null // null gdy status != COMPLETED
-  confidence: number | null // 0..1; null gdy status != COMPLETED
-  videoProb: number | null // 0..1; null gdy źródło nieanalizowane
-  audioProb: number | null // 0..1; null gdy źródło nieanalizowane
-  details: AnalysisDetails | null // null dopóki żaden detektor nie zaraportował
+  verdict: Verdict | null
+  confidence: number | null
+  videoProb: number | null
+  audioProb: number | null
+  details: AnalysisDetails | null
   // Backend recovery/DLQ use [ANALYSIS_TIMEOUT] / [DEAD_LETTERED] with neutral Polish messages.
-  errorMessage: string | null // null gdy status != FAILED
+  errorMessage: string | null
   createdAt: string // ISO 8601
   updatedAt: string
 }
 
-// Lekka projekcja — GET /api/analysis (lista). Bez fileKey/videoProb/audioProb/errorMessage/details.
 export interface AnalysisSummary {
   id: string
   fileId: string
@@ -104,9 +94,6 @@ export interface AnalysisSummary {
   updatedAt: string
 }
 
-// Agregaty analiz usera — GET /api/analysis/stats (dashboard). Scoped do jwt.sub (brak IDOR).
-// verdicts liczy tylko COMPLETED (fake + real == byStatus.completed). avgConfidence null do
-// pierwszego COMPLETED; lastAnalysisAt null dla usera bez analiz.
 export interface UserStats {
   total: number
   byStatus: {
@@ -124,9 +111,9 @@ export interface UserStats {
     fake: number
     real: number
   }
-  avgConfidence: number | null // 0..1; null dopóki nic nie ukończone
-  last7Days: number // analizy utworzone w ostatnich 7 dniach (dowolny status)
-  lastAnalysisAt: string | null // ISO 8601 createdAt najnowszej; null dla świeżego usera
+  avgConfidence: number | null
+  last7Days: number
+  lastAnalysisAt: string | null
 }
 
 // Spring PagedModel: size ≤ 100, createdAt DESC + id DESC; sort ignored, offset ≤ 2147483647.
@@ -140,7 +127,6 @@ export interface Paged<T> {
   }
 }
 
-// Body 429 przy backpressure Orchestratora (rate-limit z Gateway nie ma body — stan w nagłówkach).
 export interface BackpressureInfo {
   reason?: 'GLOBAL_LIMIT' | 'USER_LIMIT'
   limit?: number
@@ -148,21 +134,17 @@ export interface BackpressureInfo {
   retryAfterSeconds: number
 }
 
-// --- SSE (realtime, KROK 10) -------------------------------------------------
-// GET /api/analysis/{id}/stream: 404 i 429 mają puste body; 429 ma Retry-After: 5.
-// Zdarzenia z GET /api/analysis/{id}/stream. Tu tylko typy; klient SSE powstaje w KROK 10.
-// Nazwy z prefiksem Analysis, by nie kolidować z wbudowanym DOM-owym `ProgressEvent`.
 export interface AnalysisProgressEvent {
   analysisId: string
   source: 'video' | 'audio'
   progress: number // 0..100
-  stage: string // znane: 'LOADING' | 'INFERENCE' (backend może dodać kolejne)
+  stage: string
   status: AnalysisStatus
 }
 
 export interface AnalysisResultEvent {
   analysisId: string
   status: AnalysisStatus
-  verdict: Verdict | null // null gdy status != COMPLETED
+  verdict: Verdict | null
   confidence: number | null
 }

@@ -801,6 +801,9 @@ Frontend watching (`frontend/src/api/watch-analysis.ts`, `stream.ts`):
   the client reopens SSE with a 5 s → 30 s backoff (opening SSE replays a terminal result from the
   database) and does one `GET` whenever a reopened stream ends without a result. It stops at a
   terminal status or at `createdAt + 7200 s`, the absolute limit enforced by stuck recovery.
+- Reaching the existing absolute age limit raises a distinct client error. Both result and
+  upload screens explain that the analysis waiting time expired, rather than reporting a
+  connection loss. This stops observation only; the backend remains authoritative for status.
 - The upload screen switches to "analysis still running" with a link to the result page instead
   of offering a second upload. Cancel treats `200` and `409` as settled (`409` reads the analysis
   and routes by its status); other errors and a 10 s timeout are shown in place and the stream

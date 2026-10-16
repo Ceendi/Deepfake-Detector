@@ -7,8 +7,6 @@ interface FrameHeatmapProps {
   showHeatmap?: boolean
 }
 
-// Dwie warstwy w boxie CardMedia (position: relative): klatka = treść (alt),
-// heatmapa = nakładka dekoracyjna (aria-hidden). Blend per motyw jest w FrameHeatmap.module.css.
 export function FrameHeatmap({ frameSrc, alt, heatmapSrc, showHeatmap = true }: FrameHeatmapProps) {
   return (
     <>

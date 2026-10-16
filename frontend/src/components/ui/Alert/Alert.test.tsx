@@ -15,7 +15,6 @@ describe('Alert', () => {
     expect(screen.getByText('Coś się dzieje')).toBeInTheDocument()
   })
 
-  // Logika: danger jest asertywny (role="alert"), reszta to grzeczny role="status".
   it('wariant danger ma role="alert"', () => {
     render(
       <Alert variant="danger" title="Błąd">

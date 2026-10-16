@@ -34,7 +34,6 @@ export function HistoryToolbar({
   onRemoveFilter,
   onClear,
 }: HistoryToolbarProps) {
-  // Na mobile dropdowny chowają się za przyciskiem „Filtry"; na desktopie są zawsze widoczne (CSS).
   const [filtersOpen, setFiltersOpen] = useState(false)
   const hasActiveFilters = activeFilters.length > 0
 

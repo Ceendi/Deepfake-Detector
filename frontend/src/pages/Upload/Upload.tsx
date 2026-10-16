@@ -18,34 +18,42 @@ export default function Upload() {
   const navigate = useNavigate()
 
   const [file, setFile] = useState<File | null>(null)
-  const [error, setError] = useState<string | null>(null) // błąd walidacji KLIENCKIEJ (przed uploadem)
+  const [error, setError] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
-  // Współdzielony input — wszystkie widoki delegują tu picking przez openPicker().
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Cykl analizy (upload → start → SSE → wynik). Na COMPLETED nawigujemy do wyniku.
   const flow = useAnalysisFlow((analysisId) => {
     navigate(`/analysis-result/${analysisId}`)
   })
 
-  // Object URL żyje tyle co podgląd — revoke przy podmianie pliku i przy odmontowaniu.
   useEffect(() => {
     if (!previewUrl) return
     return () => URL.revokeObjectURL(previewUrl)
   }, [previewUrl])
 
-  // Zamknięcie karty w trakcie wysyłki przerywa upload — przeglądarka pyta o potwierdzenie.
   const uploading = flow.state.name === 'uploading'
   useEffect(() => {
     if (!uploading) return
     function warn(event: BeforeUnloadEvent) {
       event.preventDefault()
-      event.returnValue = '' // starsze przeglądarki wymagają ustawienia returnValue
+      event.returnValue = ''
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [uploading])
+
+  useEffect(() => {
+    const preventFileNavigation = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    }
+    window.addEventListener('dragover', preventFileNavigation)
+    window.addEventListener('drop', preventFileNavigation)
+    return () => {
+      window.removeEventListener('dragover', preventFileNavigation)
+      window.removeEventListener('drop', preventFileNavigation)
+    }
+  }, [])
 
   function openPicker() {
     inputRef.current?.click()
@@ -55,8 +63,8 @@ export default function Upload() {
     setFile(null)
     setError(null)
     setPreviewUrl(null)
-    flow.reset() // nowy plik → zapomnij poprzedni upload i wróć do idle
-    if (inputRef.current) inputRef.current.value = '' // pozwala wybrać ten sam plik ponownie
+    flow.reset()
+    if (inputRef.current) inputRef.current.value = ''
   }
 
   function rejectFile(message: string) {
@@ -66,8 +74,6 @@ export default function Upload() {
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  // Długość znamy dopiero z metadanych podglądu. Odrzucamy tylko przed startem — w trakcie uploadu
-  // rozstrzyga backend (422 z tym samym komunikatem).
   function handleDuration(seconds: number) {
     const message = validateDuration(seconds)
     if (message && flow.state.name === 'idle') rejectFile(message)
@@ -94,7 +100,6 @@ export default function Upload() {
         </p>
       </header>
 
-      {/* Ukryty input — wspólny dla wszystkich stanów, sterowany refem. */}
       <input
         ref={inputRef}
         type="file"
@@ -113,15 +118,11 @@ export default function Upload() {
     </div>
   )
 
-  // Gałąź „plik wybrany" → widok zależny od fazy cyklu analizy.
   function renderFlow(file: File, previewUrl: string) {
-    // Błąd analizy ma osobną (czerwoną) kartę bez media.
     if (flow.state.name === 'failed') {
       return <FailedState message={flow.state.message} onRetry={flow.retry} />
     }
 
-    // idle/uploading/starting/analyzing dzielą JEDNĄ kartę ze STABILNYM <video> — wymienia się tylko
-    // stopka/sekcja postępu pod spodem. Dzięki temu film nie przeładowuje się przy zmianie stanu.
     return (
       <div className={styles.previewCard}>
         <MediaPreview file={file} previewUrl={previewUrl} onDuration={handleDuration} />
@@ -135,14 +136,13 @@ export default function Upload() {
       case 'uploading':
         return <UploadingState progress={flow.uploadProgress} onCancel={flow.cancel} />
       case 'starting':
-        // analiza jeszcze nie ma id → bez „Anuluj"; paski nieokreślone (bySource pusty)
         return (
           <AnalyzingState file={file} analysisType={flow.analysisType} bySource={flow.bySource} />
         )
       case 'analyzing':
       case 'stillRunning': {
         const stillRunning = flow.state.name === 'stillRunning' ? flow.state : undefined
-        // Bez aktywnego śledzenia nie ma strumienia, który dowiózłby wynik anulowania.
+
         const watching = !stillRunning || stillRunning.watching
         return (
           <AnalyzingState
@@ -154,6 +154,7 @@ export default function Upload() {
             cancelError={flow.cancelError}
             stillRunningId={stillRunning?.analysisId}
             watching={watching}
+            timedOut={stillRunning?.timedOut}
           />
         )
       }

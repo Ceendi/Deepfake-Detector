@@ -21,7 +21,6 @@ describe('buildSteps', () => {
   })
 
   it('bieżący stage = active, wcześniejsze = done, dalsze = pending', () => {
-    // wideo w trakcie inferencji (jak na makiecie, 62%)
     const steps = buildSteps('video', { progress: 62, stage: 'INFERENCE' })
     expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'active', 'pending'])
     expect(steps[2].label).toBe('Analiza modelu wideo')
@@ -33,14 +32,13 @@ describe('buildSteps', () => {
   })
 
   it('audio toleruje zamknięty zbiór z kontraktu (INFERENCE → krok 3)', () => {
-    // gdyby audio-detektor emitował zamknięty zbiór zamiast opisowych nazw
     const steps = buildSteps('audio', { progress: 50, stage: 'INFERENCE' })
     expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'active', 'pending', 'pending'])
   })
 
   it('nieznany stage → pozycja szacowana z progresu (fail-safe)', () => {
     const steps = buildSteps('video', { progress: 80, stage: 'WHATEVER' })
-    // 80% z 4 kroków → indeks 3 (ostatni) aktywny
+
     expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'done', 'active'])
   })
 })

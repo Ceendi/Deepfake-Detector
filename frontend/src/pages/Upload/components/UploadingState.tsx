@@ -7,14 +7,11 @@ import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
 import styles from '../Upload.module.css'
 
 interface UploadingStateProps {
-  progress: number // 0..100 (bajty wysłane)
+  progress: number
   onCancel: () => void
 }
 
-// Sekcja postępu + stopka fazy „uploading". Media renderuje wspólna karta w Upload.tsx.
 export function UploadingState({ progress, onCancel }: UploadingStateProps) {
-  // 100% = całe ciało wysłane; teraz serwer odbiera + waliduje (ffprobe) + zapisuje, zanim odpowie.
-  // Nie zostawiamy martwego 100% — pasek idzie w tryb nieokreślony z etykietą „Przetwarzanie…".
   const sending = progress < 100
 
   return (

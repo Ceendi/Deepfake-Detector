@@ -17,8 +17,6 @@ function reportErrorMessage(err: unknown): string {
   return 'Nie udało się pobrać raportu. Spróbuj ponownie.'
 }
 
-// Pobranie raportu PDF: endpoint wymaga Bearer, więc fetch → Blob → tymczasowy <a download>.
-// Raport istnieje tylko dla COMPLETED; dla analizy w toku przycisk jest wyłączony.
 export function ReportPdfButton({
   analysisId,
   status,
@@ -54,7 +52,7 @@ export function ReportPdfButton({
       document.body.appendChild(link)
       link.click()
       link.remove()
-      // Safari/Firefox startują pobieranie asynchronicznie — zbyt wczesny revoke psuje plik.
+
       setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
     } catch (err) {
       if (controller.signal.aborted) return

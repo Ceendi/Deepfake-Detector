@@ -1,7 +1,5 @@
 import { test, expect } from '@playwright/test'
 
-// Nawigacja po głównym nagłówku między chronionymi stronami. Sesja alice z domyślnego
-// storageState (projekt `setup`) — bez logowania per test.
 test.describe('nawigacja', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/dashboard')
@@ -20,7 +18,6 @@ test.describe('nawigacja', () => {
     await page.getByRole('link', { name: 'Profil', exact: true }).click()
     await expect(page).toHaveURL(/\/profile$/)
 
-    // Powrót na dashboard przez logo/brand w nagłówku.
     await page.getByRole('link', { name: 'DeepfakeDetector' }).click()
     await expect(page).toHaveURL(/\/(dashboard)?$/)
     await expect(page.getByRole('heading', { name: /Cześć/, level: 1 })).toBeVisible()

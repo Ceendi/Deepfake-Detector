@@ -1,10 +1,10 @@
 .card {
-  width: 100%; /* wypełnia kontener; szerokość ogranicza rodzic (grid/max-width) */
+  width: 100%;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  overflow: hidden; /* media i jej rogi przycięte do radiusa karty */
+  overflow: hidden;
 }
 
 .interactive {
@@ -14,12 +14,12 @@
     transform var(--transition-base);
 }
 .interactive:hover {
-  box-shadow: var(--shadow-md); /* subtelny „lift" */
+  box-shadow: var(--shadow-md);
 }
 
 .media {
-  position: relative; /* układ odniesienia dla warstw FrameHeatmap (absolute) */
-  aspect-ratio: 16 / 9; /* rezerwuje wysokość ZANIM obraz się załaduje → zero CLS */
+  position: relative;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
   background: var(--color-surface);
 }

@@ -20,9 +20,6 @@ type RegisterProps = PageProps<Extract<KcContext, { pageId: 'register.ftl' }>, I
   doMakeUserConfirmPassword: boolean
 }
 
-// Custom ekran rejestracji (register.ftl). Pola są dynamiczne (UserProfileFormFields
-// zależne od konfiguracji profilu w Keycloaku) — stylizujemy je przez classes-map
-// (patrz KcPage). Tu kontrolujemy układ, zgody, recaptcha i przycisk.
 export default function Register(props: RegisterProps) {
   const {
     kcContext,

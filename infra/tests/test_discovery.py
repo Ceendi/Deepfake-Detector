@@ -22,7 +22,13 @@ from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 
 ROOT = Path(__file__).resolve().parents[2]
-HTTP = build_opener(ProxyHandler({}))
+
+
+def keycloak_base_image():
+    return re.findall(r'(?m)^FROM (\S+)', (ROOT / 'infra/keycloak/Dockerfile').read_text())[-1]
+
+
+HTTP =build_opener(ProxyHandler({}))
 
 
 def command(*args):
@@ -177,6 +183,9 @@ class DiscoveryIntegrationTest(unittest.TestCase):
             'type': 'bind', 'source': str(realm),
             'target': '/opt/keycloak/data/import/realm.json', 'read_only': True,
         }]
+        # No theme is needed here; use the base image instead of building it from frontend sources.
+        services['keycloak'].pop('build')
+        services['keycloak']['image'] = keycloak_base_image()
         services['keycloak']['command'] = ['start-dev', '--import-realm']
         services['keycloak']['environment']['KC_HOSTNAME'] = 'http://keycloak:8080'
         self.probe_image = services['seaweedfs-init']['image']

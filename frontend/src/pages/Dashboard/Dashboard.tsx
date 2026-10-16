@@ -12,7 +12,7 @@ import { Spinner } from '@/components/ui/Spinner/Spinner'
 import { Alert } from '@/components/ui/Alert/Alert'
 import { LinkButton } from '@/components/ui/LinkButton/LinkButton'
 import { ProgressBar } from '@/components/ui/ProgressBar/ProgressBar'
-// „Ostatnie analizy" reużywa wiersza z History — jedno źródło prawdy, identyczny render.
+
 import { HistoryRow } from '@/pages/History/components/HistoryRow'
 
 import { StatCard } from './components/StatCard'
@@ -29,8 +29,6 @@ export default function Dashboard() {
   const [items, setItems] = useState<AnalysisSummary[]>([])
   const [stats, setStats] = useState<UserStats | null>(null)
 
-  // Agregaty (karty) + pierwsza strona listy (ostatnie analizy) lecą równolegle.
-  // stats.total > 0 → dashboard z danymi; === 0 → onboarding (pusty stan).
   useEffect(() => {
     const controller = new AbortController()
 
@@ -66,13 +64,10 @@ export default function Dashboard() {
     )
   }
 
-  // state === 'ready' ⟹ stats != null; `|| !stats` zawęża typ i jest bezpiecznym fallbackiem.
   if (!stats || stats.total === 0) {
     return <DashboardEmpty firstName={firstName} />
   }
 
-  // Odsetek FAKE wśród analiz, które dostały werdykt (fake + real == COMPLETED), nie wśród total —
-  // PENDING/FAILED/CANCELLED nie mają werdyktu. Zero werdyktów → 0%, bez dzielenia przez zero.
   const verdictTotal = stats.verdicts.fake + stats.verdicts.real
   const fakePercent = verdictTotal > 0 ? Math.round((stats.verdicts.fake / verdictTotal) * 100) : 0
   const last7Meta =
@@ -80,7 +75,6 @@ export default function Dashboard() {
       ? `↗ +${stats.last7Days} w ostatnich 7 dniach`
       : 'brak nowych w tym tygodniu'
 
-  // --- Stan z danymi ----------------------------------------------------------
   return (
     <div className={styles.page}>
       <div className={styles.head}>

@@ -5,15 +5,13 @@ import { clsx } from 'clsx'
 import type { CSSProperties, ReactNode } from 'react'
 
 interface RadialGaugeProps {
-  value: number // 0..100 — wypełnienie pierścienia (i wyświetlana liczba %)
+  value: number
   tone?: 'accent' | 'danger' | 'success'
-  label?: ReactNode // podpis pod liczbą (np. „pewność werdyktu")
-  size?: number // średnica w px
-  thickness?: number // grubość pierścienia w px
+  label?: ReactNode
+  size?: number
+  thickness?: number
 }
 
-// Kołowy wskaźnik (donut) na czystym CSS: conic-gradient = pierścień, ::before = wycięty środek.
-// Siostra ProgressBar dla wartości 0..100; kolor steruje `tone`.
 export function RadialGauge({
   value,
   tone = 'accent',

@@ -4,12 +4,10 @@ import { keycloakify } from 'keycloakify/vite-plugin'
 import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'node:path'
 
-// https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
-    // Theme Keycloacka budowany z tego samego projektu (Keycloakify). themeName = loginTheme
-    // w realm-export. Jeden JAR pod Keycloak 26 (target "all-other-versions").
+
     keycloakify({
       accountThemeImplementation: 'none',
       themeName: 'deepfake',
@@ -18,7 +16,7 @@ export default defineConfig(({ mode }) => ({
         'all-other-versions': 'keycloak-theme.jar',
       },
     }),
-    // Raport rozmiaru bundla tylko na żądanie (`npm run analyze`) — nie trafia do zwykłego builda.
+
     mode === 'analyze' &&
       visualizer({ filename: 'dist/stats.html', gzipSize: true, brotliSize: true }),
   ],
@@ -32,7 +30,7 @@ export default defineConfig(({ mode }) => ({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: true,
-    passWithNoTests: true, // no tests yet; CI must stay green until the vitest suite lands
+    passWithNoTests: true,
     exclude: ['tests/e2e/**', 'node_modules/**'],
   },
   server: {

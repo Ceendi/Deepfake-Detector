@@ -48,7 +48,7 @@ describe('Pagination', () => {
 
   it('przy wielu stronach wstawia wielokropki i krańce (1 … okno … N)', () => {
     render(<Pagination page={6} totalPages={13} onChange={vi.fn()} />)
-    // Okno wokół strony 7: 1 … 6 7 8 … 13 → dwa wielokropki, krańce 1 i 13 obecne.
+
     expect(screen.getAllByText('…')).toHaveLength(2)
     expect(screen.getByRole('button', { name: '1' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '13' })).toBeInTheDocument()

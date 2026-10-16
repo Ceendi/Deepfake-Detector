@@ -1,16 +1,11 @@
-// Model kroków ekranu „w toku" (LiveProgress) — czysta logika, bez Reacta (stąd testowalna).
-// SSE daje per źródło tylko { progress 0..100, stage }. Z tego wyliczamy listę kroków pipeline'u
-// z jednego z trzech stanów (done/active/pending) oraz postęp całości. UWAGA: liczby klatek NIE ma
-// — nasz AnalysisProgressEvent jej nie niesie (świadomie, kontrakt: amqp-messages.md §Progress).
 import type { AnalysisType } from '@/api/types'
 
 export type Source = 'video' | 'audio'
 export type StepState = 'done' | 'active' | 'pending'
 
-// Snapshot ostatniego progressu źródła (z agregacji SSE).
 export interface SourceProgress {
   progress: number // 0..100
-  stage: string // surowy stage z detektora
+  stage: string
 }
 
 interface StepDef {
@@ -18,8 +13,6 @@ interface StepDef {
   label: string
 }
 
-// Kroki per źródło = realne stage'e naszych detektorów (NIE wymyślone „klatki/twarze" z makiety).
-// Kolejność = kolejność emisji. Etykiety opisowe, bo na ekranie stoją obok siebie (video + audio).
 const VIDEO_STEPS: StepDef[] = [
   { key: 'LOADING', label: 'Wczytywanie modelu' },
   { key: 'PREPROCESSING', label: 'Przetwarzanie klatek' },
@@ -35,9 +28,6 @@ const AUDIO_STEPS: StepDef[] = [
 ]
 const STEPS: Record<Source, StepDef[]> = { video: VIDEO_STEPS, audio: AUDIO_STEPS }
 
-// Surowy stage → indeks kroku. Tolerancyjny na DWA słowniki: audio-detektor łamie zamknięty zbiór
-// z kontraktu (opisowe nazwy), ale committed audio-inference potrafi emitować też zamknięty zbiór
-// (LOADING/…/POSTPROCESSING). Mapujemy oba na te same kroki, żeby pasek nie „gubił" pozycji.
 const STAGE_INDEX: Record<Source, Record<string, number>> = {
   video: { LOADING: 0, PREPROCESSING: 1, INFERENCE: 2, POSTPROCESSING: 3 },
   audio: {
@@ -46,7 +36,7 @@ const STAGE_INDEX: Record<Source, Record<string, number>> = {
     ANALYZING_SEGMENTS: 2,
     GENERATING_HEATMAP: 3,
     ANALYSIS_COMPLETED: 4,
-    // awaryjnie — gdyby audio jechało zamkniętym zbiorem:
+
     LOADING: 0,
     PREPROCESSING: 1,
     INFERENCE: 2,
@@ -57,15 +47,12 @@ const STAGE_INDEX: Record<Source, Record<string, number>> = {
 const SOURCE_LABEL: Record<Source, string> = { video: 'Ścieżka wideo', audio: 'Ścieżka audio' }
 export const sourceLabel = (s: Source): string => SOURCE_LABEL[s]
 
-// Które tory pokazać. FULL → rozbicie na wideo + audio; VIDEO/AUDIO → pojedynczy tor.
 export function sourcesForType(type: AnalysisType): Source[] {
   if (type === 'AUDIO') return ['audio']
   if (type === 'VIDEO') return ['video']
   return ['video', 'audio']
 }
 
-// Indeks aktualnego kroku źródła; -1 gdy brak jeszcze zdarzenia. Nieznany stage → szacujemy z progresu
-// (fail-safe, gdyby detektor dorzucił nazwę spoza obu słowników).
 function currentIndex(source: Source, sp: SourceProgress | undefined): number {
   if (!sp) return -1
   const known = STAGE_INDEX[source][sp.stage]
@@ -80,8 +67,6 @@ export interface Step {
   state: StepState
 }
 
-// Lista kroków źródła ze stanami. Krok przed bieżącym = done; bieżący = active (lub done przy 100%);
-// dalsze = pending. Brak zdarzenia → wszystko pending.
 export function buildSteps(source: Source, sp: SourceProgress | undefined): Step[] {
   const cur = currentIndex(source, sp)
   const atFull = sp != null && sp.progress >= 100
@@ -94,8 +79,6 @@ export function buildSteps(source: Source, sp: SourceProgress | undefined): Step
   })
 }
 
-// Postęp całości = średnia ze źródeł danego typu (brak zdarzenia liczy się jako 0%). null dopóki nic
-// nie ruszyło (PENDING bez progressu) → pasek nieokreślony, bez procentu.
 export function overallProgress(
   sources: Source[],
   by: Partial<Record<Source, SourceProgress>>,
@@ -105,7 +88,6 @@ export function overallProgress(
   return Math.round(sum / sources.length)
 }
 
-// Etykieta bieżącego kroku (linia mono pod tytułem) — pierwszy aktywny krok, wideo przed audio.
 export function activeStageLabel(groups: { steps: Step[] }[]): string | null {
   for (const g of groups) {
     const active = g.steps.find((s) => s.state === 'active')

@@ -68,6 +68,12 @@ update and recreate the clients. Keep persistent data; `down -v` deletes it.
 Application broker passwords are reconciled on every `rabbitmq-init` run; update
 `.env` and recreate all affected clients (including the `ml` profile when used).
 See [broker users](docs/reliability.md#broker-users-and-internal-storage-apis).
+
+The `auth` profile builds the Keycloak image with the login theme from `frontend/` sources
+(`infra/keycloak/Dockerfile`), so no JAR is committed and the host needs no Java or Maven.
+The first build takes a few minutes. After changing the theme, rebuild it with
+`docker compose --profile auth up -d --build keycloak`.
+
 Keycloak realm policy is synchronized separately by `keycloak-config-cli`.
 
 If you override `KEYCLOAK_PORT`, also set `VITE_KEYCLOAK_URL` in `frontend/.env`

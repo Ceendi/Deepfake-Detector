@@ -1,6 +1,3 @@
-/* ============================================================
-   Strona wyniku analizy
-   ============================================================ */
 .page {
   display: flex;
   flex-direction: column;
@@ -13,7 +10,6 @@
   padding: var(--spacing-8);
 }
 
-/* ===== Breadcrumb „wróć" ===== */
 .backLink {
   display: inline-flex;
   align-items: center;
@@ -27,7 +23,6 @@
   color: var(--color-text-primary);
 }
 
-/* ===== Nagłówek pliku + akcje ===== */
 .header {
   display: flex;
   justify-content: space-between;
@@ -97,7 +92,6 @@
   flex-shrink: 0;
 }
 
-/* ===== Przycisk PDF + komunikat błędu pobierania ===== */
 .pdfWrap {
   display: inline-flex;
   flex-direction: column;
@@ -110,7 +104,6 @@
   font-size: var(--font-size-xs);
 }
 
-/* ===== Hero werdyktu ===== */
 .hero {
   display: flex;
   justify-content: space-between;
@@ -165,7 +158,6 @@
   flex-shrink: 0;
 }
 
-/* ===== Podgląd analizowanego pliku ===== */
 .mediaPlaceholder {
   display: flex;
   align-items: center;
@@ -180,7 +172,6 @@
   color: var(--color-text-muted);
 }
 
-/* ===== Sekcje (etykieta + treść) ===== */
 .section {
   display: flex;
   flex-direction: column;
@@ -201,10 +192,9 @@
   line-height: var(--line-height-normal);
 }
 
-/* ===== Modalności (wideo / audio) ===== */
 .modalityGrid {
   display: grid;
-  /* auto-fit: 1 źródło wypełnia rząd, 2 stają obok siebie, na wąsko same się układają w pion */
+
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: var(--spacing-4);
 }
@@ -243,7 +233,7 @@
   width: 160px;
   height: 8px;
   border-radius: var(--radius-full);
-  /* Spektrum „jet": niebieski → cyjan → zielony → żółty → czerwony. Stały, nietematyzowany. */
+
   background: linear-gradient(90deg, #1d4ed8, #06b6d4, #22c55e, #eab308, #ef4444);
 }
 .gradcamGrid {
@@ -259,7 +249,7 @@
   aspect-ratio: 1 / 1;
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--color-neutral-900); /* ciemne tło kafelka, niezależne od motywu */
+  background: var(--color-neutral-900);
 }
 .frameImg {
   position: absolute;
@@ -288,7 +278,6 @@
   color: #ffffff;
 }
 
-/* ===== Podsumowanie ===== */
 .findings {
   list-style: none;
   margin: 0;
@@ -330,12 +319,11 @@
   color: var(--color-text-muted);
 }
 
-/* ===== Oś czasu ryzyka audio (pasek-heatmapa) ===== */
 .riskLegendBar {
   width: 160px;
   height: 8px;
   border-radius: var(--radius-full);
-  /* Skala ryzyka: zielony → bursztyn → czerwony (zgodna z riskColor()). */
+
   background: linear-gradient(90deg, hsl(130 70% 45%), hsl(65 70% 45%), hsl(0 70% 45%));
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.2);
 }
@@ -345,13 +333,13 @@
   height: 60px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  /* delikatny, miękki tor pod pigułkami (luki = brak mowy widać przez prześwit) */
+
   background:
     radial-gradient(120% 140% at 50% 0%, rgba(255, 255, 255, 0.04), transparent 60%),
     var(--color-surface);
   overflow: hidden;
 }
-/* szklisty połysk nad kolorami — góra rozjaśniona, dół lekko przyciemniony */
+
 .audioTrack::after {
   content: '';
   position: absolute;
@@ -367,14 +355,14 @@
 .audioRuns {
   position: absolute;
   inset: 0;
-  animation: audioReveal 720ms ease both; /* skanowanie lewo→prawo przy wejściu */
+  animation: audioReveal 720ms ease both;
 }
 .audioRun {
   position: absolute;
   top: 8px;
   bottom: 8px;
-  min-width: 4px; /* bardzo krótkie fragmenty wciąż widoczne */
-  border-radius: var(--radius-sm); /* lekko zaokrąglone, nie pigułka */
+  min-width: 4px;
+  border-radius: var(--radius-sm);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.25),
     0 1px 3px rgba(16, 18, 28, 0.25);
@@ -404,7 +392,7 @@
 .audioAxis {
   position: relative;
   height: 1.25rem;
-  margin-top: calc(-1 * var(--spacing-2)); /* kompensuje gap CardBody — oś tuż pod torem */
+  margin-top: calc(-1 * var(--spacing-2));
 }
 .audioTick {
   position: absolute;
@@ -415,16 +403,16 @@
   white-space: nowrap;
 }
 .audioTick:first-child {
-  transform: none; /* „0 s" przy lewym brzegu */
+  transform: none;
 }
 .audioTick:last-child {
-  transform: translateX(-100%); /* ostatni tick przy prawym brzegu */
+  transform: translateX(-100%);
 }
 .audioPeak {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.3em; /* odstępy między częściami niezależne od whitespace w JSX */
+  gap: 0.3em;
   margin: 0;
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
@@ -440,7 +428,6 @@
   color: var(--color-text-primary);
 }
 
-/* ===== Placeholder stanu (anulowana / błąd / w toku) ===== */
 .statusCard {
   display: flex;
   flex-direction: column;
@@ -488,7 +475,7 @@
   color: var(--color-text-muted);
   line-height: var(--line-height-normal);
 }
-/* Kod/komunikat błędu — pigułka w tonie danger (hugbox: align-items:center karty nie rozciąga). */
+
 .statusDetail {
   margin: 0;
   max-width: 100%;
@@ -510,9 +497,6 @@
   margin-top: var(--spacing-1);
 }
 
-/* ============================================================
-   Ekran „w toku" na żywo (LiveProgress)
-   ============================================================ */
 .liveCard {
   display: flex;
   flex-direction: column;
@@ -527,7 +511,6 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* Badge „● NA ŻYWO" */
 .liveBadge {
   display: inline-flex;
   align-items: center;
@@ -561,7 +544,6 @@
   color: var(--color-text-muted);
 }
 
-/* Pasek całości + duży procent pod nim */
 .liveBarWrap {
   display: flex;
   flex-direction: column;
@@ -577,7 +559,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Checklista kroków (rozbita na wideo/audio dla FULL) */
 .steps {
   display: flex;
   flex-direction: column;
@@ -672,7 +653,6 @@
   }
 }
 
-/* ===== Stopka akcji ===== */
 .footer {
   display: flex;
   justify-content: space-between;
@@ -681,8 +661,6 @@
   flex-wrap: wrap;
 }
 
-/* Akcje nawigacja + usuń (lewa strona) — odsunięte od głównego CTA „Pobierz PDF" (prawa strona),
-   żeby destrukcyjne „Usuń analizę" nie sąsiadowało z przyciskiem klikanym z przyzwyczajenia. */
 .footerEnd {
   display: flex;
   align-items: center;
@@ -690,7 +668,6 @@
   flex-wrap: wrap;
 }
 
-/* ===== Responsywność ===== */
 @media (max-width: 720px) {
   .hero {
     flex-direction: column-reverse;

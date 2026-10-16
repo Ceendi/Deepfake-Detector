@@ -1,5 +1,3 @@
-// Testowi użytkownicy z deweloperskiego realmu „deepfake" (infra/keycloak/dev/realm-export.json).
-// Hasła można nadpisać zmiennymi środowiskowymi, gdyby realm w danym środowisku był inny.
 export interface TestUser {
   username: string
   password: string

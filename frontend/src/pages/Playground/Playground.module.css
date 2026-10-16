@@ -26,7 +26,6 @@
   font-size: var(--font-size-sm);
 }
 
-/* Przełącznik motywu — segmentowany pigułkowy toggle */
 .themeSwitch {
   display: inline-flex;
   gap: var(--spacing-1);
@@ -64,7 +63,6 @@
   color: var(--color-on-accent);
 }
 
-/* Responsywna siatka kart — sekcje układają się same wg dostępnej szerokości */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fitt, minmax(260px, 1fr));
@@ -91,14 +89,12 @@
   color: var(--color-text-muted);
 }
 
-/* Demo karty — wygląd DOMENOWY (układ treści), nie część prymitywu Card */
 .cardMeta {
   font-family: var(--font-family-mono);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
 }
 
-/* Tytuł + Badge w jednej linii (tytuł lewo, badge prawo) */
 .cardRow {
   display: flex;
   align-items: center;
@@ -106,7 +102,6 @@
   gap: var(--spacing-3);
 }
 
-/* Placeholder media gdy brak klatki — pasiaste tło + wyśrodkowany mono-tekst */
 .cardPlaceholder {
   position: absolute;
   inset: 0;
@@ -125,7 +120,6 @@
     var(--color-background);
 }
 
-/* Płótno: tło = --color-background, by odciąć komponent od karty (--color-surface) */
 .canvas {
   display: flex;
   flex-wrap: wrap;

@@ -28,21 +28,16 @@ import styles from './AnalysisResult.module.css'
 
 type LoadState = 'loading' | 'ready' | 'notfound' | 'error'
 
-// Strona wyniku analizy. COMPLETED → werdykt + Grad-CAM (realne) + placeholdery (wnioski/model);
-// PENDING/PROCESSING → LiveProgress (postęp na żywo z SSE); FAILED/CANCELLED → AnalysisStatusState.
-// Po `result`/anulowaniu LiveProgress woła onSettled → refetch przełącza widok. Raport PDF osobno.
 export default function AnalysisResultRoute() {
   const { id } = useParams<{ id: string }>()
-  // key = id: przejście na inną analizę montuje stronę od nowa, bez treści i stanu poprzedniej.
+
   return <AnalysisResult key={id} id={id} />
 }
 
 function AnalysisResult({ id }: { id: string | undefined }) {
   const [state, setState] = useState<LoadState>('loading')
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
-  // Bump po SSE `result` / anulowaniu (LiveProgress.onSettled) → efekt poniżej przeładowuje pełny
-  // zasób, przełączając ekran „w toku" na werdykt / FAILED / CANCELLED. setState w callbackach
-  // promisy (nie synchronicznie w efekcie) — wymóg react-hooks/set-state-in-effect.
+
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -61,7 +56,6 @@ function AnalysisResult({ id }: { id: string | undefined }) {
     return () => controller.abort()
   }, [id, reloadKey])
 
-  // Trasa to /analysis-result/:id, więc w praktyce id zawsze jest — guard dla typu/edge-case.
   if (!id) {
     return (
       <Alert variant="warning" title="Brak identyfikatora analizy">

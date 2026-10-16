@@ -1,17 +1,10 @@
-/* =========================================================================
-   Login — pełnoekranowy ekran wejścia (renderowany poza Layoutem/Headerem).
-   Wyśrodkowana karta na delikatnym tle; mobile-first.
-   Logowanie/rejestracja delegowane do Keycloaka (redirect PKCE).
-   ========================================================================= */
-
 .screen {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 100dvh;
   padding: var(--spacing-5) var(--spacing-4);
-  /* Delikatna poświata akcentu za kartą — działa w obu motywach (tokeny flipują):
-     light: indygo 50 → slate 50; dark: głębokie indygo → slate 800. */
+
   background: radial-gradient(
     120% 80% at 50% -10%,
     var(--color-accent-surface) 0%,
@@ -19,7 +12,6 @@
   );
 }
 
-/* ---- Karta (spójna z resztą: tło, obwódka, cień, promień) -------------- */
 .card {
   display: flex;
   flex-direction: column;
@@ -35,7 +27,6 @@
   box-shadow: var(--shadow-md);
 }
 
-/* ---- Marka (ten sam motyw co Header: ShieldCheck w kwadracie akcentu) --- */
 .brand {
   display: flex;
   flex-direction: column;
@@ -66,7 +57,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Akcje (przyciski pełnej szerokości, stos) ------------------------- */
 .actions {
   display: flex;
   flex-direction: column;
@@ -74,13 +64,12 @@
   width: 100%;
   margin-top: var(--spacing-1);
 }
-/* Button to inline-flex bez własnej szerokości — rozciągamy i centrujemy treść */
+
 .actionBtn {
   width: 100%;
   justify-content: center;
 }
 
-/* ---- Stopka (hairline + nota o Keycloaku, jak chip „managed" w Profilu) - */
 .footer {
   width: 100%;
   padding-top: var(--spacing-3);

@@ -19,10 +19,11 @@ On Windows, WSL2 defaults to 50% of host RAM. On a 16 GB laptop, set
 **First time here?** Follow [SETUP.md](SETUP.md) for the complete walkthrough,
 including model downloads, configuration and troubleshooting.
 
-Start the backend:
+Start the backend (the first `auth` start also builds the Keycloak login theme):
 
 ```bash
 cp .env.example .env
+cp frontend/.env.example frontend/.env
 docker compose --profile core --profile auth up -d
 ```
 
@@ -30,8 +31,7 @@ Start the frontend in another terminal:
 
 ```bash
 cd frontend
-cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 

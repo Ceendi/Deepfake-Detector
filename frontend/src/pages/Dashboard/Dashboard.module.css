@@ -4,7 +4,6 @@
   gap: var(--spacing-6);
 }
 
-/* ---- Nagłówek strony --------------------------------------------------- */
 .head {
   display: flex;
   align-items: flex-start;
@@ -20,7 +19,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Karty statystyk --------------------------------------------------- */
 .stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -56,7 +54,7 @@
   background: var(--color-surface);
   color: var(--color-text-muted);
 }
-/* Tony ikon — miękkie tło + foreground zgodne ze znaczeniem karty */
+
 .statIconAccent {
   background: var(--color-accent-surface);
   color: var(--color-accent);
@@ -85,28 +83,24 @@
   color: var(--color-success);
 }
 .statMeta {
-  /* Karty równej wysokości (grid stretch) → meta dosunięta do dołu, więc pasek „Odsetek FAKE"
-     siada na spodzie karty, w jednej linii z metami pozostałych kart. */
   margin-top: auto;
   font-size: var(--font-size-xs);
   color: var(--color-text-muted);
 }
 
-/* ---- Panel „Ostatnie analizy" ----------------------------------------- */
 .panel {
   background: var(--color-background);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
-  overflow: hidden; /* przycina hover wierszy do zaokrąglonych rogów (jak .list w History) */
+  overflow: hidden;
 }
 .panelHead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-4) var(--spacing-5);
-  /* oddziela nagłówek od pierwszego wiersza — HistoryRow rozdziela wiersze przez .row + .row,
-     więc pierwszy nie ma górnej krawędzi (mirror nagłówka kolumn .listHead w History) */
+
   border-bottom: 1px solid var(--color-border);
 }
 .panelHead h2 {
@@ -118,7 +112,6 @@
   font-weight: var(--font-weight-medium);
 }
 
-/* ---- Stan pusty (brak analiz) ----------------------------------------- */
 .empty {
   display: flex;
   flex-direction: column;
@@ -143,7 +136,7 @@
   border: 2px dashed var(--color-primary-300);
   color: var(--color-accent);
   background-color: var(--color-accent-surface);
-  /* ukośne paski (hatch) — accent na niskiej alfie nad miękkim tłem accent-surface */
+
   background-image: repeating-linear-gradient(
     -45deg,
     color-mix(in srgb, var(--color-accent) 12%, transparent) 0,
@@ -171,7 +164,7 @@
   justify-content: center;
   gap: var(--spacing-2);
   margin-top: var(--spacing-2);
-  padding: 0; /* <ol> ma domyślne padding-inline-start: 40px — to ono spychało kroki w prawo */
+  padding: 0;
   list-style: none;
 }
 .step {
@@ -200,7 +193,6 @@
   color: var(--color-text-muted);
 }
 
-/* ---- Stany ładowania / błędu ------------------------------------------ */
 .center {
   display: flex;
   justify-content: center;

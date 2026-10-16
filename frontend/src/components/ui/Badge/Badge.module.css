@@ -10,7 +10,6 @@
   line-height: 1;
 }
 
-/* Rozmiary — padding/odstęp/wielkość fontu (warianty kolorów są niezależne) */
 .md {
   gap: var(--spacing-2);
   padding: var(--spacing-2) var(--spacing-4);

@@ -6,19 +6,22 @@ a `/api/**` proxuje dev server Vite na Gateway (`vite.config.ts`).
 
 ## Wymagania przed uruchomieniem
 
-1. **Backend + Keycloak** (z korzenia repo), z realmem deweloperskim:
+1. **Motyw logowania**: w `frontend/` wykonaj `npm ci && npm run build-keycloak-theme`
+   (Node.js, Java 17+ i Maven). Wynikowy JAR jest ignorowany przez Git; po zmianie źródeł
+   motywu zbuduj go ponownie przed startem Keycloaka.
+2. **Backend + Keycloak** (z korzenia repo), z realmem deweloperskim:
    ```bash
    # w .env: KEYCLOAK_REALM_CONFIG=dev/realm-export.json
    docker compose --profile core --profile auth up        # + --profile ml dla detektorów
    ```
-2. **Realm `deepfake`** z userami `alice` / `bob` (hasło `Test1234!@`) — są tylko w
+3. **Realm `deepfake`** z userami `alice` / `bob` (hasło `Test1234!@`) — są tylko w
    `infra/keycloak/dev/realm-export.json`; produkcyjny `realm-export.json` nie ma kont testowych.
-3. **Limity:** bez detektorów analizy zostają aktywne, a testy wgrywają pliki równolegle. Przy
+4. **Limity:** bez detektorów analizy zostają aktywne, a testy wgrywają pliki równolegle. Przy
    domyślnych limitach (3 aktywne analizy, 5 uploadów/min na użytkownika) kolejne przebiegi
    dostają 429. Lokalnie podnieś `BACKPRESSURE_MAX_INFLIGHT_PER_USER` i `UPLOAD_RL_BURST` w `.env`
    (tak robi CI) albo uruchamiaj na świeżym stacku.
-4. **`frontend/.env`** — skopiuj `frontend/.env.example`; bez niego dev server nie zna adresu Keycloaka.
-5. **Dev server** na `:5173` — jeśli nie działa, Playwright (`webServer`) podniesie go sam.
+5. **`frontend/.env`** — skopiuj `frontend/.env.example`; bez niego dev server nie zna adresu Keycloaka.
+6. **Dev server** na `:5173` — jeśli nie działa, Playwright (`webServer`) podniesie go sam.
    (Backendu/Keycloaka `webServer` **nie** startuje — muszą działać niezależnie.)
 
 ## Uruchamianie
@@ -32,13 +35,13 @@ npx playwright show-report        # raport HTML po przebiegu
 
 ## Co jest pokryte
 
-| Plik                 | Scenariusz                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `auth.spec.ts`       | redirect niezalogowanego → `/login`, pełne logowanie przez Keycloak, wylogowanie                                   |
-| `navigation.spec.ts` | nawigacja nagłówkiem: Dashboard → Upload → Historia → Profil                                                       |
-| `upload.spec.ts`     | walidacja kliencka (odrzut formatu), realny upload + `POST /analysis` (201), oryginalna nazwa w wyniku, anulowanie |
-| `history.spec.ts`    | strona historii wczytuje listę bez błędu                                                                           |
-| `idor.spec.ts`       | analiza alice jest dla boba 404 (IDOR guard), właściciel dostaje 200                                               |
+| Plik                 | Scenariusz                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `auth.spec.ts`       | redirect niezalogowanego → `/login`, logowanie zachowujące ścieżkę/query/hash bez fragmentu w OAuth redirect_uri, wylogowanie |
+| `navigation.spec.ts` | nawigacja nagłówkiem: Dashboard → Upload → Historia → Profil                                                                  |
+| `upload.spec.ts`     | walidacja kliencka (odrzut formatu), realny upload + `POST /analysis` (201), oryginalna nazwa w wyniku, anulowanie            |
+| `history.spec.ts`    | strona historii wczytuje listę bez błędu                                                                                      |
+| `idor.spec.ts`       | analiza alice jest dla boba 404 (IDOR guard), właściciel dostaje 200                                                          |
 
 ## Test werdyktu (domyślnie pominięty)
 

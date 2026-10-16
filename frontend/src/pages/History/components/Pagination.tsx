@@ -12,7 +12,7 @@ interface PaginationProps {
 export function Pagination({ page, totalPages, onChange }: PaginationProps) {
   if (totalPages <= 1) return null
 
-  const current = page + 1 // 1-based do wyświetlania
+  const current = page + 1
   const window = pageWindow(current, totalPages)
 
   return (
@@ -58,8 +58,6 @@ export function Pagination({ page, totalPages, onChange }: PaginationProps) {
   )
 }
 
-// Okno stron: pierwsza, ostatnia i 3-elementowe okno wokół bieżącej (przy krańcach przyklejone do
-// brzegu), z „…" w lukach. Np. 1 2 3 … 13 / 1 … 6 7 8 … 13 / 1 … 11 12 13.
 function pageWindow(current: number, total: number): (number | 'ellipsis')[] {
   if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1)
 

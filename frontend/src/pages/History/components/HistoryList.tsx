@@ -10,8 +10,6 @@ interface HistoryListProps {
   footer?: ReactNode
 }
 
-// Karta listy: nagłówek kolumn (tylko desktop) + wiersze + stopka (licznik/paginacja) w jednej karcie.
-// Na mobile nagłówek znika, a wiersze reflowują się w układ z mockupu.
 export function HistoryList({ items, footer }: HistoryListProps) {
   return (
     <div className={styles.list}>

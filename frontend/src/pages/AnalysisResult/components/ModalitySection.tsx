@@ -11,7 +11,6 @@ import styles from '../AnalysisResult.module.css'
 
 type Source = 'video' | 'audio'
 
-// Opisy z makiety — placeholder zależny od werdyktu źródła; realne uzasadnienie dojdzie z detektora.
 const DESC: Record<Source, Record<Verdict, string>> = {
   video: {
     FAKE: 'Obraz twarzy wykazuje cechy sztucznej modyfikacji, najsilniejsze w okolicy twarzy i ust.',

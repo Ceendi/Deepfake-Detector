@@ -10,7 +10,6 @@ import { accountManagement } from '@/auth/keycloak'
 
 import styles from './Header.module.css'
 
-// Jedno źródło prawdy dla pozycji nawigacji — używane i w desktopie, i w menu mobilnym.
 const NAV_LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/upload', label: 'Upload' },
@@ -18,7 +17,6 @@ const NAV_LINKS = [
   { to: '/profile', label: 'Profil' },
 ] as const
 
-// Inicjały do awatara: 2 pierwsze litery z imienia+nazwiska, a w razie braku — z nazwy/maila.
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/)
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
@@ -33,7 +31,6 @@ export function Header() {
 
   const displayName = user?.name ?? user?.username ?? user?.email ?? 'Użytkownik'
 
-  // Zamknij dropdown użytkownika po kliknięciu poza nim (typowy wzorzec dla menu/popoverów).
   useEffect(() => {
     if (!userMenuOpen) return
     function onPointerDown(event: MouseEvent) {
@@ -45,8 +42,6 @@ export function Header() {
     return () => document.removeEventListener('mousedown', onPointerDown)
   }, [userMenuOpen])
 
-  // Otwarte menu mobilne: Esc zamyka, blokujemy scroll tła, a przejście na
-  // desktop (powyżej breakpointu) auto-zamyka, by stan nie został „przyklejony”.
   useEffect(() => {
     if (!mobileOpen) return
 
@@ -162,7 +157,6 @@ export function Header() {
           </div>
         </div>
 
-        {/* Zawsze w DOM — klasa .mobileNavOpen animuje wejście/wyjście. */}
         <nav
           className={clsx(styles.mobileNav, mobileOpen && styles.mobileNavOpen)}
           aria-label="Główna nawigacja (mobilna)"
@@ -183,7 +177,6 @@ export function Header() {
         </nav>
       </header>
 
-      {/* Ciemna nakładka na resztę ekranu — klik poza menu je zamyka. */}
       <div
         className={clsx(styles.backdrop, mobileOpen && styles.backdropOpen)}
         onClick={() => setMobileOpen(false)}

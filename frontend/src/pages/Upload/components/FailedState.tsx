@@ -9,7 +9,6 @@ interface FailedStateProps {
   onRetry: () => void
 }
 
-// Faza „failed" — błąd uploadu/startu/analizy. „Spróbuj ponownie" wraca do podglądu (plik zostaje).
 export function FailedState({ message, onRetry }: FailedStateProps) {
   return (
     <div className={styles.errorCard}>

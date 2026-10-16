@@ -5,7 +5,6 @@ import { RadialGauge } from '@/components/ui/RadialGauge/RadialGauge'
 
 import styles from '../AnalysisResult.module.css'
 
-// Treść narracyjna z makiety — placeholder per werdykt; realne uzasadnienie dojdzie z backendu.
 const COPY: Record<Verdict, { title: string; text: string }> = {
   FAKE: {
     title: 'Wykryto manipulację',

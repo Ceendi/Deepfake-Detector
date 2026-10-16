@@ -26,7 +26,6 @@ function formatDuration(seconds: number): string {
   return `${pad(h)}:${pad(m)}:${pad(s)}`
 }
 
-// Status → kropka + etykieta. FAILED dostaje wariant „danger" (czerwony tekst).
 const STATUS_META: Record<AnalysisStatus, { label: string; dot: string; danger?: boolean }> = {
   COMPLETED: { label: 'Zakończona', dot: styles.dotSuccess },
   PROCESSING: { label: 'W toku', dot: styles.dotAccent },
@@ -53,7 +52,6 @@ export function HistoryRow({ analysis }: { analysis: AnalysisSummary }) {
         <span className={styles.thumbLabel}>{analysis.type}</span>
       </span>
 
-      {/* PLIK: nazwa + (pod nią) czas trwania. Na mobile do tej linii dochodzi też data. */}
       <span className={styles.name} title={title}>
         {title}
       </span>
@@ -67,7 +65,6 @@ export function HistoryRow({ analysis }: { analysis: AnalysisSummary }) {
         {durationStr && <span className={styles.subDuration}>{durationStr}</span>}
       </span>
 
-      {/* DATA: osobna kolumna (desktop); na mobile ukryta — data jest w .sub */}
       <span className={styles.date}>{created}</span>
 
       <span className={styles.verdict}>

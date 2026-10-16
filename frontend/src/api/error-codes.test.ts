@@ -5,6 +5,7 @@ import {
   ERROR_CODE_MESSAGES,
   GENERIC_FAILURE_MESSAGE,
   parseErrorMessage,
+  messageForCode,
 } from './error-codes'
 
 describe('parseErrorMessage', () => {
@@ -22,7 +23,6 @@ describe('parseErrorMessage', () => {
 })
 
 describe('analysisFailureMessage', () => {
-  // Kody i komunikaty uzgodnione między backendem i frontem (brief, sekcja 1).
   it.each([
     ['NO_FACE_DETECTED', 'Nie wykryto twarzy w nagraniu. Wgraj materiał, na którym widać twarz.'],
     ['VIDEO_DECODE_FAILED', 'Nie udało się odczytać obrazu z pliku. Plik może być uszkodzony.'],
@@ -50,4 +50,10 @@ describe('analysisFailureMessage', () => {
     expect(analysisFailureMessage('Stuck job timeout')).toBe(GENERIC_FAILURE_MESSAGE)
     expect(analysisFailureMessage(null)).toBe(GENERIC_FAILURE_MESSAGE)
   })
+})
+
+it('maps the stable unsupported-media code independently of validator wording', () => {
+  expect(messageForCode('UNSUPPORTED_MEDIA')).toBe(
+    'Nieobsługiwany lub uszkodzony plik. Dozwolone formaty: MP4, MOV, AVI, WAV, MP3, FLAC.',
+  )
 })

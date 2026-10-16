@@ -11,7 +11,7 @@ describe('Badge', () => {
 
   it('renderuje ikonę wariantu (dekoracyjną, aria-hidden)', () => {
     const { container } = render(<Badge variant="danger">FAKE</Badge>)
-    // Ikona jest dekoracyjna (aria-hidden), więc nie ma roli — sprawdzamy obecność svg.
+
     expect(container.querySelector('svg')).toBeInTheDocument()
   })
 })

@@ -9,7 +9,6 @@ import Template from './Template'
 import Login from './pages/Login'
 import Register from './pages/Register'
 
-// Baza wizualna theme'u = ta sama co apka (reset → tokeny → global), + nasz moduł.
 import '@/styles/reset.css'
 import '@/styles/tokens.css'
 import '@/styles/global.css'
@@ -51,9 +50,6 @@ export default function KcPage(props: { kcContext: KcContext }) {
               />
             )
           default:
-            // Pozostałe ekrany (reset hasła, błąd, OTP, weryfikacja e-mail…) → domyślne
-            // strony Keycloakify w NASZYM Template i z naszymi klasami → brandowo spójne
-            // bez ręcznego ejectowania każdej z nich.
             return (
               <DefaultPage
                 kcContext={kcContext}
@@ -71,9 +67,6 @@ export default function KcPage(props: { kcContext: KcContext }) {
   )
 }
 
-// Mapowanie kluczy kcClsx → nasze klasy CSS Modules. Dotyczy dynamicznych pól
-// (UserProfileFormFields w Register) i stron dziedziczących DefaultPage.
-// doUseDefaultCss=false → niezmapowane klucze = brak klasy (zero PatternFly).
 const classes = {
   kcFormGroupClass: styles.group,
   kcLabelClass: styles.label,

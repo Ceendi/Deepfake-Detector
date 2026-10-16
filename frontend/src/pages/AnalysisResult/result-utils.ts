@@ -38,8 +38,6 @@ const TYPE_LABEL: Record<AnalysisType, string> = {
 }
 export const typeLabel = (type: AnalysisType): string => TYPE_LABEL[type]
 
-// Czas względny od `iso` do teraz ('przed chwilą' / '3 min temu' / '2 godz. temu'); starsze niż doba
-// → pełna data. Używane w nagłówku dla analiz w toku ('rozpoczęto: …'). Liczone przy renderze.
 export function relativeTime(iso: string): string {
   const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
   if (s < 45) return 'przed chwilą'
@@ -50,8 +48,6 @@ export function relativeTime(iso: string): string {
   return formatDateTime(iso)
 }
 
-// Czas analizy = updatedAt − createdAt (sekundy → '30 s' / '1 min 5 s'). Przybliżenie do realnego
-// czasu wykonania; dokładny pomiar dojdzie z backendu.
 export function analysisDuration(createdAt: string, updatedAt: string): string {
   const ms = new Date(updatedAt).getTime() - new Date(createdAt).getTime()
   const s = Math.max(0, Math.round(ms / 1000))
@@ -93,16 +89,14 @@ export function audioOutcome(
   details: SourceDetails | undefined,
 ): SourceOutcome | null {
   if (hasAudioScoreContract(details?.metadata)) return sourceOutcome(prob)
-  // Historical scores used model thresholds. Preserve the recorded source verdict;
-  // never infer one by comparing an unversioned raw score to the shared boundary.
+  // Legacy scores retain their recorded source verdict.
+
   if (details?.verdict === 'FAKE' || details?.verdict === 'REAL') {
     return { verdict: details.verdict, confidence: details.confidence ?? 0 }
   }
   return null
 }
 
-// Wyciąga segmenty audio z surowego, wolnoformatowego `metadata`. Defensywnie: bierze tylko wpisy
-// z poprawnymi liczbami i sortuje po start_time. Zwraca [] gdy brak / zły kształt.
 export function parseAudioSegments(
   metadata: Record<string, unknown> | undefined,
 ): AudioSegmentPrediction[] {
@@ -126,10 +120,8 @@ export function parseAudioSegments(
   return segments.sort((a, b) => a.start_time - b.start_time)
 }
 
-// Skala ryzyka 0..1 → kolor (HSL): zielony (niskie) → bursztyn → czerwony (wysokie). Liczona w JS,
-// bo to kolor sterowany danymi (poza tokenami, jak gradient legendy Grad-CAM).
 export function riskColor(prob: number): string {
   const clamped = Math.min(1, Math.max(0, prob))
-  const hue = Math.round(130 - clamped * 130) // 130 = zielony, 0 = czerwony
+  const hue = Math.round(130 - clamped * 130)
   return `hsl(${hue} 70% 45%)`
 }

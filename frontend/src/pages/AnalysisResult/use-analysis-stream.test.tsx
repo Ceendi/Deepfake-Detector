@@ -67,7 +67,7 @@ it('result screen keeps a long analysis live and reopens the stream', async () =
   expect(onSettled).toHaveBeenCalledExactlyOnceWith(terminal)
 })
 
-it('result screen reports lost connection only after the absolute analysis limit', async () => {
+it('result screen reports the analysis age limit separately from a lost connection', async () => {
   vi.useFakeTimers()
   vi.mocked(streamAnalysis).mockResolvedValue()
   vi.mocked(getAnalysis).mockResolvedValue(active)
@@ -76,7 +76,7 @@ it('result screen reports lost connection only after the absolute analysis limit
   await act(async () => {
     await vi.advanceTimersByTimeAsync(91500)
   })
-  expect(screen.getByText('Utracono połączenie z analizą')).toBeInTheDocument()
+  expect(screen.getByText('Przekroczono czas oczekiwania na analizę')).toBeInTheDocument()
   expect(getAnalysis).toHaveBeenCalledTimes(9)
 })
 

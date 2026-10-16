@@ -9,7 +9,7 @@ import styles from './AudioPlayer.module.css'
 interface AudioPlayerProps {
   src: string
   className?: string
-  onDuration?: (seconds: number) => void // np. wiersz metadanych w Upload czyta długość stąd
+  onDuration?: (seconds: number) => void
   onError?: () => void
 }
 
@@ -21,8 +21,6 @@ function formatTime(seconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-// Własny odtwarzacz audio (CSS Modules + tokeny) — bez natywnego <audio controls>, spójny z appką.
-// Ukryty <audio> trzyma realny stan odtwarzania; całe UI sterujemy z Reacta.
 export function AudioPlayer({ src, className, onDuration, onError }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -30,8 +28,6 @@ export function AudioPlayer({ src, className, onDuration, onError }: AudioPlayer
   const [duration, setDuration] = useState(0)
   const [muted, setMuted] = useState(false)
 
-  // Nowy src → reset UI podczas renderu (wzorzec „adjust state on prop change", bez efektu;
-  // sam <audio> przeładuje się przez zmianę atrybutu src).
   const [prevSrc, setPrevSrc] = useState(src)
   if (src !== prevSrc) {
     setPrevSrc(src)

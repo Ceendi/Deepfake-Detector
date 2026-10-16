@@ -1,6 +1,3 @@
-// Instancja keycloak-js (public client `deepfake-web`, PKCE S256) + niskopoziomowe helpery.
-// Inicjalizacją i wpięciem w app zajmuje się initKeycloak.ts; tu trzymamy samą instancję
-// i operacje, których używają AuthContext (login/logout/register/user) oraz client.ts (getToken).
 import Keycloak from 'keycloak-js'
 
 import { env } from '@/config/env'
@@ -13,24 +10,17 @@ export const keycloak = new Keycloak({
   clientId: env.keycloakClientId,
 })
 
-// client.ts woła getToken() przed każdym żądaniem. updateToken(minValidity) odświeża token,
-// jeśli wygaśnie w ciągu `minValidity` sekund — inaczej zwraca obecny bez sieciowego round-tripu.
 const MIN_TOKEN_VALIDITY_SECONDS = 30
 
 export async function getToken(): Promise<string | undefined> {
   try {
     await keycloak.updateToken(MIN_TOKEN_VALIDITY_SECONDS)
   } catch {
-    // Brak/wygasła sesja SSO albo nieudany refresh → lecimy bez tokena.
-    // Chroniony endpoint odpowie 401, a UI przekieruje na logowanie.
     return undefined
   }
   return keycloak.token
 }
 
-// Authorization Code + PKCE — Keycloak hostuje stronę logowania/rejestracji (redirect),
-// nie budujemy własnego formularza (directAccessGrants jest wyłączony dla tego klienta).
-// `redirectPath` — ścieżka chronionej strony, z której ProtectedRoute odesłał na /login.
 export function login(redirectPath?: string): void {
   void keycloak.login({ redirectUri: loginRedirectUri(redirectPath) })
 }
@@ -40,12 +30,11 @@ export function register(redirectPath?: string): void {
 }
 
 export function logout(): void {
-  // Always end the Keycloak SSO session: check-sso on the next page load would otherwise sign the
-  // user straight back in. Without an ID token Keycloak asks the user to confirm the logout.
+  // End the SSO session so check-sso cannot silently log the user back in.
+
   void keycloak.logout({ redirectUri: window.location.origin })
 }
 
-// Link do Keycloak Account Console (edycja profilu / zmiana hasła — KROK 14 / V2).
 export function accountManagement(): void {
   void keycloak.accountManagement()
 }
@@ -57,7 +46,6 @@ export interface AuthUser {
   name?: string
 }
 
-// Dane usera czytamy z access tokena (tokenParsed) — bez dodatkowego żądania /userinfo.
 export function currentUser(): AuthUser | null {
   const token = keycloak.tokenParsed
   if (!token) return null

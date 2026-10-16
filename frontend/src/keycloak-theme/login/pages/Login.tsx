@@ -13,9 +13,6 @@ import type { KcContext } from '../KcContext'
 import type { I18n } from '../i18n'
 import styles from '../theme.module.css'
 
-// Custom ekran logowania (login.ftl) — formularz na tokenach/komponentach apki.
-// Całe wiring kcContext (action, name, błędy, linki) zachowane; pominięto social/
-// passkey (realm „deepfake" ich nie używa).
 export default function Login(props: PageProps<Extract<KcContext, { pageId: 'login.ftl' }>, I18n>) {
   const { kcContext, i18n, doUseDefaultCss, Template, classes } = props
 
@@ -147,8 +144,6 @@ export default function Login(props: PageProps<Extract<KcContext, { pageId: 'log
   )
 }
 
-// Input hasła + przycisk podglądu. Input jest „children" (własność rodzica), żeby
-// re-render przy toggle nie nadpisywał atrybutu type ustawianego przez hook.
 function PasswordWrapper(props: { i18n: I18n; passwordInputId: string; children: JSX.Element }) {
   const { i18n, passwordInputId, children } = props
   const { msgStr } = i18n

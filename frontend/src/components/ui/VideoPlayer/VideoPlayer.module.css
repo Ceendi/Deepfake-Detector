@@ -1,5 +1,5 @@
 .player {
-  position: relative; /* układ odniesienia dla kontrolek (absolute) */
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7,7 +7,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background-color: var(--color-surface);
-  /* hatch — kratka dopełniająca wideo do ramki (jak tło strefy uploadu) */
+
   background-image: repeating-linear-gradient(
     -45deg,
     color-mix(in srgb, var(--color-neutral-400) 16%, transparent) 0,
@@ -20,11 +20,10 @@
 .video {
   display: block;
   max-width: 100%;
-  max-height: 440px; /* kap wysokości — pionowe wideo nie rozpycha strony */
+  max-height: 440px;
   cursor: pointer;
 }
 
-/* Duży przycisk play na środku, gdy zatrzymane */
 .centerPlay {
   position: absolute;
   top: 50%;
@@ -34,7 +33,7 @@
   place-items: center;
   width: 64px;
   height: 64px;
-  padding-left: 4px; /* trójkąt optycznie wyśrodkowany */
+  padding-left: 4px;
   border: none;
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--color-accent) 90%, transparent);
@@ -54,7 +53,6 @@
   outline-offset: 2px;
 }
 
-/* Pasek kontrolek na dole z gradientowym scrim (czytelność na jasnym kadrze) */
 .controls {
   position: absolute;
   right: 0;
@@ -108,7 +106,6 @@
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* Pasek przewijania — natywny range ostylowany; tor jasny (na ciemnym scrim), fill = akcent */
 .seek {
   flex: 1;
   min-width: 0;
@@ -138,7 +135,7 @@
 }
 .seek::-webkit-slider-thumb {
   -webkit-appearance: none;
-  margin-top: -4.5px; /* wyśrodkuj 14px gałkę na 5px torze */
+  margin-top: -4.5px;
   width: 14px;
   height: 14px;
   border-radius: var(--radius-full);
