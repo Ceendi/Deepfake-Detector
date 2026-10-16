@@ -250,6 +250,10 @@ The `sort` parameter is ignored, including unknown property names. Returns `200 
 `Analysis` (detail-only fields such as `fileKey`, `videoProb`, `audioProb`,
 `errorMessage`, `details` are omitted; fetch them via `GET /api/analysis/{id}`).
 
+The effective `page * size` offset (after capping size at 100) must fit in a signed
+32-bit integer (`<= 2147483647`). Larger offsets return `400 VALIDATION_FAILED`
+with the Polish message `Nieprawidłowe parametry żądania.` before querying PostgreSQL.
+
 ```json
 {
   "content": [

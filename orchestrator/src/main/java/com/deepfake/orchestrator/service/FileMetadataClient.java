@@ -42,6 +42,9 @@ public class FileMetadataClient {
                 .header("Accept", "application/json").POST(HttpRequest.BodyPublishers.noBody());
         String correlationId = MDC.get("correlationId");
         if (correlationId != null) builder.header("X-Correlation-ID", correlationId);
+        // Keep the active trace across the claim while retaining the full-response deadline.
+        io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator.getInstance()
+                .inject(io.opentelemetry.context.Context.current(), builder, HttpRequest.Builder::setHeader);
         var request = builder.build();
         var pending = http.sendAsync(request, HttpResponse.BodyHandlers.ofString());
         HttpResponse<String> response;

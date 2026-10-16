@@ -123,6 +123,16 @@ class AnalysisErrorContractTest {
     }
 
     @Test
+    void oversizedListOffsetReturnsPolishValidationError() throws Exception {
+        org.mockito.Mockito.doCallRealMethod().when(service).list(any(), any());
+        mvc.perform(get("/api/analysis").param("page", "2147483647").param("size", "20")
+                        .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.message").value("Nieprawidłowe parametry żądania."));
+    }
+
+    @Test
     void listCapsPageSizeAndIgnoresUnknownClientSort() throws Exception {
         when(service.list(eq("user-a"), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
         mvc.perform(get("/api/analysis").param("size", "2000").param("sort", "unknown,asc")

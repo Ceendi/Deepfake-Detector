@@ -127,7 +127,7 @@ export interface UserStats {
   lastAnalysisAt: string | null // ISO 8601 createdAt najnowszej; null dla świeżego usera
 }
 
-// Spring PagedModel — opakowanie listy; size ≤ 100, createdAt DESC + id DESC, sort ignorowany.
+// Spring PagedModel: size ≤ 100, createdAt DESC + id DESC; sort ignored, offset ≤ 2147483647.
 export interface Paged<T> {
   content: T[]
   page: {

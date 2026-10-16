@@ -77,7 +77,7 @@ eureka:
 storage:
   endpoint: ${S3_ENDPOINT:http://seaweedfs:8333}
   region: us-east-1
-  # Identity scoped to analysis-artifacts (infra/seaweedfs/s3.json) — the orchestrator
+  # Identity scoped to analysis-artifacts — the orchestrator
   # serves Grad-CAM PNGs but must not be able to read user uploads. Dev defaults let the context
   # start without S3 (client construction is offline; calls fail-soft to 404/503 in the endpoint).
   access-key: ${S3_ORCHESTRATOR_KEY:dev-unset}
@@ -155,8 +155,7 @@ management:
     sampling:
       probability: 1.0          # dev: sample everything; prod → ~0.1
     # Gate EXPORT only. Tracer + Micrometer bridge stay ON, so traceId/spanId
-    # reach MDC/logs (D2). The OTLP collector (Tempo) lands with the monitoring
-    # profile (week 5); until then export is off so it can't spam a dead endpoint.
+    # reach MDC/logs (D2). Enable export when Tempo runs in the monitoring profile.
     export:
       enabled: ${OTEL_TRACING_EXPORT_ENABLED:false}
   opentelemetry:

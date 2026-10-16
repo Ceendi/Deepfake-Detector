@@ -198,10 +198,15 @@ public class AnalysisService {
 
     @Transactional(readOnly = true)
     public Page<AnalysisSummary> list(String currentUserId, Pageable pageable) {
-        // IDOR is enforced by scoping to currentUserId — the query never returns foreign rows.
-        return repository.findByUserId(currentUserId, PageRequest.of(
+        Pageable history = PageRequest.of(
                 pageable.getPageNumber(), Math.min(pageable.getPageSize(), 100),
-                Sort.by(Sort.Direction.DESC, "createdAt", "id")));
+                Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+        // JPA accepts an int offset; reject overflow before it becomes a persistence failure.
+        if (history.getOffset() > Integer.MAX_VALUE) {
+            throw new org.springframework.beans.TypeMismatchException(history.getOffset(), Integer.class);
+        }
+        // IDOR is enforced by scoping to currentUserId — the query never returns foreign rows.
+        return repository.findByUserId(currentUserId, history);
     }
 
     @Transactional(readOnly = true)
