@@ -37,11 +37,11 @@ public class FileUploadController {
     @ApiResponse(responseCode = "405", description = "Method not allowed; Allow header lists supported methods")
     @ApiResponse(responseCode = "406", description = "Requested representation unavailable; empty body",
             content = @io.swagger.v3.oas.annotations.media.Content)
-    @ApiResponse(responseCode = "413", description = "File exceeds the 500 MB limit (PAYLOAD_TOO_LARGE)")
+    @ApiResponse(responseCode = "413", description = "File exceeds 500 MiB or multipart request exceeds 501 MiB (PAYLOAD_TOO_LARGE)")
     @ApiResponse(responseCode = "409", description = "STORAGE_QUOTA_EXCEEDED: owner's storage quota exhausted (default 5 GB)")
     @ApiResponse(responseCode = "429", description = "UPLOAD_USER_LIMIT: per-user upload capacity exhausted on this replica; Retry-After: 5")
     @ApiResponse(responseCode = "503", description = "SERVICE_UNAVAILABLE: replica full or ffprobe timeout, interruption or I/O failure; Retry-After: 5")
-    @ApiResponse(responseCode = "422", description = "INVALID_FILE: invalid container, duration over 1800 seconds or resolution over 4K")
+    @ApiResponse(responseCode = "422", description = "INVALID_FILE with message prefix: UNSUPPORTED_MEDIA, INVALID_MEDIA_DURATION, MEDIA_TOO_LONG or MEDIA_RESOLUTION_TOO_HIGH")
     @PostMapping("/upload")
     public FileUploadResponse upload(@CurrentUser AuthenticatedUser user,
                                      @RequestParam MultipartFile file) throws IOException {

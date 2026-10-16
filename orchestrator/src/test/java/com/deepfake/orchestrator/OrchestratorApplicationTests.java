@@ -76,7 +76,9 @@ class OrchestratorApplicationTests {
 
     @Test
     void openApiDocumentsBackpressureBodyAndRetryAfter() throws Exception {
-        var json = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+        var json = mvc.perform(get("/v3/api-docs")
+                        .with(org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt()))
+                .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         var document = new JsonMapper().readTree(json);
         var response = document.at("/paths/~1api~1analysis/post/responses/429");

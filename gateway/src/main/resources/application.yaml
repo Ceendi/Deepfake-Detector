@@ -63,7 +63,7 @@ spring:
           default-filters:
             - name: RequestSize
               args:
-                maxSize: 500MB
+                maxSize: 501MB
 gateway:
   cors-origins: ${GATEWAY_CORS_ORIGINS:http://localhost:5173,http://localhost:4173}
   redis-limiter-budget: ${GATEWAY_REDIS_LIMITER_BUDGET:750ms}

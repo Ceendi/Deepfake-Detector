@@ -74,6 +74,7 @@ class AnalysisFileOwnershipTest(unittest.TestCase):
                 service['environment'].update({
                     'JWT_ISSUER_URI': issuer,
                     'JWK_SET_URI': issuer + '/protocol/openid-connect/certs',
+                    'JWT_ALLOWED_CLIENTS': 'alice,bob',
                     'EUREKA_CLIENT_ENABLED': 'false',
                     'OTEL_TRACING_EXPORT_ENABLED': 'false',
                 })

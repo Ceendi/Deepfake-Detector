@@ -36,6 +36,10 @@ docker compose --profile core --profile auth up -d --build
 ```
 
 Wait for warmup, then **verify** before measuring:
+- `docker compose exec gateway wget -qO- http://localhost:9090/actuator/health/readiness`
+  → `UP`. This waits for the synchronous Redis limiter warm-up; Compose deliberately
+  checks liveness, which may already be `UP` during warm-up. E2E and other traffic
+  generators should use the same readiness gate before sending uploads.
 - `docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps`
   → exactly **1** `FILE-SERVICE` instance (Eureka has no published host port).
 - One manual upload returns **200** (not 422/401/429) — e.g. via the runner with `-Threads 1 -Duration 5`.
@@ -50,19 +54,49 @@ Wait for warmup, then **verify** before measuring:
 
 ```powershell
 $env:FILE_SERVICE_REPLICAS = "2"
-docker compose --profile core --profile auth up -d
+docker compose --profile core --profile auth up -d --no-recreate --scale file-service=2 file-service
 ```
 
 **Wait ~45–60s** (Eureka registration + Gateway LB cache), then verify:
 - `docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps`
   → **2** `FILE-SERVICE` instances (distinct IPs).
 - A few warmup uploads hit **both** replicas: `docker compose logs file-service | Select-String "/api/files/upload"` shows two container IDs.
-- Changing the replica count recreates every replica, and the Gateway can answer `503 No servers available` until its
-  Eureka cache refreshes. Do a full warm-up run (`-Label warmup`) and measure only after it ends with 0 % errors.
+- Use `--no-recreate` for a count-only change: the existing healthy replica keeps serving while
+  Compose starts the second. A plain `up -d` after changing `deploy.replicas` can recreate all
+  replicas and expose `503 No servers available` until discovery refreshes. Do a full warm-up
+  run (`-Label warmup`) and measure only after it ends with 0 % errors.
 
 ```powershell
 .\run-loadtest.ps1 -Label r2
 ```
+
+### Discovery and count-only scaling
+
+The gateway does not override `eureka.client.registry-fetch-interval-seconds` (30 s),
+and Spring Cloud LoadBalancer's cache defaults to 35 s. Eureka's server response cache
+also defaults to a 30 s update interval. These are independent caches, so 45–60 s is a
+warm-up guideline, not an availability deadline. Confirm actual registry contents and
+successful requests before recording results.
+[Eureka properties](https://docs.spring.io/spring-cloud-netflix/reference/configprops.html),
+[LoadBalancer cache](https://docs.spring.io/spring-cloud-commons/reference/spring-cloud-commons/loadbalancer.html#loadbalancer-caching).
+
+Compose `up` has no rolling-update controller; `deploy.update_config` is not a rolling
+deployment guarantee for local Compose. The command above uses
+[`--no-recreate`](https://docs.docker.com/reference/cli/docker/compose/up/) only when the
+replica count changes. It does not apply image, credentials or configuration updates to
+existing containers. Do not use it for those updates. Scale down only after the measured
+traffic has stopped; a removed replica can still be present in discovery caches and may
+have in-flight requests. This procedure reduces the scale-up outage, but promises no
+zero-downtime deployment or scale-down.
+
+There is no Gateway `Retry` filter in these routes. LoadBalancer client retry settings
+alone do not replay a Gateway exchange. A possible follow-up is to remove the duplicate
+LB cache for Eureka, shorten registry refresh and evaluate a route-specific retry for
+GET/HEAD, with a real connection-failure test. Leave those defaults unchanged until that
+experiment: retries can multiply load and cannot fix an empty registry. Never retry the
+POST multipart upload automatically (a lost response can hide an accepted upload).
+`infra/tests/test_core_reliability.py` checks real scrapes and preserves container IDs
+across count-only scaling with `--no-recreate`.
 
 ## 3. Compare
 
@@ -75,6 +109,38 @@ Open `report-r1/index.html` and `report-r2/index.html` (throughput + response-ti
 `kcPort`[8180] `sampleFile`[sample-5mb.mp4] `loadtestSecret`(required).
 
 ## Notes / validity
+
+### PID budget at 50 concurrent uploads
+
+Checked on 2026-10-16 on Docker Desktop/Windows in a fresh isolated core/auth project:
+one file-service replica, 1 vCPU/1 GiB, `pids_limit: 300` and
+`deploy.resources.limits.pids: 300`, `UPLOAD_MAX_CONCURRENT=50`,
+`UPLOAD_MAX_CONCURRENT_PER_USER=50`, 500 GiB quota and the raised gateway rate limit
+from the instructions above. JMeter used 50 threads, 60 seconds, 5-second ramp-up and
+the generated 5,224,380-byte MP4. Realm import, a real load-test token, gateway
+readiness and file-service registration were checked before the run.
+
+| Series | Uploads returning 200 | Upload errors | Increase in cgroup `pids.events` / `max` |
+|---|---:|---:|---:|
+| Warm-up | 289 | 0 | 0 |
+| Measured | 392 | 0 | 0 |
+
+The 300-PID budget covered Tomcat threads and ffprobe children under these conditions;
+the default and benchmark budgets remain unchanged. The conclusion uses the cgroup's
+PID-denial counter and JMeter HTTP results, without claiming a sampled peak or a
+universal safety margin. Repeat the check on the measurement host, for each replica:
+
+```bash
+docker compose exec -T file-service sh -c 'cat /sys/fs/cgroup/pids.max; cat /sys/fs/cgroup/pids.events'
+```
+
+Record `max` before and after the run. An increase means the cgroup denied task
+creation; inspect the file-service logs for process/thread startup failures.
+Any required increase belongs only in a benchmark Compose override, with both
+`pids_limit` and `deploy.resources.limits.pids` set consistently. Keep the production
+defaults. The isolated measurement project and its volumes were removed after the run.
+
+### Measurement conditions
 
 - Keep **identical** conditions across both runs (same sample, same `-J` params, fresh `up`, same warmup) — the only variable is `FILE_SERVICE_REPLICAS`.
 - **Windows:** exclude `%LOCALAPPDATA%\Docker\wsl` and the `vmmem`/`vmmemWSL` processes from Defender real-time

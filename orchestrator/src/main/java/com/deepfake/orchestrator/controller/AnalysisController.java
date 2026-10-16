@@ -71,6 +71,7 @@ public class AnalysisController {
     @Operation(summary = "List the caller's analyses",
             description = "Page size defaults to 20, capped at 100. Always ordered by createdAt DESC, id DESC; sort is ignored.")
     @GetMapping
+    @ApiResponse(responseCode = "400", description = "Page offset exceeds 2147483647 (VALIDATION_FAILED)")
     public PagedModel<AnalysisSummary> list(
             @CurrentUser AuthenticatedUser user,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC)

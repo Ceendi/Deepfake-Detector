@@ -35,7 +35,7 @@ docker exec -i $Pg psql -U deepfake -d deepfake -c $sql | Out-Null
 # Args as an array + splat so the header (which contains spaces) survives as a single token.
 Write-Host "=== wrk $Label : c=$Concurrency d=${Duration}s ==="
 $wrkArgs = @(
-    'run', '--rm', '--network', 'deepfake', 'williamyeh/wrk',
+    'run', '--rm', '--network', 'deepfake', 'williamyeh/wrk@sha256:78adc0d9d51a99e6759e702a08d03eaece81c890ffcc9790ef9e5b199d54f091',
     '-t4', "-c$Concurrency", "-d${Duration}s", '--latency',
     '-H', "Authorization: Bearer $tok",
     "http://orchestrator:8082/api/analysis/$TargetId"

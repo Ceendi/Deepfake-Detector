@@ -2,11 +2,15 @@ import os
 
 import structlog
 from detector_runtime import Artifact, DetectorRuntime, create_redis_client, create_s3_client
+from detector_runtime.config import validate_startup
 from detector_runtime.metrics import inference_duration_buckets
 from opentelemetry import trace
 from prometheus_client import Counter, Histogram
 
+from .config import load_config
 from .tracing import init_tracing
+
+validate_startup(load_config)
 
 QUEUE = os.getenv("QUEUE_NAME", "analysis.video")
 SOURCE = os.getenv("SOURCE_LABEL", "video")
@@ -30,8 +34,8 @@ try:
     from .inference import VideoInference
 
     video_inference = VideoInference()
-except Exception as e:
-    log.exception("failed_to_load_video_inference", error=str(e))
+except Exception as e:  # noqa: BLE001
+    log.error("failed_to_load_video_inference", error_type=type(e).__name__)
     video_inference = None
 
 def _analyze(model, msg, input_path, progress_callback):

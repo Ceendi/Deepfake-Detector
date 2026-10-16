@@ -363,12 +363,21 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
             self.assertTrue(all(sample['value'][1] == '1' for sample in samples))
 
         self.eventually(lambda: assert_targets(2))
+        original_ids = {container['Id'] for container in self.containers('file-service')}
+        config = json.loads(self.compose_file.read_text())
         try:
-            self.compose('up', '-d', '--no-deps', '--scale', 'file-service=1', 'file-service')
+            config['services']['file-service']['deploy']['replicas'] = 1
+            self.compose_file.write_text(json.dumps(config))
+            self.compose('up', '-d', '--no-deps', '--no-recreate', '--scale', 'file-service=1', 'file-service')
             self.eventually(lambda: assert_targets(1))
+            retained_ids = {container['Id'] for container in self.containers('file-service')}
+            self.assertTrue(retained_ids <= original_ids)
         finally:
-            self.compose('up', '-d', '--no-deps', '--scale', 'file-service=2', 'file-service')
+            config['services']['file-service']['deploy']['replicas'] = 2
+            self.compose_file.write_text(json.dumps(config))
+            self.compose('up', '-d', '--no-deps', '--no-recreate', '--scale', 'file-service=2', 'file-service')
         self.eventually(lambda: assert_targets(2))
+        self.assertTrue(retained_ids <= {container['Id'] for container in self.containers('file-service')})
 
     def test_amqp_recovery_down_keeps_container_liveness_healthy(self):
         bindings_path = '/bindings/%2F/e/analysis.dlx/q/analysis.backend.quarantine'
@@ -387,7 +396,8 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
             def readiness_down():
                 status, body = self.request(self.orchestrator_url, '/actuator/health/readiness')
                 self.assertEqual(503, status)
-                self.assertEqual('DOWN', body['components']['amqpRecovery']['status'])
+                self.assertEqual('DOWN', body['status'])
+                self.assertTrue(set(body) <= {'status', 'groups'}, body)
 
             self.eventually(readiness_down)
             failed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')

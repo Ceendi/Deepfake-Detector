@@ -21,6 +21,16 @@ It adds `alice` and `bob` (password `Test1234!@`) and the confidential
 `deepfake-loadtest` client with its USER service account. The client secret
 comes from `LOADTEST_CLIENT_SECRET`; use these identities only locally.
 
+File-service and orchestrator accept only clients listed in `JWT_ALLOWED_CLIENTS`
+(default `deepfake-web,deepfake-loadtest`). Keycloak access tokens normally identify
+the requester in `azp`, while `aud` may contain only `account`: an allowed `azp`
+therefore suffices. If `azp` is absent, at least one audience must be allowed.
+A foreign, empty or malformed `azp` is rejected even with an allowed audience.
+Signature, issuer, expiry, roles and ownership are still checked. Tokens for unrelated
+clients in this realm return `401`. Adding a client to the realm alone does not grant
+API access; configure the same explicit allowlist in both services. Isolated infra
+test realms override this list for their disposable clients only.
+
 The default `.env.example` keeps this variant disabled. To opt in, put
 `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in your local `.env`, then run:
 
@@ -89,6 +99,9 @@ resources will silently disappear on the next sync.
 
 Compose builds `deepfake-keycloak-config-cli:6.5.1-security` from the pinned
 upstream source with patched dependencies and tests it against Keycloak `26.8.0`.
+The archive is fetched directly from `codeload.github.com` by commit and SHA-256;
+building does not spend the unauthenticated GitHub REST API quota. The source commit
+and archive checksum are unchanged.
 The integration test verifies both the default import and the development
 variant, then verifies reset is disabled without SMTP and exercises the password-reset flow
 with SMTP enabled only in the disposable test realm. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for

@@ -46,6 +46,14 @@ assert os.getuid() != 0 and torch.version.cuda is None'
   suites=(tests runtime-tests training/tests)
 fi
 docker run --rm --platform "$platform" --network none --entrypoint python "$image" -c "$import_check"
+# Runtime must not be able to replace either application code or bundled models.
+docker run --rm --platform "$platform" --network none --entrypoint python "$image" -c '
+import os
+from pathlib import Path
+for root in (Path("/app"), Path("/detector-runtime"), Path("/opt/venv")):
+    writable = [str(path) for path in (root, *root.rglob("*")) if os.access(path, os.W_OK)]
+    assert not writable, writable[:10]
+'
 # The audio wire fixture is shared with Java; its read-only mount mirrors the repository path.
 test_mounts=(
   --mount "type=bind,source=$repo_root/$service/tests,target=/app/tests,readonly"
@@ -66,6 +74,7 @@ done
 
 docker run --detach --name "$smoke_container" --platform "$platform" --network none \
   --env AWS_EC2_METADATA_DISABLED=true --env S3_ACCESS_KEY=test --env S3_SECRET_KEY=test \
+  --env RABBITMQ_PASSWORD=test \
   --env OMP_NUM_THREADS=2 --env MKL_NUM_THREADS=2 "$image" >/dev/null
 for attempt in {1..60}; do
   if docker exec "$smoke_container" curl --silent --output /tmp/health.json \

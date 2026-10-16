@@ -195,7 +195,10 @@ headers without JSON negotiation or warning logs.
 
 The gateway validates `X-Correlation-ID` against `^[A-Za-z0-9-]{1,64}$`, replacing invalid
 or absent values with a UUID and echoing the downstream ID. Both servlet services apply
-the same rule to direct requests. The file claim call forwards the request's MDC correlation ID.
+the same rule to direct requests. The file claim call forwards the request's MDC correlation ID
+and injects the active OpenTelemetry W3C context (`traceparent`, and `tracestate` when present).
+File-service's Spring HTTP observation extracts this context; its correlation filter reads
+`X-Correlation-ID`. The existing complete-response deadline, no redirects and no retries remain.
 
 Security's CORS filter answers permitted preflights before JWT authentication. Origin
 configuration has one source in the gateway, so routing cannot duplicate CORS headers.
@@ -517,7 +520,8 @@ Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `Confirmed
   (`spring.rabbitmq.listener.simple.retry`, `max-retries: 3`), then confirmed republish to
   `analysis.results.dlq`.
   Invalid `analysis_id`, missing/malformed `result.prob_fake`, invalid scores,
-  `ClassCastException` and `NumberFormatException` bypass these retries and go directly
+  class casts, illegal arguments (including number parsing), Bean Validation and AMQP/messaging
+  conversion errors bypass these retries and go directly
   through the confirmed results DLQ recoverer. Payload validation runs before dedup/SQL.
 - **Progress** is advisory: 3 attempts (100 ms, 200 ms), then logged and ACKed. It never fails an
   analysis. The `PROCESSING` heartbeat commits before cache eviction and SSE.
@@ -538,6 +542,8 @@ Code: `RabbitConfig`, `AnalysisResultListener`, `DeadLetterListener`, `Confirmed
   its listener is stopped, and restart waits for shutdown completion with 1 s / 2 s / 4 s
   exponential delays capped at 30 s, without an attempt limit. Successful processing resets
   the backoff. Results and DLQs pause independently; progress retains its advisory policy.
+  Redis exceptions anywhere in the cause/application-exception chain are excluded before
+  examining shared Spring DAO types or SQLState. Optional Redis operations remain fail-open.
   Recovery does not extend analysis deadlines: a long outage can still make an active analysis
   eligible for stuck recovery after PostgreSQL returns. Whichever terminal CAS commits first
   wins; a retained late result cannot revive FAILED/CANCELLED records. On return, the next
@@ -561,6 +567,63 @@ success → one result attempt → source failure + quarantine. `AnalysisResultR
 verifies no in-process retry for deterministic exceptions while keeping retry metrics intact.
 Also: `ResultPayloadValidationTest`, `AmqpFailurePolicyTest`, `DeadLetterListenerIntegrationTest`,
 `AmqpRecoveryControlTest`.
+
+### Operator runbook: DLQ and quarantine
+
+Use the RabbitMQ administrator through the loopback management UI
+(`http://localhost:15672`, or `RABBITMQ_UI_PORT`) for inspection. Application users
+have deliberately restricted permissions. Never grant detectors access to backend
+DLQs, change queue arguments, remove retry/dead-letter policies or manipulate analysis
+rows to make a replay succeed.
+
+1. Identify the exact Compose project and queue. Inspect queue counts/consumers with
+   `docker compose -p <project> exec -T rabbitmq rabbitmqctl -q list_queues name messages_ready messages_unacknowledged consumers`.
+   `analysis.backend.quarantine` has no consumer; the three terminal `*.dlq` queues
+   are normally drained by the orchestrator. If a stable inspection is needed, stop
+   that project's orchestrator during a maintenance window; new analyses will be
+   unavailable until it starts again. Do not stop or purge another project's queues.
+2. In Queues → the exact queue → Get messages, inspect a small batch with **Ack mode:
+   Nack message requeue true** (`ack_requeue_true` in the HTTP API). This puts inspected
+   copies back; message order may change. Do not use auto-ack or a non-requeue mode for
+   inspection. Store the original payload bytes (base64 for binary bodies), properties,
+   headers and queue name in a restricted incident archive before any destructive action.
+   Inspect `analysis_id`, `source`, `correlation_id`, `x-death`, `x-original-routingKey`
+   (also legacy `x-original-routing-key`) and `x-exception-*`. Treat bodies and error
+   details as sensitive; never paste them into public issues or logs.
+3. Check the analysis through its owner's API or a read-only database query. Terminal
+   states cannot be revived: a late result cannot replace FAILED/CANCELLED, and the
+   first accepted result per source wins. Database outages belong in the existing
+   requeue/pause path, never in a manual DLQ loop. Fix the root cause (credentials,
+   declaration mismatch, invalid payload or application bug) before considering replay.
+4. Prefer starting a **new analysis through the normal API**, with the owner's consent,
+   after fixing the cause. This uses admission limits and the transactional outbox.
+   Do not publish task messages by hand, remove cancel flags or reset database statuses.
+   A malformed/unidentifiable body or legacy advisory progress is evidence to archive
+   and discard, not a result to manufacture.
+5. For a valid retained **result** of an analysis that is still active and whose source
+   is expected and unaccepted, an operator may replay the unchanged body/properties to
+   `analysis.exchange` with routing key `analysis.results`. For a retained **terminal
+   dead letter** whose intent is to fail that source, use `analysis.dlx` with its
+   original `analysis.video.dlq`, `analysis.audio.dlq` or `analysis.results.dlq` key.
+   Determine the original queue from archived metadata and headers; quarantine alone
+   is not enough. Never republish to quarantine hoping it will drain, and never replay
+   advisory progress into a terminal queue.
+6. Replay needs an AMQP maintenance client with manual ACK, persistent delivery,
+   `mandatory=true` and publisher confirms/return handling: retain the original
+   unacknowledged delivery, publish one copy, wait for ACK with **no return**, then ACK
+   the original. On a return, NACK, timeout or disconnect, keep/requeue the original.
+   The UI's publish success alone does not provide this consume→confirm→ACK handoff.
+   No such replay tool ships here; if it is unavailable, retain the message and use a
+   new analysis instead. A crash between confirm and ACK may duplicate a delivery;
+   existing database idempotency and terminal CAS absorb it.
+7. Delete only after an archived copy and the recorded operator decision exist. A
+   selected message can be manually ACKed without replay after validation. Queue-wide
+   **Purge** removes every ready message and is appropriate only when every entry has
+   been reviewed and no publisher/consumer can race; it does not remove in-flight
+   deliveries. Never delete the queue/exchange. Restart the orchestrator, verify its
+   readiness and inspect DLQ/quarantine depth and analysis state before closing the
+   incident. Keep unresolved messages parked rather than discarding them to silence
+   `AnalysisDeadLetterBacklog`.
 
 ## Stuck-job recovery
 
@@ -812,7 +875,8 @@ object or metadata is stored.
 Cleanup kills the child and waits at most 5 s in total for process exit and reader termination,
 restoring the caller's interrupt flag. Failure to exit or stop the reader logs WARN; a still-live
 child's pipes are not closed synchronously because a blocked read can hold their lock. The reader
-is a daemon so a stuck subprocess cannot keep the JVM alive. The upload limit is 500 MB.
+is a daemon so a stuck subprocess cannot keep the JVM alive. The file limit is 500 MiB;
+the request limit is 501 MiB to reserve room for multipart headers and boundaries.
 
 Tests need `ffmpeg` and `ffprobe` installed: `FfprobeMediaProbeIntegrationTest`,
 `FfprobeMediaProbeProcessTest`, `FfprobeMediaProbeFailureTest`. `FfprobeUploadHttpTest`
@@ -833,7 +897,9 @@ multipart requests (they can reach `permitAll` routes such as actuator health) t
 replica slot, never a user slot. The filter covers every multipart request,
 including unknown routes, other methods and mixed-case content types: MVC parses
 multipart before selecting a handler. The slot is released after successful or failed
-request processing. Upload spool uses a dedicated directory; transferTo(File) moves
+request processing. A rejected body is still drained (Tomcat `max-swallow-size` 501MB, equal to
+the multipart request limit, also enforced by the gateway): with Tomcat's 2 MB default the connection was reset mid-body and the gateway
+answered 500 instead of the 429/503 (about 3 % of rejections in the 2026-10-16 soak test). Upload spool uses a dedicated directory; transferTo(File) moves
 Tomcat's disk part for validation and S3, and the file is removed in finally. ffprobe
 allows only the file protocol and checks each stream's pixel product against 4K.
 
@@ -843,8 +909,14 @@ pg_advisory_xact_lock(114546, hashtext(user_id)), the sum of size_bytes of all s
 rows, and the metadata insert; overflow returns 409 STORAGE_QUOTA_EXCEEDED. Exact quota
 fits. Concurrent uploads of one owner therefore write to S3 in parallel and serialize only
 on the quota check, so replicas cannot spend the same space twice and a slow S3 write never
-holds the lock or a pooled connection. A rejected or failed admission deletes the object;
-if that delete fails, the orphan sweep removes it. An overflow that slips past the early
+holds the lock or a pooled connection. A rejection before the admission callback finishes
+(including quota rejection) deletes the object; if deletion fails, the orphan sweep removes it.
+Once the insert returns, a transaction exception can mean the commit succeeded but its response
+was lost. Such uncertain outcomes retain the object and propagate the original error. The
+existing orphan sweep checks metadata references after its minimum age (24 h by default):
+it preserves committed uploads and reclaims only unreferenced objects. No immediate absence
+check is used, since the database can still be unavailable or the commit pending.
+An overflow that slips past the early
 check is briefly stored in S3. Hash collisions only serialize unrelated owners. Soft-deleted files keep counting until the purge removes the object
 and row (72 h by default), so delete-and-reupload cannot exceed the quota on disk.
 

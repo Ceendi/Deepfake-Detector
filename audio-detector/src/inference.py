@@ -15,6 +15,7 @@ from matplotlib.figure import Figure
 from matplotlib.image import imsave
 from prometheus_client import Gauge, Histogram
 
+from .config import load_config
 from .models.mel_cnn import load_mel_cnn
 from .score_contract import build_audio_result
 
@@ -26,18 +27,14 @@ MEL_CKPT_PATH = os.path.join(
     PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "mel_model-epoch=49-val_eer=0.0816.ckpt"
 )
 
-MEL_EER_THRESHOLD = float(os.getenv("MEL_EER_THRESHOLD", "0.3049"))
-W2V2_EER_THRESHOLD = float(os.getenv("W2V2_EER_THRESHOLD", "0.3000"))
-MEDIA_MAX_DURATION_SECONDS = float(os.getenv("MEDIA_MAX_DURATION_SECONDS", "1800"))
-if not math.isfinite(MEDIA_MAX_DURATION_SECONDS) or MEDIA_MAX_DURATION_SECONDS <= 0:
-    raise ValueError("Media duration limit must be finite and positive")
+SETTINGS = load_config()
+MEL_EER_THRESHOLD = SETTINGS["MEL_EER_THRESHOLD"]
+W2V2_EER_THRESHOLD = SETTINGS["W2V2_EER_THRESHOLD"]
+MEDIA_MAX_DURATION_SECONDS = SETTINGS["MEDIA_MAX_DURATION_SECONDS"]
 # Extraction is roughly 10x faster than real time; a stall beyond this budget is a hung ffmpeg.
 FFMPEG_TIMEOUT_SECONDS = 60 + MEDIA_MAX_DURATION_SECONDS / 10
-# ONNX Runtime and torch otherwise size their pools to every host core, even when the container
-# gets fewer or shares the host with another detector. 0 keeps the library defaults.
-ONNX_INTRA_THREADS = int(os.getenv("ONNX_INTRA_THREADS", "0"))
-if ONNX_INTRA_THREADS < 0:
-    raise ValueError("ONNX_INTRA_THREADS must not be negative")
+# Audio permits 0 to retain the library thread defaults for direct development runs.
+ONNX_INTRA_THREADS = SETTINGS["ONNX_INTRA_THREADS"]
 
 log = structlog.get_logger(__name__)
 

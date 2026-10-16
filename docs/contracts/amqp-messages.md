@@ -316,7 +316,9 @@ Contract:
 
 - **Results retry:** permanent `analysis.results` processing failures use 4 attempts with
   1s/4s/15s backoff. Malformed payloads, invalid IDs/scores, class casts, number parsing and
-  message conversion bypass retry and go straight to the confirmed recoverer.
+  illegal arguments, Bean Validation and AMQP/messaging conversion bypass retry and go straight
+  to the confirmed recoverer. Redis failures do not qualify as database outages even when
+  wrapped in shared Spring DAO exceptions.
 - **Database outages:** transient database failures (connection loss, server restart,
   timeouts) on results and terminal DLQs requeue the original and pause only that listener,
   restarting after 1s/2s/4s up to 30s with no attempt limit. They never reach a DLQ or quarantine.
@@ -383,3 +385,18 @@ analyses and expired dispatch deadlines are never replayed. FULL sources have
 independent sent markers and a finite creation-based dispatch deadline, even if
 one source is already progressing. See
 [transactional dispatch](../reliability.md#creating-an-analysis) for retry settings and deadlines.
+
+## Detector startup and frame safety
+
+Invalid detector configuration stops the process before importing/loading models, with a
+setting name and validation reason only. Missing/broken model files or ML imports still leave
+the consumer running and return `FAILED` / `MODEL_UNAVAILABLE`. Required `RABBITMQ_PASSWORD`,
+`S3_ACCESS_KEY` and `S3_SECRET_KEY` have no fallback; missing values also stop startup.
+See [runtime configuration](../../detector-runtime/README.md#startup-validation) for ranges.
+
+Video checks the pixel limit on every decoded frame before resizing or face detection,
+including frames omitted from the inference sample. Uniform/middle-window sampling uses the
+observed frame count: incorrect/missing container counts cause a sequential second pass,
+without seeking through container indexes or retaining the whole clip. The reported duration
+uses observed frames and usable FPS. The existing metadata duration guard, bounded decode
+budget, progress/cancellation checks and thresholds are unchanged.

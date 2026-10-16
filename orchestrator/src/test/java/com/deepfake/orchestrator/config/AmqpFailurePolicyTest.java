@@ -23,6 +23,37 @@ import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.TransactionSystemException;
 
 class AmqpFailurePolicyTest {
+    static Stream<RuntimeException> deterministicFailures() {
+        return Stream.of(new IllegalArgumentException("invalid value"),
+                new jakarta.validation.ValidationException("invalid result"),
+                new org.springframework.amqp.support.converter.MessageConversionException("invalid JSON"),
+                new org.springframework.messaging.converter.MessageConversionException("invalid payload"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("deterministicFailures")
+    void deterministicFailuresBypassRetry(RuntimeException failure) {
+        var wrapped = new IllegalStateException("listener failed", failure);
+        assertThat(AmqpFailurePolicy.databaseUnavailable(wrapped)).isFalse();
+        assertThat(AmqpFailurePolicy.retryInProcess(wrapped)).isFalse();
+    }
+
+    static Stream<RuntimeException> redisFailures() {
+        var connection = new org.springframework.data.redis.RedisConnectionFailureException("Redis offline",
+                new SQLException("connection failure", "08006"));
+        return Stream.of(connection,
+                new DataAccessResourceFailureException("Redis operation failed", connection),
+                new QueryTimeoutException("Redis timeout", new io.lettuce.core.RedisCommandTimeoutException("timeout")),
+                new CannotCreateTransactionException("Redis transaction failed", connection),
+                new org.springframework.data.redis.RedisSystemException("Redis failed", connection));
+    }
+
+    @ParameterizedTest
+    @MethodSource("redisFailures")
+    void redisFailuresNeverPauseDatabaseListener(RuntimeException failure) {
+        assertThat(AmqpFailurePolicy.databaseUnavailable(new IllegalStateException("listener failed", failure))).isFalse();
+    }
+
     static Stream<RuntimeException> databaseFailures() {
         return Stream.of(new CannotCreateTransactionException("offline"),
                 new CannotGetJdbcConnectionException("offline"),

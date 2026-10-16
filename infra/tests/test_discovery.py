@@ -11,6 +11,7 @@ import re
 import secrets
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -50,7 +51,11 @@ def available_test_ports(count):
     # Docker's published=0 allocator can race with outbound sockets on Linux.
     # Reserve distinct unused ports outside the host's ephemeral source-port range.
     linux_range = Path('/proc/sys/net/ipv4/ip_local_port_range')
-    if linux_range.exists():
+    if sys.platform == 'win32':
+        output = command('netsh', 'interface', 'ipv4', 'show', 'dynamicport', 'tcp')
+        first, count_ports = map(int, re.findall(r':\s*(\d+)\s*$', output, re.MULTILINE))
+        last = first + count_ports - 1
+    elif linux_range.exists():
         first, last = map(int, linux_range.read_text().split())
     else:
         first, last = map(int, command(
@@ -154,6 +159,7 @@ class DiscoveryIntegrationTest(unittest.TestCase):
                 service['environment'].update({
                     'JWT_ISSUER_URI': issuer,
                     'JWK_SET_URI': issuer + '/protocol/openid-connect/certs',
+                    'JWT_ALLOWED_CLIENTS': 'discovery-probe',
                     'OTEL_TRACING_EXPORT_ENABLED': 'false',
                 })
         services['file-service']['deploy']['replicas'] = 1
