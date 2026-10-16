@@ -35,6 +35,9 @@ RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
 COPY src ./src
 COPY training ./training
 
+# uv leaves its advisory lock writable; runtime never installs packages.
+RUN chmod go-w /opt/venv/.lock
+
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=5 \

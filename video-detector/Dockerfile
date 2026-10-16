@@ -49,6 +49,9 @@ COPY src ./src
 # dataset cache / grid / venv wyciete w .dockerignore.
 COPY training ./training
 
+# uv leaves its advisory lock writable; runtime never installs packages.
+RUN chmod go-w /opt/venv/.lock
+
 USER app
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=5 \
