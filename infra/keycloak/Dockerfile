@@ -12,3 +12,4 @@ RUN npx vite build && npx keycloakify build
 
 FROM quay.io/keycloak/keycloak:26.8.1
 COPY --from=theme /frontend/dist_keycloak/keycloak-theme.jar /opt/keycloak/providers/keycloak-theme.jar
+USER 1000
