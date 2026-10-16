@@ -4,6 +4,40 @@ For first-time setup, model downloads and troubleshooting, use [SETUP.md](../SET
 This page covers configuration details of the Compose stack. Monitoring is described in
 [observability.md](observability.md), backend failure behavior in [reliability.md](reliability.md).
 
+## Java framework compatibility
+
+The four Java services use Spring Boot 4.1.1 with Spring Cloud 2025.1.3. Cloud's
+[compatibility table](https://spring.io/projects/spring-cloud/) supports Boot 4.1 starting
+with 2025.1.2, so no release-train change is needed. The two MVC services use
+[springdoc 3.1.1](https://github.com/springdoc/springdoc-openapi/releases/tag/v3.1.1).
+Java remains at 25. Testcontainers and Tika retain their existing explicit versions.
+
+Review the [Boot upgrade notes](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.1-Release-Notes),
+[configuration changelog](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.1.0-Configuration-Changelog),
+[Boot patch notes](https://github.com/spring-projects/spring-boot/releases/tag/v4.1.1) and
+[Cloud release notes](https://github.com/spring-cloud/spring-cloud-release/releases/tag/v2025.1.3)
+before moving these generations together. Project-specific checks:
+
+| Area | Migration handling and regression coverage |
+|---|---|
+| Managed dependencies | Remove the Micrometer 1.16 override; Boot supplies 1.17.1 alongside Tracing 1.7.1. Keep the existing newer security pins for Jackson, Netty, Tomcat, HTTP Core and the Rabbit client. |
+| Jackson / OpenAPI | Keep Jackson 3 and `JacksonJsonMessageConverter`. The existing orchestrator OpenAPI test checks the 429 body and `Retry-After` schema. springdoc 3.1.1 keeps MCP opt-in; no MCP starter is added. |
+| AMQP retry | Adapt `AmqpRecoveryControl` and its test doubles to the new `org.springframework.amqp.core.MessageListenerContainer` returned by the endpoint registry in AMQP 4.1; the old Rabbit-specific interface is deprecated. Keep `max-retries: 3` (four total attempts) and the independent progress policy. Recovery lifecycle tests check shutdown callbacks and restarts; listener retry, database-outage and DLQ integration tests exercise the actual containers. |
+| Gateway / Redis | Cloud Gateway remains 5.0.3. Warm-up still executes its bundled Lua script with rate, burst, time and requested-token arguments. Rate-limit integration tests cover real Redis, isolation and outage behavior; the readiness test checks warm-up ordering. |
+| Eureka | Keep the existing server/client configuration and `lb://` routes. The server context test and infrastructure discovery test exercise startup, registration and routing. |
+| Flyway / JPA | Boot manages Flyway 12.4 and Hibernate 7.4. Keep the Flyway starter and PostgreSQL module; use the default JPA bootstrap mode. Existing migrations remain immutable; migration and repository integration tests cover real PostgreSQL. |
+| Process tests on Windows | Pass the outbox subprocess classpath through a Java argument file: the expanded dependency classpath exceeds the Windows command-line limit. The crash-after-confirm and restart assertions remain unchanged. |
+| SSE stress tests on Windows | Send the existing minimum sample of more than 100 events before ending the stalled-reader setup loop, even if all three writers are already blocked. The whole class also reproduced this scheduling issue on the previous framework; preserve the blocked-writer, isolation and delivery assertions. |
+| Actuator / observability | Keep health exposure, probes, tracing export and Prometheus configuration. Context tests scrape latency histograms; infrastructure and E2E tests check health and readiness. |
+| Other upgrade notes | No layertools, Derby, jOOQ, gRPC, custom Tomcat base directory or deferred JPA bootstrap are configured. The application does not enable lazy JDBC connection fetching or new JWT authority expressions. |
+
+`python infra/tests/test_java_platform.py` checks the compatible Boot/Cloud/springdoc
+generations across all four independent POMs and rejects a Micrometer override below
+the new BOM baseline. It runs in Infrastructure smoke for service changes. Full
+`mvnw verify` in each Java service, followed by CI, E2E and Infrastructure smoke,
+remains required for a framework migration. Dependabot's deliberate minor/major
+upgrade exclusions remain in place.
+
 ## Service discovery boundary
 
 Eureka has no published host port. Its dashboard and registration API are available

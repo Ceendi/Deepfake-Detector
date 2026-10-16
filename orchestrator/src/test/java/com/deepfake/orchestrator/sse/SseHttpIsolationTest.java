@@ -46,7 +46,8 @@ class SseHttpIsolationTest {
         for(int i=0;i<3;i++) peers.add(open(id,"slow",false));
         var healthy=open(id,"healthy",true); peers.add(healthy);
         long until=System.nanoTime()+Duration.ofSeconds(12).toNanos(); int count=0;
-        while(System.nanoTime()<until && streams.writingLongerThan(Duration.ofMillis(700))<3) {
+        // Windows can stall all readers before the minimum stress sample has been sent.
+        while(System.nanoTime()<until && (count<=100 || streams.writingLongerThan(Duration.ofMillis(700))<3)) {
             streams.sendProgress(id,progress(id,count++)); LockSupport.parkNanos(100_000);
         }
         System.out.println("SSE stopped-reader stress events="+count+" admitted="+streams.admitted()+" sustainedWrites="+streams.writingLongerThan(Duration.ofMillis(700)));
