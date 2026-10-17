@@ -12,7 +12,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -33,7 +33,7 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 class FileServiceApplicationTests {
 
     @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {

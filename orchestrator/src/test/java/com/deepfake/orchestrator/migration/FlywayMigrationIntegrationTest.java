@@ -12,7 +12,7 @@ import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -26,8 +26,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 class FlywayMigrationIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> postgres =
-            new PostgreSQLContainer<>("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres =
+            new PostgreSQLContainer("postgres:18.4-alpine");
 
     @BeforeAll
     static void migrate() {

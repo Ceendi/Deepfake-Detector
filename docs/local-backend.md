@@ -10,7 +10,7 @@ The four Java services use Spring Boot 4.1.1 with Spring Cloud 2025.1.3. Cloud's
 [compatibility table](https://spring.io/projects/spring-cloud/) supports Boot 4.1 starting
 with 2025.1.2, so no release-train change is needed. The two MVC services use
 [springdoc 3.1.1](https://github.com/springdoc/springdoc-openapi/releases/tag/v3.1.1).
-Java remains at 25. Testcontainers and Tika retain their existing explicit versions.
+Java remains at 25. Tika retains its existing explicit version.
 
 Review the [Boot upgrade notes](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.1-Release-Notes),
 [configuration changelog](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.1.0-Configuration-Changelog),
@@ -37,6 +37,42 @@ the new BOM baseline. It runs in Infrastructure smoke for service changes. Full
 `mvnw verify` in each Java service, followed by CI, E2E and Infrastructure smoke,
 remains required for a framework migration. Dependabot's deliberate minor/major
 upgrade exclusions remain in place.
+
+## Java container tests
+
+All four Java POMs pin `testcontainers.version` to 2.0.5, matching the Spring Boot
+BOM. Gateway, orchestrator and file-service use the test-scoped
+`testcontainers-junit-jupiter` module; the two database services also use
+`testcontainers-postgresql`. Eureka has no direct Testcontainers dependency.
+
+The [2.0 migration notes](https://github.com/testcontainers/testcontainers-java/releases/tag/2.0.0)
+rename modules with a `testcontainers-` prefix, relocate module-specific classes
+and remove JUnit 4 support and default image constructors. PostgreSQL tests now
+import the non-generic `org.testcontainers.postgresql.PostgreSQLContainer` and
+still specify the same image explicitly. Tests already use JUnit Jupiter and
+`@Container`; no `@ServiceConnection` is used, so `@DynamicPropertySource` wiring
+stays in place. Generic containers for Redis and RabbitMQ keep their APIs.
+The [2.0.5 patch notes](https://github.com/testcontainers/testcontainers-java/releases/tag/2.0.5)
+require no further API adaptations for these services.
+
+RabbitMQ tests must keep `Wait.forLogMessage(".*Server startup complete.*", 1)`:
+Docker Desktop can accept connections on a mapped port before the broker is
+ready for AMQP handshakes. Keep the existing images, assertions and retry policies.
+Run Docker tests sequentially on a 16 GB development machine, with no other
+agent running container tests:
+
+```powershell
+python infra/tests/test_java_platform.py
+cd gateway; ./mvnw.cmd -B verify
+cd ../eureka-server; ./mvnw.cmd -B verify
+cd ../file-service; ./mvnw.cmd -B verify
+cd ../orchestrator; ./mvnw.cmd -B verify
+```
+
+The platform regression tests reject mixed Testcontainers generations, legacy
+module coordinates and dependencies outside test scope. They run in Infrastructure
+smoke; Maven verification checks the resolved classpath and real container lifecycle.
+CI, E2E and Infrastructure smoke must also pass before merging.
 
 ## Service discovery boundary
 

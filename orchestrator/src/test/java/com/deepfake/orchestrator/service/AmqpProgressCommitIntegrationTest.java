@@ -35,7 +35,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -69,7 +69,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AmqpProgressCommitIntegrationTest {
     private static final int DATABASE_PORT = availablePort();
     // Docker can reassign ephemeral published ports on restart; the JDBC endpoint must stay stable.
-    @Container static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine")
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine")
             .withCreateContainerCmdModifier(cmd -> cmd.getHostConfig().withPortBindings(
                     new PortBinding(Ports.Binding.bindPort(DATABASE_PORT), new ExposedPort(5432))));
     @Container static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine").withExposedPorts(6379);

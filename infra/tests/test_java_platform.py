@@ -14,6 +14,32 @@ def pom(service):
 
 
 class JavaPlatformTest(unittest.TestCase):
+    def test_testcontainers_generation_and_bom_are_consistent(self):
+        versions = []
+        for service in SERVICES:
+            with self.subTest(service=service):
+                project = pom(service)
+                version = project.findtext('m:properties/m:testcontainers.version', namespaces=NS)
+                self.assertIsNotNone(version)
+                self.assertRegex(version, r'^2\.\d+\.\d+$')
+                versions.append(version)
+                for dependency in project.findall('m:dependencyManagement/m:dependencies/m:dependency', NS):
+                    if dependency.findtext('m:groupId', namespaces=NS) == 'org.testcontainers':
+                        self.assertEqual('testcontainers-bom', dependency.findtext('m:artifactId', namespaces=NS))
+                        self.assertEqual('${testcontainers.version}', dependency.findtext('m:version', namespaces=NS))
+        self.assertEqual(1, len(set(versions)), versions)
+
+    def test_testcontainers_modules_use_current_coordinates_and_test_scope(self):
+        for service in SERVICES:
+            for dependency in pom(service).findall('m:dependencies/m:dependency', NS):
+                if dependency.findtext('m:groupId', namespaces=NS) != 'org.testcontainers':
+                    continue
+                artifact = dependency.findtext('m:artifactId', namespaces=NS)
+                with self.subTest(service=service, artifact=artifact):
+                    self.assertTrue(artifact == 'testcontainers' or artifact.startswith('testcontainers-'), artifact)
+                    self.assertEqual('test', dependency.findtext('m:scope', namespaces=NS))
+                    self.assertIsNone(dependency.findtext('m:version', namespaces=NS))
+
     def test_boot_generation_is_consistent(self):
         versions = {service: pom(service).findtext('m:parent/m:version', namespaces=NS)
                     for service in SERVICES}

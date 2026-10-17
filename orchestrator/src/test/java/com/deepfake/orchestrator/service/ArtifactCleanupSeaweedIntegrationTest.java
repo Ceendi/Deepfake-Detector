@@ -17,7 +17,7 @@ import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -33,7 +33,7 @@ import software.amazon.awssdk.services.s3.model.*;
 /** The actual Compose-pinned SeaweedFS protocol, paging and idempotent deletion; disposable data only. */
 @Testcontainers
 class ArtifactCleanupSeaweedIntegrationTest {
-    @Container static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
     @Container static final GenericContainer<?> seaweed = new GenericContainer<>("chrislusf/seaweedfs:4.48")
         .withExposedPorts(8333)
         .withCopyToContainer(Transferable.of("""

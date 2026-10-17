@@ -52,7 +52,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -86,7 +86,7 @@ class AudioScoreContractIntegrationTest {
     private static final Network NETWORK = Network.newNetwork();
 
     @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine")
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine")
             .withNetwork(NETWORK);
     @Container
     static final GenericContainer<?> rabbit = new GenericContainer<>("rabbitmq:4.3.1-alpine")

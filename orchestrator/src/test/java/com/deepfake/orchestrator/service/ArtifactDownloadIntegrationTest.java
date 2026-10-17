@@ -36,7 +36,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -52,7 +52,7 @@ import static org.awaitility.Awaitility.await;
 @Testcontainers
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ArtifactDownloadIntegrationTest {
-    @Container static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
     private static final int LIMIT = 8388608;
     private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G'};
     private static final ExecutorService handlers = Executors.newFixedThreadPool(8);
