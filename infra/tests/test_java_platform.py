@@ -14,6 +14,13 @@ def pom(service):
 
 
 class JavaPlatformTest(unittest.TestCase):
+    def test_upload_detection_uses_tika_core_four_without_parsers(self):
+        dependencies = [dep for dep in pom('file-service').findall('m:dependencies/m:dependency', NS)
+                        if dep.findtext('m:groupId', namespaces=NS) == 'org.apache.tika']
+        self.assertEqual(['tika-core'], [dep.findtext('m:artifactId', namespaces=NS)
+                                       for dep in dependencies])
+        self.assertRegex(dependencies[0].findtext('m:version', namespaces=NS), r'^4\.\d+\.\d+$')
+
     def test_testcontainers_generation_and_bom_are_consistent(self):
         versions = []
         for service in SERVICES:

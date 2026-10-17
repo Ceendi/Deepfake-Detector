@@ -6,6 +6,7 @@ import org.apache.tika.detect.DefaultDetector;
 import org.apache.tika.detect.Detector;
 import org.apache.tika.io.TikaInputStream;
 import org.apache.tika.metadata.Metadata;
+import org.apache.tika.parser.ParseContext;
 import org.springframework.stereotype.Component;
 
 import com.deepfake.fileservice.exception.InvalidFileException;
@@ -84,7 +85,7 @@ public class FileValidator {
     private String detectMime(Path file) throws IOException {
         // Empty Metadata: detect from bytes only, ignoring the client-provided name/extension.
         try (TikaInputStream stream = TikaInputStream.get(file)) {
-            return detector.detect(stream, new Metadata()).toString();
+            return detector.detect(stream, new Metadata(), new ParseContext()).toString();
         }
     }
 
