@@ -22,7 +22,7 @@ import org.springframework.test.context.*;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.*;
@@ -43,7 +43,7 @@ import com.zaxxer.hikari.HikariDataSource;
 @Testcontainers
 @org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class SseBackendAcceptanceIntegrationTest {
-    @Container static final PostgreSQLContainer<?> postgres=new PostgreSQLContainer<>("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres=new PostgreSQLContainer("postgres:18.4-alpine");
     @Container static final GenericContainer<?> redis=new GenericContainer<>("redis:8.8.0-alpine").withExposedPorts(6379);
     @Container static final GenericContainer<?> broker=new GenericContainer<>("rabbitmq:4.3.1-alpine")
         .withEnv("RABBITMQ_DEFAULT_USER","test").withEnv("RABBITMQ_DEFAULT_PASS","test")

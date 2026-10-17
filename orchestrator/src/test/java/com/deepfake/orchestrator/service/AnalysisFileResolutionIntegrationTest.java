@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -53,7 +53,7 @@ import static org.mockito.Mockito.*;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
 class AnalysisFileResolutionIntegrationTest {
-    @Container static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
     static final UUID FILE = UUID.randomUUID();
     static final AtomicInteger status = new AtomicInteger(200);
     static volatile String body;

@@ -13,7 +13,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -41,7 +41,7 @@ import static org.mockito.Mockito.when;
 @Testcontainers
 @org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics
 class UploadSpoolIntegrationTest {
-    @Container static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
     @TempDir static Path spool;
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);

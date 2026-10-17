@@ -17,7 +17,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -34,7 +34,7 @@ import com.deepfake.fileservice.entity.FileMetadata;
 class FileMetadataRepositoryIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {

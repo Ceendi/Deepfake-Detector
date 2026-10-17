@@ -40,7 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -66,7 +66,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceDeleteCommitIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
     @Container
     static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
             .withExposedPorts(6379);

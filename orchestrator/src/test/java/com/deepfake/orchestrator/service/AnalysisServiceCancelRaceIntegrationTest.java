@@ -31,7 +31,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -56,7 +56,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceCancelRaceIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
