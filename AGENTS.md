@@ -21,8 +21,9 @@ Keycloak (OIDC/JWT), Eureka (discovery), Prometheus + Loki (Alloy) + Tempo + Gra
 |---|---|---|
 | `gateway/`, `eureka-server/`, `orchestrator/`, `file-service/` | Spring Boot, pakiety `com.deepfake.{service}` | Osoba 1 (backend) |
 | `frontend/` | React + TS + Vite, CSS Modules | Osoba 2 (frontend, CI/CD) |
-| `video-detector/` | Python, FastAPI (`/health`, `/metrics`) + konsument pika, ONNX/torch CPU | Osoba 3 |
+| `video-detector/` | Python, FastAPI (`/health`, `/metrics`) + adapter modelu dla `detector-runtime`, ONNX/torch CPU | Osoba 3 |
 | `audio-detector/` | jak wyżej, Wav2Vec2 + MelCNN | Osoba 4 |
+| `detector-runtime/` | wspólny konsument AMQP obu detektorów: topologia, confirms przed ACK, reconnect, anulowanie z Redis | Osoba 3 + Osoba 4 |
 | `infra/`, `docker-compose.yml` | konfiguracja infrastruktury, profile `core`, `auth`, `ml`, `monitoring` | Osoba 1 |
 | `docs/contracts/` | **kontrakty** REST, AMQP, statusy, S3, metryki | wszyscy |
 | `tests/worker_redelivery/` | testy prawdziwego procesu detektora z RabbitMQ i Redis | backend |
@@ -49,7 +50,7 @@ docker compose --profile core --profile auth --profile ml up -d   # + detektory 
 docker compose --profile core --profile monitoring up -d    # + Grafana/Prometheus/Loki/Tempo
 
 cd orchestrator && ./mvnw verify          # test + integracja (Testcontainers, wymaga Dockera); Windows: mvnw.cmd
-cd audio-detector && uv sync --dev && uv run pytest tests && uvx ruff check .   # tak samo video-detector
+cd audio-detector && uv sync --dev && uv run pytest tests && uvx ruff check .   # tak samo video-detector i detector-runtime
 cd frontend && npm ci && npm run lint && npm run test:run && npm run build        # jak w CI
 ```
 
@@ -78,7 +79,7 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 
 - **D1 RabbitMQ:** exchange `analysis.exchange` (topic) i `analysis.dlx` (direct); routing `analysis.video`,
   `analysis.audio`, `analysis.progress`, `analysis.results`; każda kolejka ma `*.dlq`. Topologię deklaruje kod
-  (Spring `@Bean` w orchestratorze, `pika queue_declare` w detektorach) z **identycznymi** argumentami, inaczej
+  (Spring `@Bean` w orchestratorze, `pika queue_declare` w `detector-runtime/`) z **identycznymi** argumentami, inaczej
   `PRECONDITION_FAILED`. Zmiana → aktualizacja `docs/contracts/amqp-messages.md` i obu stron.
 - **D2/D3:** logi JSON z `correlation_id` i `trace_id`; `/actuator/prometheus` (Java) lub `/metrics` (Python).
   Nowa metryka → panel w Grafanie i wpis w `docs/contracts/metrics.md`.
@@ -149,7 +150,7 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 ## Definition of done
 
 1. Zielone dla zmienionych serwisów: `./mvnw verify`, `pytest` + `ruff`, `npm run lint && npm run test:run && npm run build`.
-2. `git diff --check` czysty; Conventional Commits (`feat(orchestrator): ...`), nagłówek < 100 znaków (commitlint).
+2. `git diff --check` czysty; Conventional Commits (`feat(orchestrator): ...`), nagłówek ≤ 100 znaków (commitlint).
    Bez trailerów atrybucji AI (`Co-Authored-By`, „Generated with …”).
 3. PR opisuje problem, zachowanie po zmianie, dotknięte serwisy, komendy weryfikacji i ograniczenia.
 4. Zmiany w `docker-compose.yml`: `docker compose --profile core up` startuje na czystej maszynie.
