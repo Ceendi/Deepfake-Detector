@@ -10,7 +10,7 @@ The four Java services use Spring Boot 4.1.1 with Spring Cloud 2025.1.3. Cloud's
 [compatibility table](https://spring.io/projects/spring-cloud/) supports Boot 4.1 starting
 with 2025.1.2, so no release-train change is needed. The two MVC services use
 [springdoc 3.1.1](https://github.com/springdoc/springdoc-openapi/releases/tag/v3.1.1).
-Java remains at 25. Tika retains its existing explicit version.
+Java remains at 25. File-service's separate Tika migration is described below.
 
 Review the [Boot upgrade notes](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.1-Release-Notes),
 [configuration changelog](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.1.0-Configuration-Changelog),
@@ -37,6 +37,35 @@ the new BOM baseline. It runs in Infrastructure smoke for service changes. Full
 `mvnw verify` in each Java service, followed by CI, E2E and Infrastructure smoke,
 remains required for a framework migration. Dependabot's deliberate minor/major
 upgrade exclusions remain in place.
+
+## Upload MIME detection
+
+File-service uses `tika-core` 4.1.0 only. Review the official
+[migration guide](https://tika.apache.org/docs/4.1.x/migration-to-4x/migrating-to-4x.html),
+[4.0 release notes](https://tika.apache.org/4.0.0/index.html) and
+[4.1 release notes](https://tika.apache.org/4.1.0/index.html) before another upgrade.
+The relevant migration changes are:
+
+- Java 17 minimum is covered by the existing Java 25 runtime.
+- `Detector.detect` now requires a `ParseContext`; create one per validation alongside
+  empty `Metadata`, so neither the client MIME nor filename influences detection.
+- `TikaInputStream` has different spooling/rewind rules. Keep the existing
+  path-backed stream in try-with-resources; ffprobe opens the file independently.
+- XML configuration, metadata-key migration, parser isolation, Markdown output and
+  the 4.1 OCR/Pipes changes do not apply: no Tika parsers, server, configuration
+  loader or extracted metadata are used. Do not add parser modules for detection.
+
+`FfprobeMediaProbeIntegrationTest` generates media in temporary files and checks
+exact MIME results for MP4/MOV/AVI/WAV/MP3/FLAC. The same corpus passes with
+3.3.3 and 4.1.0, including WAV named `.mp4`, random bytes and real WebM. The
+observed MIME results and retained aliases are in [the REST contract](contracts/rest-api.md).
+Keep the whitelist and HTTP behavior unchanged when the corpus shows no difference.
+
+Run `python infra/tests/test_java_platform.py` (the Tika-generation guard fails on
+3.3.3) and `cd file-service; ./mvnw.cmd -B -ntp clean verify` on Windows with Docker,
+ffmpeg and ffprobe available. The targeted comparison command is
+`./mvnw.cmd -B -ntp "-Dtest=FileValidatorTest,FfprobeMediaProbeIntegrationTest" test`.
+CI must also pass E2E and Infrastructure smoke. Dependabot exclusions stay unchanged.
 
 ## Java container tests
 

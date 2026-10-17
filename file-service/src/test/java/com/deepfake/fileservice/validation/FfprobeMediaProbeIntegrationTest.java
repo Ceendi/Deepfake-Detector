@@ -19,7 +19,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** Real ffprobe and Tika tests are required: missing ffmpeg fails rather than silently skipping. */
 class FfprobeMediaProbeIntegrationTest {
@@ -67,13 +67,14 @@ class FfprobeMediaProbeIntegrationTest {
         Path wav = tmp.resolve("tone.wav");
         Files.write(wav, wav(new byte[0]));
         FileValidator.Result result = validator.validate(wav);
-        assertThat(FileValidator.MIME_WHITELIST).contains(result.mimetype());
+        assertThat(result.mimetype()).isEqualTo("audio/vnd.wave");
         assertThat(result.durationSeconds()).isCloseTo(0.1, org.assertj.core.data.Offset.offset(0.05));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"mp4", "mov", "avi", "mp3", "flac"})
-    void preservesRealTikaAndProbeAcceptanceForSupportedContainers(String extension) throws Exception {
+    @CsvSource({"mp4,video/quicktime", "mov,video/quicktime", "avi,video/x-msvideo",
+            "mp3,audio/mpeg", "flac,audio/x-flac"})
+    void preservesRealTikaAndProbeAcceptanceForSupportedContainers(String extension, String expectedMime) throws Exception {
         Path media = tmp.resolve("media." + extension);
         List<String> command = new ArrayList<>(List.of("ffmpeg", "-v", "error", "-y"));
         if (List.of("mp3", "flac").contains(extension)) {
@@ -87,8 +88,42 @@ class FfprobeMediaProbeIntegrationTest {
         command.add(media.toString());
         runToFile(command, tmp.resolve("generation.log"));
         FileValidator.Result result = validator.validate(media);
-        assertThat(FileValidator.MIME_WHITELIST).contains(result.mimetype());
+        assertThat(result.mimetype()).isEqualTo(expectedMime);
         assertThat(result.durationSeconds()).isPositive();
+    }
+
+    @Test
+    void detectsWavNamedMp4FromBytes() throws IOException {
+        Path media = tmp.resolve("audio-named.mp4");
+        Files.write(media, wav(new byte[0]));
+
+        FileValidator.Result result = validator.validate(media);
+
+        assertThat(result.mimetype()).isEqualTo("audio/vnd.wave");
+        assertThat(result.durationSeconds()).isEqualTo(0.1);
+    }
+
+    @Test
+    void rejectsRandomBytesNamedMp4() throws IOException {
+        byte[] noise = new byte[256 * 1024];
+        new java.util.Random(42).nextBytes(noise);
+        Path media = tmp.resolve("noise.mp4");
+        Files.write(media, noise);
+
+        assertThatThrownBy(() -> validator.validate(media)).isInstanceOf(InvalidFileException.class)
+                .hasMessageStartingWith("[UNSUPPORTED_MEDIA] unsupported media type:");
+    }
+
+    @Test
+    void rejectsRealWebmEvenWhenNamedMp4() throws Exception {
+        Path media = tmp.resolve("clip.mp4");
+        runToFile(List.of("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                "color=c=gray:s=16x16:r=10", "-t", "0.1", "-c:v", "libvpx-vp9", "-f", "webm",
+                media.toString()), tmp.resolve("generation.log"));
+        assertThat(probe.probe(media)).isPresent();
+
+        assertThatThrownBy(() -> validator.validate(media)).isInstanceOf(InvalidFileException.class)
+                .hasMessageStartingWith("[UNSUPPORTED_MEDIA] unsupported media type:");
     }
 
     @Test

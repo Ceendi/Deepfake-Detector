@@ -57,6 +57,25 @@ Body: file=@<file>
 
 Two-stage validation (magic bytes via Tika, then `ffprobe`) runs before the file
 is stored; `mimetype` is the **detected** type, not the client-supplied one.
+File-service uses Tika Core 4.1.0 without parser modules and supplies no filename
+or content-type hints. The generated regression corpus produces the same results
+with Tika 3.3.3 and 4.1.0:
+
+| Media bytes | Detected MIME in the corpus | Upload validation |
+|---|---|---|
+| MP4 (ffmpeg default `isom` brand), MOV | `video/quicktime` | Accepted after ffprobe confirmation |
+| AVI | `video/x-msvideo` | Accepted after ffprobe confirmation |
+| WAV, including a file named `.mp4` | `audio/vnd.wave` | Accepted as audio after ffprobe confirmation |
+| MP3 | `audio/mpeg` | Accepted after ffprobe confirmation |
+| FLAC | `audio/x-flac` | Accepted after ffprobe confirmation |
+| Random bytes named `.mp4`, WebM (also named `.mp4`) | Outside the whitelist | Rejected before ffprobe |
+
+The retained MIME whitelist is `video/mp4`, `video/quicktime`, `video/x-msvideo`,
+`audio/vnd.wave`, `audio/x-wav`, `audio/wav`, `audio/mpeg`, `audio/mp3`,
+`audio/x-flac`, `audio/flac`. MP4 brands can yield different allowed aliases;
+the filename does not select the MIME or storage extension. The upgrade does not
+change response fields, statuses or accepted container formats.
+
 Rejections: `413` (file over 500 MiB = 524288000 bytes, or multipart request over
 501 MiB; the extra 1 MiB is reserved for boundaries/headers), `422` (not a whitelisted A/V container —
 MP4/MOV/AVI/WAV/MP3/FLAC, invalid duration, or known duration above
