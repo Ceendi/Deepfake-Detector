@@ -23,8 +23,8 @@
   "dependencies": {
     "clsx": "^2.1.1",
     "keycloak-js": "^26.2.4",
-    "keycloakify": "^11.16.1",
-    "lucide-react": "^1.57.0",
+    "keycloakify": "^11.16.3",
+    "lucide-react": "^1.58.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4"
@@ -33,7 +33,7 @@
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.0.2",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.64.0",
+    "@playwright/test": "^1.64.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
@@ -55,7 +55,7 @@
     "typescript": "~5.9.0",
     "typescript-eslint": "^8.71.2",
     "vite": "^8.3.4",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.12"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
