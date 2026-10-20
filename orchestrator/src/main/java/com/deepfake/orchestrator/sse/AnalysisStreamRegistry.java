@@ -115,9 +115,8 @@ public class AnalysisStreamRegistry {
     int admitted() { synchronized (admission) { return sessions.size(); } }
     long writing() { return writingLongerThan(java.time.Duration.ZERO); }
     long writingLongerThan(java.time.Duration duration) {
-        return snapshot().stream().filter(session -> { synchronized (session) {
-            return session.writeSince != 0 && System.nanoTime()-session.writeSince >= duration.toNanos();
-        }}).count();
+        long nanos = duration.toNanos();
+        return snapshot().stream().filter(session -> session.writingLongerThan(nanos)).count();
     }
 
     final class Session {
@@ -125,15 +124,16 @@ public class AnalysisStreamRegistry {
         final long created = System.nanoTime();
         AnalysisProgressEvent video, audio;
         AnalysisResultEvent result;
-        boolean heartbeat, closing, bound, initialized, initializationFailure, physical, writerStarted, writerExited, released;
+        boolean heartbeatPending, closing, bound, initializationDone, initializationFailure, physical, writerStarted, writerExited, released;
         long writeSince;
         Session(UUID id, String owner, SseEmitter emitter) { this.id=id; this.owner=owner; this.emitter=emitter; }
         synchronized void bind() { bound = true; }
-        synchronized void initialized() { initialized = true; }
+        synchronized boolean writingLongerThan(long nanos) { return writeSince != 0 && System.nanoTime()-writeSince >= nanos; }
+        synchronized void initialized() { initializationDone = true; }
         void ready() {
             synchronized (this) {
-                if (!initialized || initializationFailure || physical || writerStarted) return;
-                if (!closing && result == null) heartbeat = true;
+                if (!initializationDone || initializationFailure || physical || writerStarted) return;
+                if (!closing && result == null) heartbeatPending=true;
                 writerStarted = true;
             }
             try { Thread.ofVirtual().name("sse-" + id).start(this::drain); }
@@ -148,16 +148,16 @@ public class AnalysisStreamRegistry {
         }
         synchronized void terminal(AnalysisResultEvent event) {
             if (closing || physical || result != null) return;
-            result=event; video=null; audio=null; heartbeat=false; notifyAll();
+            result=event; video=null; audio=null; heartbeatPending=false; notifyAll();
         }
-        synchronized void heartbeat() { if (!closing && result == null && !physical) { heartbeat=true; notifyAll(); } }
+        synchronized void heartbeat() { if (!closing && result == null && !physical) { heartbeatPending=true; notifyAll(); } }
         void close() {
-            synchronized (this) { closing=true; video=null; audio=null; heartbeat=false; notifyAll(); }
+            synchronized (this) { closing=true; video=null; audio=null; heartbeatPending=false; notifyAll(); }
             detach(this);
         }
         void initializationFailed() { synchronized (this) { initializationFailure=true; } close(); }
         void physicalCompletion() {
-            synchronized (this) { physical=true; closing=true; video=null; audio=null; result=null; heartbeat=false; notifyAll(); }
+            synchronized (this) { physical=true; closing=true; video=null; audio=null; result=null; heartbeatPending=false; notifyAll(); }
             detach(this); releaseIfFinished();
         }
         void exited() { synchronized (this) { writerExited=true; writeSince=0; } releaseIfFinished(); }
@@ -182,13 +182,13 @@ public class AnalysisStreamRegistry {
                 while (true) {
                     Object item;
                     synchronized (this) {
-                        while (!physical && !closing && result == null && video == null && audio == null && !heartbeat) wait();
+                        while (!physical && !closing && result == null && video == null && audio == null && !heartbeatPending) wait();
                         if (physical) return;
                         if (closing) item=null;
                         else if (result != null) { item=result; result=null; closing=true; }
                         else if (video != null) { item=video; video=null; }
                         else if (audio != null) { item=audio; audio=null; }
-                        else { item="hb"; heartbeat=false; }
+                        else { item="hb"; heartbeatPending=false; }
                         writeSince=System.nanoTime();
                     }
                     if (item == null) { emitter.complete(); return; }
