@@ -3,22 +3,11 @@ name: E2E
 # Playwright against the real core + auth stack (Keycloak login, gateway, orchestrator,
 # file-service). Detectors need models that are not in the repository, so analyses stay active;
 # the per-user limits are raised for the throwaway stack instead of changing product defaults.
+# `playwright` is a required check, so the workflow always runs; a path filter on the trigger would
+# leave the check pending forever on PRs that do not touch the app. Unrelated PRs skip the job
+# instead, and a skipped required job counts as passed.
 on:
   pull_request:
-    paths:
-      - frontend/**
-      - gateway/**
-      - orchestrator/**
-      - file-service/**
-      - eureka-server/**
-      - infra/keycloak/**
-      - infra/keycloak-config-cli/**
-      - infra/postgres/**
-      - infra/rabbitmq/**
-      - infra/seaweedfs/**
-      - docker-compose.yml
-      - .env.example
-      - .github/workflows/e2e.yml
   push:
     branches: [main]
 
@@ -30,7 +19,36 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Detect app changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          APP_PATHS: >-
+            ^(frontend|gateway|orchestrator|file-service|eureka-server)/|^infra/(keycloak|keycloak-config-cli|postgres|rabbitmq|seaweedfs)/|^docker-compose\.yml$|^\.env\.example$|^\.github/workflows/e2e\.yml$
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # If the file list cannot be read, run E2E rather than silently skipping it.
+          if ! files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename'); then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -Eq "$APP_PATHS" <<<"$files"; then app=true; else app=false; fi
+          echo "app=$app" | tee -a "$GITHUB_OUTPUT"
+
   playwright:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
