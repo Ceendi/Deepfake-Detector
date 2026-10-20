@@ -51,9 +51,12 @@ jobs:
           # don't have `.env`, so without copying it from `.env.example` Compose
           # will fail on services that have `env_file: [.env]` hardcoded.
           cp .env.example .env
+          # Services sharing one image (postgres + keycloak-db) are scanned once, under the
+          # alphabetically first service name, so the Code Scanning category stays stable.
           IMAGES=$(docker compose --env-file .env.example --profile '*' config --format json |
             jq -c '[.services | to_entries[] | select(.value.image != null) |
-              {service: .key, image: .value.image, build: (.value.build != null)}] | unique_by(.image)')
+              {service: .key, image: .value.image, build: (.value.build != null)}] |
+              sort_by(.service) | unique_by(.image) | sort_by(.service)')
           if [ "$IMAGES" = "[]" ] || [ -z "$IMAGES" ]; then
             echo "::error::No images extracted from compose. Aborting scan." >&2
             exit 1
@@ -174,6 +177,38 @@ jobs:
         with:
           sarif_file: trivy-config.sarif
           category: trivy-config
+
+  dismiss-orphaned-alerts:
+    # A removed or renamed service leaves its open alerts behind forever, because no new
+    # upload ever closes that category. Runs only after every scan of main succeeded, so a
+    # partial run cannot look like a missing category.
+    name: Close alerts from categories no longer scanned
+    needs: [list-images, scan-images, scan-config]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Dismiss open Trivy alerts outside the current categories
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGES: ${{ needs.list-images.outputs.images }}
+        run: |
+          expected=$(jq -c '[.[] | "trivy-compose-" + .service] + ["trivy-config"]' <<<"$IMAGES")
+          echo "Current categories: $expected"
+          echo "### Orphaned Code Scanning alerts" >> "$GITHUB_STEP_SUMMARY"
+          gh api --paginate             "repos/$GITHUB_REPOSITORY/code-scanning/alerts?state=open&tool_name=Trivy&per_page=100"             --jq '.[] | [.number, .most_recent_instance.category] | @tsv' |
+          while IFS=$'	' read -r number category; do
+            if ! jq -e --arg c "$category" 'index($c)' <<<"$expected" >/dev/null; then
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/code-scanning/alerts/$number"                 -f state=dismissed -f dismissed_reason="won't fix"                 -f dismissed_comment="Category $category is no longer scanned (service removed or renamed)."                 >/dev/null
+              echo "- dismissed #$number ($category)" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done
 
   generate-sbom:
     name: Generate SBOM
