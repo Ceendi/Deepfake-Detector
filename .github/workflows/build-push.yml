@@ -1,27 +1,36 @@
 name: build-push
 
-# Builds the 6 backend images and pushes to GHCR. Frontend has no Dockerfile yet (nginx image is
-# Osoba 2's), so it is not built here.
-#
-# DISABLED for now — we don't publish images yet. It only runs on manual dispatch; to enable
-# automatic publishing in production, add back the `push: branches: [main]` trigger:
-#   on:
-#     push:
-#       branches: [main]
-#     workflow_dispatch:
+# Publishes the deployable images to GHCR after CI (tests + SonarCloud Quality Gate) passes on
+# main. Tags: sha-<short commit> for every build, latest for main only. PRs that touch an image
+# definition build it without pushing.
 on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  pull_request:
+    paths:
+      - "*/Dockerfile"
+      - "frontend/nginx/**"
+      - "infra/keycloak/Dockerfile"
+      - ".github/workflows/build-push.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Publishing is queued, never cancelled: a half-pushed set of tags is worse than a short wait.
 concurrency:
-  group: build-push-${{ github.ref }}
-  cancel-in-progress: false
+  group: build-push-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   image:
     name: image (${{ matrix.service }})
+    # workflow_run fires for every CI conclusion; publish only what passed, and only from a push.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,26 +38,40 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service:
-          [
-            gateway,
-            eureka-server,
-            orchestrator,
-            file-service,
-            video-detector,
-            audio-detector,
-          ]
+        service: [gateway, eureka-server, orchestrator, file-service, video-detector, audio-detector]
+        include:
+          - service: video-detector
+            build-contexts: detector_runtime=./detector-runtime
+          - service: audio-detector
+            build-contexts: detector_runtime=./detector-runtime
+          - service: keycloak
+            context: ./frontend
+            file: ./infra/keycloak/Dockerfile
+          - service: frontend
+            context: ./frontend
     steps:
+      # workflow_run runs on the default branch head; build the commit CI actually verified.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       # GHCR image names must be lowercase; the repo owner has an uppercase letter.
-      - name: image namespace
+      - name: image name and tags
         id: ns
-        run: echo "repo=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          LATEST: ${{ github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
+        run: |
+          {
+            echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.service }}"
+            echo "short=${SHA::7}"
+            echo "latest=$LATEST"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: github.event_name != 'pull_request'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -57,18 +80,22 @@ jobs:
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
-          images: ${{ steps.ns.outputs.repo }}/${{ matrix.service }}
+          images: ${{ steps.ns.outputs.image }}
           tags: |
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=sha-${{ steps.ns.outputs.short }}
+            type=raw,value=latest,enable=${{ steps.ns.outputs.latest }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha || github.sha }}
 
-      # Each service Dockerfile is self-contained (own mvnw / pyproject); context is the service dir.
+      # Backend Dockerfiles are self-contained per service dir; keycloak and frontend build
+      # from the frontend sources.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: ./${{ matrix.service }}
-          build-contexts: ${{ contains(matrix.service, '-detector') && 'detector_runtime=./detector-runtime' || '' }}
-          push: true
+          context: ${{ matrix.context || format('./{0}', matrix.service) }}
+          file: ${{ matrix.file || '' }}
+          build-contexts: ${{ matrix.build-contexts || '' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
