@@ -51,6 +51,7 @@ jobs:
             ${{ matrix.service }}/target/surefire-reports/*.xml
             ${{ matrix.service }}/target/site/jacoco/
             ${{ matrix.service }}/target/classes/
+            ${{ matrix.service }}/target/test-classes/
           retention-days: 14
 
   python:
@@ -336,4 +337,5 @@ jobs:
         with:
           args: >
             -Dsonar.java.libraries=/home/runner/.m2/repository/**/*.jar
+            -Dsonar.java.test.libraries=/home/runner/.m2/repository/**/*.jar
             -Dsonar.qualitygate.wait=true

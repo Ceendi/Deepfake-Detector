@@ -4,7 +4,10 @@
   żeby sprawdzić sesję bez pełnego przeładowania strony (i bez migotania logowania).
   iframe odsyła wynik do okna nadrzędnego — to cały kontrakt, nic więcej tu nie potrzeba.
 -->
-<html>
+<html lang="pl">
+  <head>
+    <title>Keycloak silent SSO</title>
+  </head>
   <body>
     <script>
       parent.postMessage(location.href, location.origin)

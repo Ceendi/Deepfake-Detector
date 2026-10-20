@@ -25,6 +25,7 @@ nie wchodza do obrazu produkcyjnego).
 import math
 import os
 import sys
+import tempfile
 import time
 
 import cv2
@@ -287,11 +288,13 @@ class VideoInference:
 
     # ----------------------------------------------------------------- analyze
 
-    def analyze(self, file_path: str, progress_callback=None, workdir: str = "/tmp") -> dict:
+    def analyze(self, file_path: str, progress_callback=None, workdir: str | None = None) -> dict:
         def cb(pct, stage, details=None):
             if progress_callback:
                 progress_callback(pct, stage, details)
 
+        # The consumer passes the per-task download directory; ad-hoc calls use the system default.
+        workdir = workdir or tempfile.gettempdir()
         cb(10, "PREPROCESSING", {"step": "extract_frames"})
         frames, duration, fps = self._read_frames(file_path, progress_callback)
 

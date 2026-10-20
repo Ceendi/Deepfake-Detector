@@ -259,7 +259,7 @@ export default function Playground() {
           </FormField>
 
           <FormField label="Pole z błędem" error="Podaj prawidłowy adres URL.">
-            <Input defaultValue="ftp://zly-adres" />
+            <Input defaultValue="zly-adres" />
           </FormField>
 
           <FormField label="Wyłączone">

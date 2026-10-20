@@ -128,7 +128,7 @@ async function streamOnce(
 }
 
 function deadlineFor(createdAt: string | undefined): number {
-  const created = createdAt ? Date.parse(createdAt) : NaN
+  const created = createdAt ? Date.parse(createdAt) : Number.NaN
   return (Number.isFinite(created) ? created : Date.now()) + MAX_ANALYSIS_AGE_MS
 }
 
