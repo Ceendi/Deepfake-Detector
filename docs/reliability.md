@@ -104,8 +104,9 @@ All four Java services declare local Compose image names, so the existing Trivy
 inventory builds and scans their actual runtime images. CRITICAL findings block that
 workflow; HIGH findings remain reported under its existing policy. Dependabot updates
 the four Java Dockerfiles, and every action in the job with `packages: write` is pinned
-to a verified full commit SHA with its version comment. The publishing workflow remains
-manual. Regression guards run in Infrastructure smoke.
+to a verified full commit SHA with its version comment. The publishing workflow runs after CI
+passes on `main` (tests and the SonarCloud Quality Gate). Regression guards run in Infrastructure
+smoke.
 
 Dependabot also tracks the detector Dockerfiles, all three uv projects, four Maven projects and
 frontend npm dependencies. Spring Boot/Spring Cloud major updates require a deliberate migration.
