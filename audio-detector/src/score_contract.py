@@ -20,9 +20,10 @@ class NoSpeechError(DetectorError):
 
 def normalize_audio_score(raw_score: float, threshold: float) -> float:
     """Map [0, threshold, 1] to [0, 0.5, 1], preserving the strict decision after rounding."""
-    if not (math.isfinite(threshold) and 0 < threshold < 1):
+    # Sonar python:S2583 false positive: its model treats math.isfinite as always False.
+    if not math.isfinite(threshold) or threshold <= 0 or threshold >= 1:  # NOSONAR
         raise ValueError("Audio threshold must be finite and strictly between 0 and 1")
-    if not (math.isfinite(raw_score) and 0 <= raw_score <= 1):
+    if not math.isfinite(raw_score) or raw_score < 0 or raw_score > 1:
         raise ValueError("Audio score must be finite and between 0 and 1")
     if raw_score <= threshold:
         return round(0.5 * (raw_score / threshold), 4)
