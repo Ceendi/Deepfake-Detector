@@ -53,13 +53,13 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci && cp .env.example .env
+      - run: npm ci --ignore-scripts && cp .env.example .env
         working-directory: frontend
       - name: Start core and auth
         run: $COMPOSE up -d --build --wait --wait-timeout 600
-      - run: npx playwright install --with-deps chromium
+      - run: ./node_modules/.bin/playwright install --with-deps chromium
         working-directory: frontend
-      - run: npx playwright test --project=chromium
+      - run: ./node_modules/.bin/playwright test --project=chromium
         working-directory: frontend
       - if: failure()
         run: $COMPOSE logs --no-color > compose.log
