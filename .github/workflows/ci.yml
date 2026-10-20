@@ -36,7 +36,7 @@ jobs:
           python-version: '3.12'
       - name: Install lightweight worker process fixtures
         if: matrix.service == 'orchestrator'
-        run: python -m pip install -r audio-detector/tests/requirements-light.txt
+        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
       - name: Install ffprobe for file validation tests
         if: matrix.service == 'file-service'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -51,6 +51,7 @@ jobs:
             ${{ matrix.service }}/target/surefire-reports/*.xml
             ${{ matrix.service }}/target/site/jacoco/
             ${{ matrix.service }}/target/classes/
+            ${{ matrix.service }}/target/test-classes/
           retention-days: 14
 
   python:
@@ -66,7 +67,7 @@ jobs:
       # Pin the verified lint version so future rule changes do not break unrelated PRs.
       - name: ruff
         working-directory: ${{ matrix.service }}
-        run: uvx ruff==0.16.10 check .
+        run: uvx --no-build ruff==0.16.10 check .
 
   detector-contract:
     name: Lightweight detector contract (${{ matrix.service }})
@@ -81,7 +82,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install only the lightweight test dependencies
-        run: python -m pip install -r audio-detector/tests/requirements-light.txt
+        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
       - name: Verify inference wiring, publication and shared Java fixtures without checkpoints
         working-directory: ${{ matrix.service }}
         env:
@@ -107,9 +108,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install lightweight process test dependencies
-        run: python -m pip install -r audio-detector/tests/requirements-light.txt
+        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
       - name: Lint process fixtures
-        run: pip install ruff==0.16.10 && ruff check tests/worker_redelivery
+        run: pip install --only-binary ':all:' ruff==0.16.10 && ruff check tests/worker_redelivery
       - name: Kill, redeliver, confirm, cancel and degrade Redis for both detectors
         run: tests/worker_redelivery/run.sh
 
@@ -125,7 +126,8 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      # No dependency needs an install script on Linux (only macOS fsevents has one).
+      - run: npm ci --ignore-scripts
       - run: npm run lint
       - run: npm run test:ci         # Includes the SSE transport and both screen recovery regressions.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -336,4 +338,5 @@ jobs:
         with:
           args: >
             -Dsonar.java.libraries=/home/runner/.m2/repository/**/*.jar
+            -Dsonar.java.test.libraries=/home/runner/.m2/repository/**/*.jar
             -Dsonar.qualitygate.wait=true

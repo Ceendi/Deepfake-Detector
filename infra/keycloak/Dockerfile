@@ -8,7 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY . .
 # Type checking stays in the frontend CI job; tests import fixtures outside this context.
-RUN npx vite build && npx keycloakify build
+RUN ./node_modules/.bin/vite build && ./node_modules/.bin/keycloakify build
 
 FROM quay.io/keycloak/keycloak:26.8.1
 COPY --from=theme /frontend/dist_keycloak/keycloak-theme.jar /opt/keycloak/providers/keycloak-theme.jar

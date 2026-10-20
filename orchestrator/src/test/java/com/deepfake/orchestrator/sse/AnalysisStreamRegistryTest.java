@@ -37,7 +37,7 @@ class AnalysisStreamRegistryTest {
             registry.heartbeat();
         }
         assertThat(emitter.events).isEmpty();
-        synchronized(session) { assertThat(session.video.progress()).isEqualTo(9999); assertThat(session.audio.progress()).isEqualTo(9999); assertThat(session.heartbeat).isTrue(); }
+        synchronized(session) { assertThat(session.video.progress()).isEqualTo(9999); assertThat(session.audio.progress()).isEqualTo(9999); assertThat(session.heartbeatPending).isTrue(); }
         RegistryTestHarness.ready(registry,emitter);
         await().atMost(Duration.ofSeconds(2)).untilAsserted(() -> assertThat(emitter.events).hasSize(3));
     }

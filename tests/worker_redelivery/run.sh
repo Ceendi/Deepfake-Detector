@@ -6,7 +6,7 @@ compose=(docker compose -p "$project" -f "$root/tests/worker_redelivery/compose.
 cleanup() {
   status=$?
   # Keep broker/Redis diagnostics: a fixture that dies at startup is otherwise invisible.
-  if [ "$status" -ne 0 ]; then
+  if [[ "$status" -ne 0 ]]; then
     "${compose[@]}" ps -a || true
     "${compose[@]}" logs --no-color --tail 200 || true
   fi
