@@ -36,7 +36,7 @@ jobs:
           python-version: '3.12'
       - name: Install lightweight worker process fixtures
         if: matrix.service == 'orchestrator'
-        run: python -m pip install --only-binary :all: -r audio-detector/tests/requirements-light.txt
+        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
       - name: Install ffprobe for file validation tests
         if: matrix.service == 'file-service'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -82,7 +82,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install only the lightweight test dependencies
-        run: python -m pip install --only-binary :all: -r audio-detector/tests/requirements-light.txt
+        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
       - name: Verify inference wiring, publication and shared Java fixtures without checkpoints
         working-directory: ${{ matrix.service }}
         env:
@@ -108,9 +108,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install lightweight process test dependencies
-        run: python -m pip install --only-binary :all: -r audio-detector/tests/requirements-light.txt
+        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
       - name: Lint process fixtures
-        run: pip install --only-binary :all: ruff==0.16.10 && ruff check tests/worker_redelivery
+        run: pip install --only-binary ':all:' ruff==0.16.10 && ruff check tests/worker_redelivery
       - name: Kill, redeliver, confirm, cancel and degrade Redis for both detectors
         run: tests/worker_redelivery/run.sh
 
