@@ -9,7 +9,7 @@ description = "Audio Detector Service for Deepfakes"
 requires-python = ">=3.12"
 dependencies = [
     "deepfake-detector-runtime",
-    "fastapi==0.143.2",
+    "fastapi==0.143.3",
     "uvicorn[standard]==0.54.0",
     "pika==1.4.4",
     "pydantic==2.14.1",
