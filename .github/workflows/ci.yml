@@ -43,6 +43,15 @@ jobs:
       - name: verify
         working-directory: ${{ matrix.service }}
         run: ./mvnw -B verify -Dsurefire.rerunFailingTestsCount=2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-results-java-${{ matrix.service }}
+          path: |
+            ${{ matrix.service }}/target/surefire-reports/*.xml
+            ${{ matrix.service }}/target/site/jacoco/
+            ${{ matrix.service }}/target/classes/
+          retention-days: 14
 
   python:
     name: python (${{ matrix.service }})
@@ -77,7 +86,16 @@ jobs:
         working-directory: ${{ matrix.service }}
         env:
           AWS_EC2_METADATA_DISABLED: 'true'
-        run: python -m pytest -q tests
+          COV_SOURCE: ${{ matrix.service == 'detector-runtime' && 'detector_runtime' || 'src' }}
+        run: >-
+          python -m pytest -q tests --junitxml=reports/junit.xml
+          --cov="$COV_SOURCE" --cov-report=xml:reports/coverage.xml --cov-report=term
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-results-contract-${{ matrix.service }}
+          path: ${{ matrix.service }}/reports/
+          retention-days: 14
 
   worker-redelivery:
     name: Worker process redelivery (RabbitMQ and Redis)
@@ -109,7 +127,15 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
-      - run: npm run test:run        # Includes the SSE transport and both screen recovery regressions.
+      - run: npm run test:ci         # Includes the SSE transport and both screen recovery regressions.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-results-frontend
+          path: |
+            frontend/reports/
+            frontend/coverage/
+          retention-days: 14
       - run: npm run build
       # Keep audit blocking, but execute regressions even when an unrelated advisory is published.
       - run: npm audit --audit-level=high
@@ -181,10 +207,19 @@ jobs:
       - name: Install the frozen CPU dependency graph
         # training/tests needs the audio "training" extra; video-detector has no extras.
         run: uv sync --frozen --all-extras
+      # pytest-cov is a CI-only overlay; it is not part of the locked runtime graph.
       - name: Run consumer and extraction regressions
-        run: uv run --frozen python -m pytest -q tests
+        run: >-
+          uv run --frozen --with 'pytest-cov>=7,<8' python -m pytest -q tests
+          --junitxml=reports/junit.xml --cov=src --cov-report=xml:reports/coverage.xml --cov-report=term
       - name: Exercise offline model checkpoints and gradients
-        run: uv run --frozen python -m pytest -q training/tests
+        run: uv run --frozen python -m pytest -q training/tests --junitxml=reports/junit-training.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: test-results-ml-${{ matrix.service }}
+          path: ${{ matrix.service }}/reports/
+          retention-days: 14
 
   detector-images:
     name: Detector image security and compatibility (${{ matrix.service }})
@@ -228,3 +263,77 @@ jobs:
           name: detector-image-scan-${{ matrix.service }}
           path: detector-image.json
           if-no-files-found: error
+
+  test-report:
+    name: Test report
+    needs: [java, detector-contract, frontend, ml-compatibility]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: test-results-*
+          path: test-results
+      - name: Publish JUnit results in the run summary
+        uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        with:
+          # Surefire and pytest/vitest JUnit files only; coverage XML lives in the same artifacts.
+          report_paths: |
+            test-results/**/TEST-*.xml
+            test-results/**/junit*.xml
+          check_name: Test report
+          annotate_only: true
+          detailed_summary: true
+          include_passed: false
+          group_suite: true
+          flaky_summary: true
+
+  sonar:
+    name: SonarCloud Quality Gate
+    needs: [java, detector-contract, frontend, ml-compatibility]
+    # Fork PRs get no SONAR_TOKEN; they still run every other check.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # blame data for "new code" detection
+      # Restores ~/.m2 so the Java analyzer resolves dependency types (sonar.java.libraries).
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: test-results-java-*
+          path: java-artifacts
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: test-results-frontend
+          path: frontend
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: test-results-contract-*
+          path: python-reports
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: test-results-ml-*
+          path: python-reports
+      - name: Put reports where sonar-project.properties expects them
+        run: |
+          for service in gateway eureka-server orchestrator file-service; do
+            mkdir -p "$service/target"
+            cp -r "java-artifacts/test-results-java-$service/." "$service/target/"
+          done
+          # vitest writes lcov paths relative to frontend/; Sonar resolves them from the repo root.
+          sed -i 's|^SF:|SF:frontend/|' frontend/coverage/lcov.info
+      - name: Analyze and wait for the Quality Gate
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.java.libraries=/home/runner/.m2/repository/**/*.jar
+            -Dsonar.qualitygate.wait=true

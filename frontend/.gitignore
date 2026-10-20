@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Test reports and coverage
+/coverage/
+/reports/
+
 # Playwright (E2E)
 /test-results/
 /playwright-report/

@@ -9,7 +9,13 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
 
   retries: process.env.CI ? 2 : 1,
-  reporter: 'html',
+  // CI publishes the HTML report as an artifact and the JUnit XML in the run summary.
+  reporter: process.env.CI
+    ? [
+        ['html', { open: 'never' }],
+        ['junit', { outputFile: 'reports/e2e-junit.xml' }],
+      ]
+    : 'html',
 
   timeout: 120_000,
   expect: { timeout: 20_000 },
