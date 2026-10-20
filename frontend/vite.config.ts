@@ -37,7 +37,14 @@ export default defineConfig(({ mode }) => ({
       // lcov feeds SonarCloud; html is uploaded as a CI artifact.
       reporter: ['text-summary', 'lcov', 'html'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/**/*.d.ts', 'src/api/generated/**'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/test/**',
+        'src/**/*.d.ts',
+        'src/api/generated/**',
+        // Component catalogue, routed only in development builds.
+        'src/pages/Playground/**',
+      ],
     },
   },
   server: {
