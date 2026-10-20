@@ -32,6 +32,13 @@ export default defineConfig(({ mode }) => ({
     css: true,
     passWithNoTests: true,
     exclude: ['tests/e2e/**', 'node_modules/**'],
+    coverage: {
+      provider: 'v8',
+      // lcov feeds SonarCloud; html is uploaded as a CI artifact.
+      reporter: ['text-summary', 'lcov', 'html'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/**/*.d.ts', 'src/api/generated/**'],
+    },
   },
   server: {
     proxy: {

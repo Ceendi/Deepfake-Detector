@@ -63,7 +63,7 @@ jobs:
         working-directory: frontend
       - if: failure()
         run: $COMPOSE logs --no-color > compose.log
-      - if: failure()
+      - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-report
@@ -71,6 +71,15 @@ jobs:
             frontend/playwright-report
             frontend/test-results
             compose.log
-          retention-days: 7
+          retention-days: 14
+      - name: Publish E2E results in the run summary
+        if: always()
+        uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        with:
+          report_paths: frontend/reports/e2e-junit.xml
+          check_name: E2E test report
+          annotate_only: true
+          detailed_summary: true
+          include_passed: false
       - if: always()
         run: $COMPOSE down -v
