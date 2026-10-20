@@ -5,86 +5,55 @@
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
 
 version: 2
+
+# All version updates arrive as one weekly PR: with "branches must be up to date" protection,
+# separate PRs would each need a rebase and a full CI run in turn. Majors and deliberate pins stay
+# in each ecosystem's ignore list; security updates still arrive immediately as their own PRs.
+multi-ecosystem-groups:
+  weekly:
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "build(deps)"
+    labels: [dependencies]
+
 updates:
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    groups:
-      github-actions:
-        patterns:
-          - "*"
-    commit-message:
-      prefix: "ci"
-    labels:
-      - "dependencies"
-      - "ci"
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
 
   - package-ecosystem: docker-compose
     directory: /
-    schedule:
-      interval: weekly
-      day: monday
-    groups:
-      docker-compose:
-        patterns:
-          - "*"
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
     # Python minor bumps (incl. release candidates like 3.15.0rc3) are deliberate; patches stay automatic.
     ignore:
       - dependency-name: "python"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       # Locally built images (bases are tracked in their Dockerfiles) do not exist on Docker Hub.
       - dependency-name: "deepfake-*"
-    commit-message:
-      prefix: "build(infra)"
-    labels:
-      - "dependencies"
-      - "infra"
 
   - package-ecosystem: docker
     directory: /gateway
-    schedule:
-      interval: weekly
-      day: monday
-    commit-message:
-      prefix: "build(gateway)"
-    labels:
-      - "dependencies"
-      - "infra"
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
 
   - package-ecosystem: docker
     directory: /eureka-server
-    schedule:
-      interval: weekly
-      day: monday
-    commit-message:
-      prefix: "build(eureka-server)"
-    labels:
-      - "dependencies"
-      - "infra"
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
 
   - package-ecosystem: docker
     directory: /orchestrator
-    schedule:
-      interval: weekly
-      day: monday
-    commit-message:
-      prefix: "build(orchestrator)"
-    labels:
-      - "dependencies"
-      - "infra"
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
 
   - package-ecosystem: docker
     directory: /file-service
-    schedule:
-      interval: weekly
-      day: monday
-    commit-message:
-      prefix: "build(file-service)"
-    labels:
-      - "dependencies"
-      - "infra"
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
 
   # Bases of the locally built infra images (deepfake-* tags in compose, ignored above).
   - package-ecosystem: docker
@@ -93,32 +62,21 @@ updates:
       - /infra/keycloak
       - /infra/keycloak-config-cli
       - /infra/alloy
-    schedule:
-      interval: weekly
-      day: monday
-    groups:
-      infra-images:
-        patterns:
-          - "*"
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
     # keycloak-config-cli builds and runs on Java 21; a JDK move must change both stages together.
     # The maven builder tag encodes the JDK as a suffix that update-types cannot classify.
     ignore:
       - dependency-name: "maven"
       - dependency-name: "eclipse-temurin"
         update-types: ["version-update:semver-major"]
-    commit-message:
-      prefix: "build(infra)"
-    labels:
-      - "dependencies"
-      - "infra"
 
   - package-ecosystem: docker
     directories:
       - /video-detector
       - /audio-detector
-    schedule:
-      interval: weekly
-      day: monday
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
     # An Ubuntu release changes the system Python the detectors run on, and 24.10-style tags are
     # short-lived non-LTS releases; move between LTS versions deliberately. The version range also
     # covers digest refreshes, which Dependabot has written with a newer tag. 24.04 digests still update.
@@ -127,27 +85,20 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "ubuntu"
         versions: [">= 24.05"]
-    commit-message:
-      prefix: "build(deps)"
-    labels: [dependencies, infra]
 
   - package-ecosystem: uv
     directories:
       - /video-detector
       - /audio-detector
       - /detector-runtime
-    schedule:
-      interval: weekly
-      day: monday
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
     # CI-only pip file; its `-e ./detector-runtime` is relative to the repo root, not the file.
     exclude-paths:
       - "**/requirements-light.txt"
     # Images install [project.dependencies] from pyproject, not the lock, so runtime pins are exact
     # (==X.Y.Z); `increase` moves them. Wildcard pins (==X.*) would be widened into ranges instead.
     versioning-strategy: increase
-    groups:
-      python:
-        update-types: ["minor", "patch"]
     # Inference runtimes change scores and latency; bump them deliberately with accuracy and
     # latency measurements (AGENTS.md quality targets).
     ignore:
@@ -161,9 +112,6 @@ updates:
       - dependency-name: "transformers"
       - dependency-name: "timm"
       - dependency-name: "insightface"
-    commit-message:
-      prefix: "build(deps)"
-    labels: [dependencies]
 
   - package-ecosystem: maven
     directories:
@@ -171,12 +119,8 @@ updates:
       - /eureka-server
       - /orchestrator
       - /file-service
-    schedule:
-      interval: weekly
-      day: monday
-    groups:
-      maven:
-        update-types: ["minor", "patch"]
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
     # Spring Boot minors need a matching Spring Cloud release train and springdoc line, so the
     # framework moves deliberately in all four services at once; majors are migrations.
     ignore:
@@ -188,21 +132,11 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "org.springdoc:*"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-    commit-message:
-      prefix: "build(deps)"
-    labels: [dependencies]
 
   - package-ecosystem: npm
     directory: /frontend
-    schedule:
-      interval: weekly
-      day: monday
-    groups:
-      frontend:
-        update-types: ["minor", "patch"]
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-    commit-message:
-      prefix: "build(frontend)"
-    labels: [dependencies]
