@@ -15,7 +15,7 @@ dependencies = [
     "pydantic==2.14.1",
     "prometheus-client==0.26.0",
     "structlog==25.5.0",
-    "boto3==1.43.113",
+    "boto3==1.43.114",
     "opentelemetry-sdk==1.45.1",
     "opentelemetry-exporter-otlp-proto-http==1.45.1",
     "soundfile==0.14.0",
