@@ -28,7 +28,7 @@ dependencies = [
     # Patched runtime transitive dependencies.
     "fsspec==2026.9.0",
     "anyio==4.15.1",
-    "pillow==12.3.0",
+    "pillow==13.0.0",
     "starlette==1.8.0",
     "urllib3==2.8.0",
 ]
