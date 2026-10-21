@@ -10,10 +10,10 @@ pull request ─► CI ──────────────► tests, cove
              ├► E2E ─────────────► full core + auth stack in Compose, Playwright in Chromium
              ├► Infrastructure smoke ► restarts, discovery, Keycloak, S3/RabbitMQ least privilege
              ├► Security scan ───► Trivy on every Compose image and on Dockerfile/Compose config
-             └► build-push ──────► images are built, not pushed (only when an image definition changes)
+             └► build-push ──────► images are built and scanned, not pushed (only when an image definition changes)
 
 push to main ─► the same workflows
-              └► CI passes ─► build-push ─► GHCR: sha-<commit> + latest
+              └► CI passes ─► build-push ─► Trivy ─► GHCR: sha-<commit> + latest + provenance
 ```
 
 Every workflow runs on pull requests and on pushes to `main`. Pull request runs that are
@@ -28,7 +28,7 @@ workflows that a change cannot affect (for example E2E for a documentation-only 
 | `e2e.yml` (E2E) | PR (app paths), push | `playwright`: `docker compose up --wait` of the core and auth profiles, then Playwright through Keycloak login, upload and analysis | a service is unhealthy or a browser test fails |
 | `infra-smoke.yml` | PR (infra paths), push | restart and persistence, Prometheus scraping of every replica, Tempo ingest, Keycloak import, discovery isolation, S3 and RabbitMQ permissions | a running stack does not behave as configured |
 | `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability |
-| `build-push.yml` | after CI on `main`, PR (image paths), manual | `image (*)` for 8 images | an image does not build |
+| `build-push.yml` | after CI on `main`, PR (image paths), manual | `image (*)` for 8 images: build, Trivy, push, provenance attestation | an image does not build or has a CRITICAL vulnerability |
 
 ## Tests and reports
 
@@ -72,7 +72,18 @@ ghcr.io/ceendi/deepfake-detector/<image>:latest
 Images: `gateway`, `eureka-server`, `orchestrator`, `file-service`, `video-detector`,
 `audio-detector`, `keycloak` (with the login theme) and `frontend` (static build served by
 unprivileged nginx). Each image carries the OCI `revision` label of its commit. A failed CI run
-publishes nothing. Pull requests that change an image definition build all images without pushing.
+publishes nothing. Pull requests that change an image definition build and scan all images without
+pushing.
+
+Each image is built and loaded locally first, scanned with Trivy (a CRITICAL vulnerability stops
+it, HIGH findings are listed in the job summary), and only then pushed from the same build cache.
+Every pushed image gets a signed SLSA build provenance attestation (`actions/attest`, Sigstore),
+stored next to the image in GHCR. It links the image digest to the commit and the workflow run that
+built it:
+
+```bash
+gh attestation verify oci://ghcr.io/ceendi/deepfake-detector/frontend:latest --owner Ceendi
+```
 
 ## Deployment verification
 
