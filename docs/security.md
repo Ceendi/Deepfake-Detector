@@ -77,13 +77,16 @@ upload throttling; other Redis uses fail open ([reliability](reliability.md)).
 | `npm audit --audit-level=high` | `ci.yml` | a high advisory exists |
 | Trivy, detector images | `ci.yml` | a HIGH/CRITICAL finding has a fix |
 | Trivy, every Compose image + SARIF to Code Scanning | `security-scan.yml` (also weekly) | any CRITICAL finding |
+| Trivy, every published image (incl. `frontend` and `keycloak`) before push | `build-push.yml` | any CRITICAL finding (the image is not published) |
 | Trivy, Compose/Dockerfile configuration | `security-scan.yml` | report only |
 | SBOM (CycloneDX, Syft) | `security-scan.yml` | artifact only |
 
-Supporting practices: Dependabot for every ecosystem (grouped, weekly); all third-party actions
+Supporting practices: Dependabot for every ecosystem (grouped, weekly) plus Dependabot security
+updates for vulnerable transitive dependencies; all third-party actions
 pinned to full commit SHAs; `harden-runner` on the security jobs; least-privilege `permissions:`
 per job; npm installs in CI and images run without lifecycle scripts; images are published only
-after CI passes. Code Scanning closes alerts of image categories that are no longer scanned, so the
+after CI passes and carry a signed SLSA build provenance attestation (`gh attestation verify`).
+Code Scanning closes alerts of image categories that are no longer scanned, so the
 list reflects the current deployment.
 
 Reviewed SonarCloud exceptions (operator-supplied CLI paths, the contract upload limit, an

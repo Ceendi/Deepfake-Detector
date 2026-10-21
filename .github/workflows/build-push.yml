@@ -1,8 +1,9 @@
 name: build-push
 
 # Publishes the deployable images to GHCR after CI (tests + SonarCloud Quality Gate) passes on
-# main. Tags: sha-<short commit> for every build, latest for main only. PRs that touch an image
-# definition build it without pushing.
+# main. Every image is scanned with Trivy before it is pushed (a CRITICAL finding blocks it) and
+# gets a signed SLSA build provenance attestation. Tags: sha-<short commit> for every build,
+# latest for main only. PRs that touch an image definition build and scan it without pushing.
 on:
   workflow_run:
     workflows: [CI]
@@ -36,6 +37,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Sigstore signing and the attestation API for build provenance.
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -71,13 +75,6 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        if: github.event_name != 'pull_request'
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         id: meta
         with:
@@ -89,14 +86,60 @@ jobs:
             org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha || github.sha }}
 
       # Backend Dockerfiles are self-contained per service dir; keycloak and frontend build
-      # from the frontend sources.
+      # from the frontend sources. The image is loaded locally first so it is scanned before
+      # anything is pushed.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context || format('./{0}', matrix.service) }}
           file: ${{ matrix.file || '' }}
           build-contexts: ${{ matrix.build-contexts || '' }}
-          push: ${{ github.event_name != 'pull_request' }}
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.75.0
+          image-ref: ${{ steps.ns.outputs.image }}:sha-${{ steps.ns.outputs.short }}
+          format: json
+          output: trivy.json
+          severity: HIGH,CRITICAL
+          vuln-type: "os,library"
+          exit-code: "0"
+
+      # Same gate as the compose image scan: CRITICAL fails, HIGH is listed in the job summary.
+      # No SARIF: security-scan.yml owns the Code Scanning categories.
+      - name: reject critical vulnerabilities
+        run: python3 infra/security/report.py trivy.json
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Every layer is in the builder cache from the scanned build, so this only pushes it.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        id: build
+        if: github.event_name != 'pull_request'
+        with:
+          context: ${{ matrix.context || format('./{0}', matrix.service) }}
+          file: ${{ matrix.file || '' }}
+          build-contexts: ${{ matrix.build-contexts || '' }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+
+      # Verify with: gh attestation verify oci://<image>:<tag> --owner <repo owner>
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: github.event_name != 'pull_request'
+        with:
+          subject-name: ${{ steps.ns.outputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+          # Storage records are only available to organization-owned repositories.
+          create-storage-record: false

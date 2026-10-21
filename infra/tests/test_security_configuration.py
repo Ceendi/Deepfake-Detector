@@ -62,12 +62,25 @@ class SecurityConfigurationTest(unittest.TestCase):
     def test_every_action_in_the_publishing_job_is_immutable(self):
         workflow = (ROOT / '.github/workflows/build-push.yml').read_text()
         self.assertIn('packages: write', workflow)
-        actions = re.findall(r'(?m)^\s+- uses: (\S+)(.*)$', workflow)
+        actions = re.findall(r'(?m)^\s+(?:- )?uses: (\S+)(.*)$', workflow)
         self.assertTrue(actions)
         for action, comment in actions:
             with self.subTest(action=action):
                 self.assertRegex(action, r'@[0-9a-f]{40}$')
                 self.assertRegex(comment, r'# v\d+\.\d+\.\d+')
+
+    def test_published_images_are_scanned_before_push_and_attested(self):
+        workflow = (ROOT / '.github/workflows/build-push.yml').read_text()
+        scan = workflow.index('aquasecurity/trivy-action@')
+        gate = workflow.index('infra/security/report.py')
+        push = workflow.index('push: true')
+        attest = workflow.index('actions/attest@')
+        self.assertLess(scan, gate)
+        self.assertLess(gate, push)
+        self.assertLess(push, attest)
+        self.assertEqual(1, workflow.count('push: true'))
+        self.assertIn('subject-digest: ${{ steps.build.outputs.digest }}', workflow)
+        self.assertIn('push-to-registry: true', workflow)
 
 
 if __name__ == '__main__':
