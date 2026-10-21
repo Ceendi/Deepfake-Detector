@@ -39,7 +39,11 @@
 		<httpcore5.version>5.4.4</httpcore5.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 		<freemarker.version>2.3.35</freemarker.version>
-		<postgresql.version>42.7.13</postgresql.version>
+		<postgresql.version>42.7.14</postgresql.version>
+		<!-- Transitive through Netflix Eureka, which still pins vulnerable releases. -->
+		<httpclient4.version>4.5.14</httpclient4.version>
+		<guava.version>33.7.2-jre</guava.version>
+		<commons-jxpath.version>1.4.0</commons-jxpath.version>
 		<rabbit-amqp-client.version>5.37.0</rabbit-amqp-client.version>
 	</properties>
 	<dependencies>
@@ -151,6 +155,21 @@
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
+			<dependency>
+				<groupId>org.apache.httpcomponents</groupId>
+				<artifactId>httpclient</artifactId>
+				<version>${httpclient4.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.google.guava</groupId>
+				<artifactId>guava</artifactId>
+				<version>${guava.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>commons-jxpath</groupId>
+				<artifactId>commons-jxpath</artifactId>
+				<version>${commons-jxpath.version}</version>
+			</dependency>
 			<dependency>
 				<groupId>org.bouncycastle</groupId>
 				<artifactId>bcprov-jdk18on</artifactId>
