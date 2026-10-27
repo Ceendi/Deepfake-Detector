@@ -30,6 +30,10 @@
 		<java.version>25</java.version>
 		<spring-cloud.version>2025.1.3</spring-cloud.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
+		<!-- Integration test classes start their own containers and share no state, so two JVMs
+		     run them side by side (most of the suite's time is containers and fault waits, not CPU).
+		     Override with -DforkCount=1 to debug a single sequential run. -->
+		<forkCount>2</forkCount>
 
 		<!-- Security patches shared by the independently built services. -->
 		<jackson-2-bom.version>2.22.3</jackson-2-bom.version>
