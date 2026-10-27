@@ -27,6 +27,7 @@ dependencies = [
     "redis==8.1.0",
     "matplotlib==3.11.2",
     # Patched runtime transitive dependencies.
+    "filelock==4.2.1",
     "fsspec==2026.9.0",
     "anyio==4.15.1",
     "pillow==13.0.0",

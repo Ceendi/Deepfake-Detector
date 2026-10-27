@@ -34,6 +34,7 @@ dependencies = [
     "msgpack==1.2.3",
     "starlette==1.8.0",
     "urllib3==2.8.0",
+    "filelock==4.2.1",
     "insightface==2.1",   # RetinaFace buffalo_l (detection-only) + norm_crop
 ]
 
