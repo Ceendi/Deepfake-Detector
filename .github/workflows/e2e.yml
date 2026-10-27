@@ -75,6 +75,14 @@ jobs:
         working-directory: frontend
       - name: Start core and auth
         run: $COMPOSE up -d --build --wait --wait-timeout 600
+      # Playwright drives the dev server; this covers the web UI container itself: settings
+      # rendered at start (Keycloak from KEYCLOAK_PORT) and /api proxied to the gateway.
+      - name: Check the frontend container
+        run: |
+          curl -fsS http://127.0.0.1:4173/ | grep -F '<script src="/config.js"></script>'
+          curl -fsS http://127.0.0.1:4173/config.js | tee /dev/stderr |
+            grep -F '"keycloakUrl": "http://localhost:8180"'
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4173/api/analysis)" = 401
       - run: ./node_modules/.bin/playwright install --with-deps chromium
         working-directory: frontend
       - run: ./node_modules/.bin/playwright test --project=chromium

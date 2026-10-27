@@ -44,7 +44,7 @@ skipped, cancelled or failed, so a skipped required check never stands in for an
 | `e2e.yml` (E2E) | PR (app paths), push | `playwright`: `docker compose up --wait` of the core and auth profiles, then Playwright through Keycloak login, upload and analysis | a service is unhealthy or a browser test fails |
 | `infra-smoke.yml` | PR (infra paths), push | restart and persistence, Prometheus scraping of every replica, Tempo ingest, Keycloak import, discovery isolation, S3 and RabbitMQ permissions | a running stack does not behave as configured |
 | `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability |
-| `build-push.yml` | after CI on `main`, PR (image paths), manual | `image (*)` for 8 images: build, Trivy, push, provenance attestation | an image does not build or has a CRITICAL vulnerability |
+| `build-push.yml` | after CI on `main`, PR (image paths), manual | `image (*)` for 11 images: build, Trivy, push, provenance attestation | an image does not build or has a CRITICAL vulnerability |
 
 ## Tests and reports
 
@@ -86,8 +86,15 @@ ghcr.io/ceendi/deepfake-detector/<image>:latest
 ```
 
 Images: `gateway`, `eureka-server`, `orchestrator`, `file-service`, `video-detector`,
-`audio-detector`, `keycloak` (with the login theme) and `frontend` (static build served by
-unprivileged nginx). Each image carries the OCI `revision` label of its commit. A failed CI run
+`audio-detector`, `keycloak` (with the login theme), `frontend` (static build served by
+unprivileged nginx) and the patched infrastructure images `postgres`, `keycloak-config-cli` and
+`alloy`. Together they are every image `docker-compose.yml` builds, so a plain
+`docker compose up` runs the published images without building anything
+(`infra/tests/test_compose_images.py` keeps the two lists in sync). `DEEPFAKE_IMAGE_TAG` in `.env`
+selects the tag: `latest` by default, or `sha-<commit>` for a reproducible deployment. The
+frontend image reads its Keycloak address from the container environment at start (`/config.js`),
+so the same image works with any `KEYCLOAK_PORT`. Each image carries the OCI `revision` label of
+its commit. A failed CI run
 publishes nothing. Pull requests that change an image definition build and scan all images without
 pushing.
 
@@ -104,7 +111,9 @@ gh attestation verify oci://ghcr.io/ceendi/deepfake-detector/frontend:latest --o
 ## Deployment verification
 
 The E2E workflow starts the stack from the commit with `docker compose up --build --wait`, which
-waits for every healthcheck, and then drives the real UI. Infrastructure smoke restarts services
+waits for every healthcheck, and then drives the real UI. `--build` makes Compose build every
+image from the checkout instead of pulling the published ones, so E2E always tests the pull
+request's own code. Infrastructure smoke restarts services
 and checks that state survives, that every file-service replica is registered and scraped, and that
 traces reach Tempo.
 
