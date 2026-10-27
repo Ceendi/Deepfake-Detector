@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -21,6 +22,8 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -468,11 +471,14 @@ class AnalysisCapacityTransactionIntegrationTest {
         // Pause only the disposable Redis container. Capacity must not touch Redis at all.
         redisContainer.getDockerClient().pauseContainerCmd(redisContainer.getContainerId()).exec();
         try {
+            long started = System.nanoTime();
             service.failFromDlq(id, "video", "Redis down");
             service.failFromDlq(id, "video", "duplicate with Redis down");
             create();
             assertThatThrownBy(this::create).isInstanceOf(TooManyAnalysesException.class);
             assertThat(active()).isEqualTo(20);
+            // Fail-open: one command timeout, then the degraded bypass skips Redis entirely.
+            assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(10));
         } finally {
             redisContainer.getDockerClient().unpauseContainerCmd(redisContainer.getContainerId()).exec();
         }
@@ -511,7 +517,10 @@ class AnalysisCapacityTransactionIntegrationTest {
     static class RedisConfig {
         @Bean
         LettuceConnectionFactory redisConnectionFactory() {
-            return new LettuceConnectionFactory(redisContainer.getHost(), redisContainer.getMappedPort(6379));
+            // The application.yaml command timeout; Lettuce's own 60s default would hide a slow outage path.
+            var client = LettuceClientConfiguration.builder().commandTimeout(Duration.ofMillis(250)).build();
+            return new LettuceConnectionFactory(
+                    new RedisStandaloneConfiguration(redisContainer.getHost(), redisContainer.getMappedPort(6379)), client);
         }
         @Bean
         StringRedisTemplate redisTemplate(LettuceConnectionFactory connectionFactory) {
