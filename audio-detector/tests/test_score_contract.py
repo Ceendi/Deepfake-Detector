@@ -110,9 +110,10 @@ def test_real_analyze_path_selects_model_and_builds_contract(
     instance.mel_module = MagicMock()
     instance.w2v2_session = MagicMock()
     instance.w2v2_session.run.return_value = [[[math.log(raw_score / (1 - raw_score))]]]
-    monkeypatch.setattr(module.torch, "sqrt", MagicMock(return_value=.1))
-    monkeypatch.setattr(module.torch, "sigmoid", MagicMock(
-        return_value=MagicMock(item=MagicMock(return_value=raw_score))))
+    torch = MagicMock()
+    torch.sqrt.return_value = .1
+    torch.sigmoid.return_value.item.return_value = raw_score
+    monkeypatch.setattr(module, "torch", torch)
     result = instance.analyze(str(tmp_path / "input"), mode=mode)
     assert result["prob_fake"] == normalize_audio_score(raw_score, threshold)
     assert result["metadata"]["threshold_used"] == threshold
