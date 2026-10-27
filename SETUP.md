@@ -12,9 +12,10 @@ Needs only Docker (see [Requirements](#requirements)). From the project root:
 
 ```bash
 cp .env.example .env
-docker compose --profile core --profile auth --profile ml up -d
+docker compose up -d
 ```
 
+`COMPOSE_PROFILES=core,auth,ml` in `.env` selects the profiles, so no `--profile` is needed.
 Compose pulls the images that CI publishes to `ghcr.io/ceendi/deepfake-detector` (tag
 `latest` = the last green `main`) and starts the whole application, web UI included. Open
 **<http://localhost:4173>** and create an account (registration is open; the default realm has
@@ -25,11 +26,12 @@ service `healthy` when it is ready; uploads are analysed once both detectors are
 
 - **Test users:** add `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` to `.env` before the first
   start to get `alice` / `bob` (password `Test1234!@`); local use only.
-- **Updating:** `docker compose --profile core --profile auth --profile ml pull`, then `up -d`
-  again. A plain `up` reuses the images already on the machine.
+- **Updating:** `docker compose pull`, then `docker compose up -d` again. A plain `up` reuses
+  the images already on the machine.
 - **Pinning a version:** set `DEEPFAKE_IMAGE_TAG=sha-<7-character commit>` in `.env` to run the
   exact images built from that commit of `main` (a reproducible deployment).
-- **Monitoring:** add `--profile monitoring` (Grafana at <http://localhost:3000>).
+- **Monitoring:** set `COMPOSE_PROFILES=core,auth,ml,monitoring` (Grafana at
+  <http://localhost:3000>). Without `ml` the stack is lighter but files are not analysed.
 
 To work on the code, follow the steps below instead: they build the images from your checkout
 (`up --build`) and run the frontend with the Vite dev server.
@@ -159,7 +161,8 @@ Profiles:
 | `ml` | `video-detector`, `audio-detector` | actual file analysis (downloads the models on first start) |
 | `monitoring` | Prometheus, Loki, Tempo, Grafana, Alloy | metrics/logs view (optional, can be skipped for a lighter start) |
 
-Without the `monitoring` profile (lighter on the machine):
+An explicit `--profile` replaces `COMPOSE_PROFILES` from `.env`, so these commands start exactly
+the listed profiles. Without the `monitoring` profile (lighter on the machine):
 ```bash
 docker compose --profile core --profile auth --profile ml up --build
 ```

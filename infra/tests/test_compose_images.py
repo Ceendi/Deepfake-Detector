@@ -25,6 +25,15 @@ def compose_config(**environment):
     ], cwd=ROOT, text=True, env={**os.environ, **environment}))
 
 
+def compose_services(*profiles):
+    # A COMPOSE_PROFILES set in the shell would override the one from the env file.
+    environment = {key: value for key, value in os.environ.items() if key != 'COMPOSE_PROFILES'}
+    flags = [flag for profile in profiles for flag in ('--profile', profile)]
+    return set(subprocess.check_output([
+        'docker', 'compose', '--env-file', str(ROOT / '.env.example'), *flags, 'config', '--services',
+    ], cwd=ROOT, text=True, env=environment).split())
+
+
 def published_builds():
     """Build inputs of every image build-push.yml publishes, keyed by image name."""
     workflow = (ROOT / '.github/workflows/build-push.yml').read_text()
@@ -94,6 +103,17 @@ class ComposeImagesTest(unittest.TestCase):
                 else:
                     self.assertEqual(self.services[name]['image'], service['image'])
         self.assertRegex((ROOT / '.env.example').read_text(), r'(?m)^DEEPFAKE_IMAGE_TAG=latest$')
+
+    def test_plain_up_starts_the_application_and_explicit_profiles_win(self):
+        members = {}
+        for name, service in self.services.items():
+            for profile in service.get('profiles', ['']):
+                members.setdefault(profile, set()).add(name)
+        always = members.get('', set())
+        # `docker compose up -d` after `cp .env.example .env`: the whole application, no monitoring.
+        self.assertEqual(always | members['core'] | members['auth'] | members['ml'], compose_services())
+        # Tests and CI pass --profile; that list replaces COMPOSE_PROFILES instead of adding to it.
+        self.assertEqual(always | members['core'], compose_services('core'))
 
     def test_frontend_is_served_with_the_login_stack_on_loopback(self):
         frontend = self.services['frontend']
