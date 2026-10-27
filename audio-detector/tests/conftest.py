@@ -18,6 +18,9 @@ _HEAVY = [
 ]
 
 
+# Tests replace these stubs on the module (monkeypatch.setattr(module, "torch", ...)), never their
+# attributes: pytest >= 9.2 undoes an attribute patch on a MagicMock with delattr, which hides that
+# attribute from every later test sharing the session-scoped stub.
 @pytest.fixture(scope="session")
 def inference_module():
     saved = {name: sys.modules.get(name) for name in _HEAVY + ["src.inference"]}

@@ -28,7 +28,7 @@ def test_long_container_is_rejected_before_extract_or_load(inference_module, mon
 def test_waveform_header_is_checked_before_read(inference_module, monkeypatch):
     module = inference_module
     audio = MagicMock(frames=1800 * 16000 + 1, samplerate=16000)
-    monkeypatch.setattr(module.sf, "SoundFile", MagicMock())
+    monkeypatch.setattr(module, "sf", MagicMock())
     module.sf.SoundFile.return_value.__enter__.return_value = audio
     with pytest.raises(Exception) as error:
         instance(module)._load_wav("private.wav")
@@ -104,9 +104,9 @@ def test_waveform_boundary_uses_bounded_read(inference_module, monkeypatch):
     audio = MagicMock(frames=16000, samplerate=16000)
     audio.read.return_value = np.zeros((16000, 1), dtype="float32")
     monkeypatch.setattr(module, "MEDIA_MAX_DURATION_SECONDS", 1)
-    monkeypatch.setattr(module.sf, "SoundFile", MagicMock())
+    monkeypatch.setattr(module, "sf", MagicMock())
     module.sf.SoundFile.return_value.__enter__.return_value = audio
-    monkeypatch.setattr(module.torch, "from_numpy", lambda data: data)
+    monkeypatch.setattr(module, "torch", MagicMock(from_numpy=lambda data: data))
     result = instance(module)._load_wav("input")
     assert len(result) == 16000
     audio.read.assert_called_once_with(frames=16001, dtype="float32", always_2d=True)
