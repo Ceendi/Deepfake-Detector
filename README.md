@@ -38,9 +38,10 @@ npm run dev
 Open **[http://localhost:5173](http://localhost:5173)** and create an account.
 The example credentials and published backend ports are for local development.
 
-To run actual analyses, download the model checkpoints as described in
-[SETUP.md](SETUP.md#step-2--download-and-place-the-models), then add `--profile ml`
-to the backend command. Checkpoints are required before building the detector images.
+To run actual analyses, add `--profile ml` to the backend command. On their first start the
+detectors download the model weights (~1.6 GB) from the Hugging Face commit pinned in each
+detector's `models.toml` and verify their SHA-256; see
+[SETUP.md](SETUP.md#step-2--models-downloaded-automatically), which also covers changing a model.
 
 ## Compose profiles
 
@@ -48,7 +49,7 @@ to the backend command. Checkpoints are required before building the detector im
 | --- | --- |
 | `core` | API gateway, application services, discovery, databases, broker and storage |
 | `auth` | Keycloak login and account management |
-| `ml` | Audio and video detectors; requires model checkpoints |
+| `ml` | Audio and video detectors; download their models on first start |
 | `monitoring` | Grafana, metrics, logs and traces |
 
 ## Architecture

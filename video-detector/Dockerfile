@@ -8,7 +8,8 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PYTHON_DOWNLOADS=never \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
-    INSIGHTFACE_ROOT=/app/.insightface
+    INSIGHTFACE_ROOT=/app/.insightface \
+    MODEL_DIR=/models
 
 # Runtime depy OpenCV; curl: healthcheck. insightface ma twarda zaleznosc na pelne
 # opencv-python (nie headless), wiec mimo opencv-python-headless w pyproject obraz
@@ -44,10 +45,11 @@ COPY --from=detector_runtime /detector_runtime /detector-runtime/detector_runtim
 RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
 
 COPY src ./src
-# training/ wnosi defy modelu (training/model.py) + checkpointy effnet_lstm
-# (last.ckpt do atencji/Grad-CAM, backbone.onnx + temporal.onnx do inferencji);
-# dataset cache / grid / venv wyciete w .dockerignore.
+# training/ only brings the model definition (training/model.py); the weights are fetched at
+# start from the commit pinned in models.toml into the /models volume.
 COPY training ./training
+COPY models.toml ./
+RUN install -d -o app -g app /models
 
 # uv leaves its advisory lock writable; runtime never installs packages.
 RUN chmod go-w /opt/venv/.lock

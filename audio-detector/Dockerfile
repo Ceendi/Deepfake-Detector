@@ -9,7 +9,8 @@ ENV PYTHONUNBUFFERED=1 \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH" \
     MPLCONFIGDIR=/tmp/matplotlib \
-    HF_HOME=/tmp/huggingface
+    HF_HOME=/tmp/huggingface \
+    MODEL_DIR=/models
 
 # ffmpeg: audio extraction; libglib2.0-0: librosa/soundfile runtime dep; curl: healthcheck.
 # No libgl1 (OpenGL) — only OpenCV needs it, and this service has no cv2.
@@ -34,6 +35,9 @@ RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
 
 COPY src ./src
 COPY training ./training
+# The weights are fetched at start from the commit pinned in models.toml into the /models volume.
+COPY models.toml ./
+RUN install -d -o app -g app /models
 
 # uv leaves its advisory lock writable; runtime never installs packages.
 RUN chmod go-w /opt/venv/.lock

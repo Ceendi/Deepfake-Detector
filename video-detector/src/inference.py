@@ -35,6 +35,7 @@ import structlog
 import torch
 from detector_runtime import MediaTooLongError
 from detector_runtime.metrics import inference_duration_buckets
+from detector_runtime.model_files import ensure_model_files
 from prometheus_client import Gauge, Histogram
 
 from .config import load_config
@@ -57,6 +58,7 @@ PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 sys.path.append(PROJECT_ROOT)
 from training.model import VideoLightningModule
 
+MODELS_MANIFEST = os.path.join(PROJECT_ROOT, "models.toml")
 MODEL_DIR = os.getenv("MODEL_DIR", os.path.join(PROJECT_ROOT, "training", "checkpoints", "effnet_lstm"))
 BACKBONE_ONNX_PATH = os.path.join(MODEL_DIR, "backbone.onnx")
 TEMPORAL_ONNX_PATH = os.path.join(MODEL_DIR, "temporal.onnx")
@@ -122,6 +124,7 @@ def _bounded_frame(frame: np.ndarray) -> np.ndarray:
 
 class VideoInference:
     def __init__(self):
+        ensure_model_files(MODELS_MANIFEST, MODEL_DIR)
         start_load = time.time()
         torch.set_num_threads(ONNX_INTRA_THREADS)
         opts = ort.SessionOptions()

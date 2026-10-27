@@ -17,6 +17,7 @@ dependencies = [
     "structlog==25.5.0",
     "boto3==1.43.114",
     "redis==8.1.0",
+    "huggingface-hub==2.1.1",
     "opentelemetry-sdk==1.45.1",
     "opentelemetry-exporter-otlp-proto-http==1.45.1",
     # --- ML stack (inferencja CPU-only: ONNX CPUExecutionProvider + torch map_location=cpu) ---
@@ -33,6 +34,7 @@ dependencies = [
     "msgpack==1.2.3",
     "starlette==1.8.0",
     "urllib3==2.8.0",
+    "filelock==4.2.1",
     "insightface==2.1",   # RetinaFace buffalo_l (detection-only) + norm_crop
 ]
 
