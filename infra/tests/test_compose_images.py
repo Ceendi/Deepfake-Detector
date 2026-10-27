@@ -100,6 +100,10 @@ class ComposeImagesTest(unittest.TestCase):
         self.assertEqual(['auth'], frontend['profiles'])
         self.assertTrue(frontend['read_only'])
         self.assertEqual(['ALL'], frontend['cap_drop'])
+        # nginx (UID 101) renders its config from the template at start; root-owned tmpfs fails.
+        self.assertIn('USER 101', (ROOT / 'frontend/Dockerfile').read_text())
+        [conf] = [mount for mount in frontend['tmpfs'] if mount.startswith('/etc/nginx/conf.d:')]
+        self.assertIn('uid=101', conf)
         [port] = frontend['ports']
         self.assertEqual(('127.0.0.1', 8080), (port['host_ip'], port['target']))
         # The browser must be sent to the same Keycloak URL that tokens are issued for.

@@ -510,8 +510,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
-      # The image entrypoint renders its nginx config here from the template at start.
-      - /etc/nginx/conf.d:rw,noexec,nosuid,size=1m
+      # The image entrypoint renders its nginx config here from the template at start, as UID 101.
+      - /etc/nginx/conf.d:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0755
     mem_limit: 128m
     logging: *default-logging
     depends_on:
