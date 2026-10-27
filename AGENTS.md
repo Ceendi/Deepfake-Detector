@@ -46,7 +46,7 @@ W komentarzach w kodzie odwołuj się tylko do `docs/adr`, `docs/contracts` i `R
 
 ```bash
 docker compose --profile core --profile auth up -d          # backend + Keycloak
-docker compose --profile core --profile auth --profile ml up -d   # + detektory (najpierw modele, patrz SETUP.md)
+docker compose --profile core --profile auth --profile ml up -d   # + detektory (pierwszy start pobiera modele, patrz SETUP.md)
 docker compose --profile core --profile monitoring up -d    # + Grafana/Prometheus/Loki/Tempo
 
 cd orchestrator && ./mvnw verify          # test + integracja (Testcontainers, wymaga Dockera); Windows: mvnw.cmd
@@ -70,6 +70,9 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
 - **Detektory:** inferencja wyłącznie CPU (ONNX `CPUExecutionProvider`, torch `map_location='cpu'`).
   Audio używa `soundfile` zamiast `torchaudio.load` (ten wymaga `torchcodec`, którego nie instalujemy).
   Obrazy instalują zależności runtime z locka (`uv sync --frozen --no-dev`), bez grupy dev i extra `training`.
+  Wagi nie są w obrazach: `*/models.toml` przypina commit repozytorium Hugging Face i sha256 plików,
+  detektor pobiera je przy starcie do wolumenu (`detector_runtime/model_files.py`). Nowy model = nowy commit na HF
+  i zmiana `models.toml` w tym samym PR co kod; nigdy branch zamiast commita.
   Audio: pakiety treningowe (Lightning, transformers, pandas…) są w extra `training`
   (`uv sync --extra training`); runtime (`src/`) nie importuje `training/`, MelCNN jest w `src/models/mel_cnn.py`.
 - **Frontend:** npm (jest `package-lock.json`), własne komponenty na CSS Modules — bez MUI/Ant/Shadcn/Tailwind.

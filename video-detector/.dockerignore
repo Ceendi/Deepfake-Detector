@@ -1,10 +1,8 @@
-# Build context musi zostac maly: dataset cache, venv i artefakty eksperymentow
-# to pojedyncze GB — do obrazu wchodza tylko src/, pyproject i modele z
-# training/checkpoints/effnet_lstm (last.ckpt + *.onnx).
+# Keep the build context small: dataset caches, venvs and experiment outputs are gigabytes.
 training/data/
 training/.venv/
-training/checkpoints/grid/
-training/checkpoints/effnet_lstm/video-epoch*.ckpt
+# Weights come from the Hub at start (models.toml), never from the build context.
+training/checkpoints/
 training/gradcam_out*/
 training/eval_results*/
 training/wandb/

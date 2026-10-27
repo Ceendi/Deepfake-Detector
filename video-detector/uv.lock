@@ -409,6 +409,7 @@ version = "0.1.0"
 source = { directory = "../detector-runtime" }
 dependencies = [
     { name = "boto3" },
+    { name = "huggingface-hub" },
     { name = "opentelemetry-api" },
     { name = "pika" },
     { name = "redis" },
@@ -418,6 +419,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", specifier = "==1.43.114" },
+    { name = "huggingface-hub", specifier = "==2.1.1" },
     { name = "opentelemetry-api", specifier = "==1.45.1" },
     { name = "pika", specifier = "==1.4.4" },
     { name = "redis", specifier = "==8.1.0" },
@@ -440,6 +442,7 @@ dependencies = [
     { name = "boto3" },
     { name = "deepfake-detector-runtime" },
     { name = "fastapi" },
+    { name = "huggingface-hub" },
     { name = "insightface" },
     { name = "lightning" },
     { name = "msgpack" },
@@ -478,6 +481,7 @@ requires-dist = [
     { name = "boto3", specifier = "==1.43.114" },
     { name = "deepfake-detector-runtime", directory = "../detector-runtime" },
     { name = "fastapi", specifier = "==0.143.3" },
+    { name = "huggingface-hub", specifier = "==2.1.1" },
     { name = "insightface", specifier = "==2.1" },
     { name = "lightning", specifier = "==2.6.6" },
     { name = "msgpack", specifier = "==1.2.3" },

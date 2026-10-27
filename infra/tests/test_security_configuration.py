@@ -82,6 +82,20 @@ class SecurityConfigurationTest(unittest.TestCase):
         self.assertIn('subject-digest: ${{ steps.build.outputs.digest }}', workflow)
         self.assertIn('push-to-registry: true', workflow)
 
+    def test_detector_images_load_their_pinned_models_before_push(self):
+        workflow = (ROOT / '.github/workflows/build-push.yml').read_text()
+        smoke = workflow.index('infra/ci:/smoke:ro')
+        self.assertLess(workflow.index('aquasecurity/trivy-action@'), smoke)
+        self.assertLess(smoke, workflow.index('push: true'))
+        self.assertIn('models: video', workflow)
+        self.assertIn('models: audio', workflow)
+        self.assertIn('"*/models.toml"', workflow)
+        for detector in ('video-detector', 'audio-detector'):
+            manifest = (ROOT / detector / 'models.toml').read_text()
+            self.assertRegex(manifest, r'(?m)^revision = "[0-9a-f]{40}"$')
+            self.assertIn('COPY models.toml', (ROOT / detector / 'Dockerfile').read_text())
+            self.assertIn('training/checkpoints/', (ROOT / detector / '.dockerignore').read_text())
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

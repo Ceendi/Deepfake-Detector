@@ -701,6 +701,8 @@ services:
       MEDIA_MAX_PIXELS: ${MEDIA_MAX_PIXELS:-8294400}
       DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
       ONNX_INTRA_THREADS: ${VIDEO_ONNX_INTRA_THREADS:-4}
+      # Weights from the commit pinned in video-detector/models.toml; downloaded on first start.
+      MODEL_DIR: /models
       # Python OTel: same gate + endpoint values as the Java *otel-env anchor, but under the
       # standard OTel SDK env name the Python OTLP exporter reads directly.
       OTEL_TRACING_EXPORT_ENABLED: ${OTEL_TRACING_EXPORT_ENABLED:-false}
@@ -711,6 +713,8 @@ services:
       S3_SECRET_KEY: ${S3_DETECTOR_SECRET}
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - video-models:/models
     networks: [deepfake]
 
   audio-detector:
@@ -738,6 +742,8 @@ services:
       MEDIA_MAX_DURATION_SECONDS: ${MEDIA_MAX_DURATION_SECONDS:-1800}
       DETECTOR_TASK_HARD_LIMIT_SECONDS: ${DETECTOR_TASK_HARD_LIMIT_SECONDS:-3600}
       ONNX_INTRA_THREADS: ${AUDIO_ONNX_INTRA_THREADS:-6}
+      # Weights from the commit pinned in audio-detector/models.toml; downloaded on first start.
+      MODEL_DIR: /models
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_USER: detector
       RABBITMQ_PASSWORD: ${RABBITMQ_DETECTOR_PASSWORD}
@@ -752,6 +758,8 @@ services:
       S3_SECRET_KEY: ${S3_DETECTOR_SECRET}
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - audio-models:/models
     networks: [deepfake]
 
   # --- Observability stack (profile: monitoring) ---------------------------------------------
@@ -907,6 +915,8 @@ volumes:
   tempo-data:
   alloy-data:
   grafana-data:
+  video-models:
+  audio-models:
 
 networks:
   deepfake:

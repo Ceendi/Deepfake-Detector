@@ -4,10 +4,9 @@ Web application for video/audio deepfake detection. The backend is a set of
 microservices (Spring Boot + Python ML services) run via Docker Compose; the
 frontend is a React (Vite) app run locally.
 
-Bringing it up takes **4 steps**: `.env` files → download the models → backend
-(Docker) → frontend (npm). The ML models are not in the repository (they are
-multi-GB) — you download them separately and drop them into the project **before**
-building the Docker images.
+Bringing it up takes **3 steps**: `.env` files → backend (Docker) → frontend (npm).
+The ML models are not in the repository; the detectors download pinned versions
+from Hugging Face on their first start (Step 2 explains how).
 
 ---
 
@@ -36,7 +35,7 @@ memory=14GB
 Apply with `wsl --shutdown` in PowerShell, then restart Docker Desktop. This is a
 ceiling shared by WSL2 distributions; leave room for Windows and close heavy apps.
 On a 16 GB machine keep `FILE_SERVICE_REPLICAS=1` in the root `.env` and omit
-`monitoring`. Start with `core` + `auth`; add `ml` after placing the models.
+`monitoring`. Start with `core` + `auth`, then add `ml`.
 
 ---
 
@@ -82,67 +81,35 @@ If you override `KEYCLOAK_PORT`, also set `VITE_KEYCLOAK_URL` in `frontend/.env`
 
 ---
 
-## Step 2 — download and place the models
+## Step 2 — models (downloaded automatically)
 
-### Where to download
+Nothing to do by hand. The model weights are not in the repository; they live in public Hugging Face
+repositories and each detector downloads them on its first start:
 
-The models are shared on SharePoint (folder **`MODELE-AUDIO-DETECTOR`**):
+| Detector | Hugging Face repository | Pinned in |
+|---|---|---|
+| `video-detector` | [Ceendi/deepfake-video-detector](https://huggingface.co/Ceendi/deepfake-video-detector) | `video-detector/models.toml` |
+| `audio-detector` | [Ceendi/deepfake-audio-detector](https://huggingface.co/Ceendi/deepfake-audio-detector) | `audio-detector/models.toml` |
 
-<https://tulodz-my.sharepoint.com/shared?id=%2Fpersonal%2F247770%5Fedu%5Fp%5Flodz%5Fpl%2FDocuments%2FMODELE%2DAUDIO%2DDETECTOR&listurl=%2Fpersonal%2F247770%5Fedu%5Fp%5Flodz%5Fpl%2FDocuments>
+- `models.toml` pins one Hugging Face **commit** and the SHA-256 of every file, so a given commit of this
+  repository (and a given image tag) always runs the same weights. A branch such as `main` is rejected.
+- The first start of the `ml` profile downloads ~1.6 GB (video ~0.3 GB, audio ~1.4 GB) into the Docker
+  volumes `video-models` and `audio-models`. Later starts only verify the checksums and work offline.
+- A file with a wrong checksum is downloaded again; if the download keeps failing (3 retries) the detector
+  stays `unhealthy` and analyses end with `MODEL_UNAVAILABLE`.
+- Outside Docker (`uv run` in a detector directory) the files go to `training/checkpoints/` as before;
+  already present files with the right checksum are used as they are.
 
-### Where to put them (folder mapping)
+### Changing a model
 
-The repo does **not** contain the `checkpoints/` directories — create them (or use the
-ready-made directories that already contain a `PLACE_MODELS_HERE.md` file marking the exact spot).
-Copy the contents **keeping the exact file names**:
-
-| From SharePoint | Into the project |
-|---|---|
-| `Audio-Detector/checkpoints/w2v2/` | `audio-detector/training/checkpoints/w2v2/` |
-| `Audio-Detector/checkpoints/mel_resnet/` | `audio-detector/training/checkpoints/mel_resnet/` |
-| `Video-Detector/checkpoints/effnet_lstm/` | `video-detector/training/checkpoints/effnet_lstm/` |
-
-### Exact files the code requires
-
-The names are hardcoded in the inference code (`*/src/inference.py`) — they must match **character-for-character**:
-
-**Audio — `audio-detector/training/checkpoints/`:**
-```
-w2v2/w2v2.onnx
-w2v2/w2v2.onnx.data                                 # weights sidecar (if present in SharePoint, upload it together with the .onnx)
-mel_resnet/mel_model-epoch=49-val_eer=0.0816.ckpt   # the name with the "=" signs must stay unchanged
-```
-
-**Video — `video-detector/training/checkpoints/effnet_lstm/`:**
-```
-backbone.onnx
-backbone.onnx.data   # if present in SharePoint (sidecar), upload it together
-temporal.onnx
-last.ckpt
-```
-The `video-epoch*.ckpt` files and the `grid/` subfolder (if any) are not needed — skip them.
-
-> ⚠️ **Most common mistake:** a renamed/incomplete file name, or skipping the `*.onnx.data` sidecar.
-> Then the detector container is `unhealthy` and every analysis ends `FAILED` with `MODEL_UNAVAILABLE`.
-> Copy **all** files from the given SharePoint folder without renaming them.
-
-### Verify placement (run from the project root)
-
-```bash
-ls -la audio-detector/training/checkpoints/w2v2/w2v2.onnx \
-       "audio-detector/training/checkpoints/mel_resnet/mel_model-epoch=49-val_eer=0.0816.ckpt" \
-       video-detector/training/checkpoints/effnet_lstm/backbone.onnx \
-       video-detector/training/checkpoints/effnet_lstm/temporal.onnx \
-       video-detector/training/checkpoints/effnet_lstm/last.ckpt
-```
-Each line should show an existing file (not "No such file or directory").
+1. Upload the new files to the Hugging Face repository (`hf upload`); never rewrite its history, because
+   older commits of this repository still point at the old revision.
+2. In the same pull request, set `revision` in `models.toml` to the new Hugging Face commit and update the
+   checksums (`sha256sum <file>`), together with any code change the new weights need.
 
 ---
 
 ## Step 3 — backend (Docker Compose)
-
-> The models are **baked into the images at build time**, so Step 2 must be finished before `--build`.
-> If you add/fix models after building the images, you must rebuild (see "Troubleshooting").
 
 From the project root:
 
@@ -156,7 +123,7 @@ Profiles:
 |---|---|---|
 | `core` | eureka, gateway, orchestrator, file-service + postgres, redis, rabbitmq, seaweedfs | the backend to work (required) |
 | `auth` | Keycloak (login) + its database | login / registration in the app |
-| `ml` | `video-detector`, `audio-detector` | actual file analysis (needs the models from Step 2) |
+| `ml` | `video-detector`, `audio-detector` | actual file analysis (downloads the models on first start) |
 | `monitoring` | Prometheus, Loki, Tempo, Grafana, Alloy | metrics/logs view (optional, can be skipped for a lighter start) |
 
 Without the `monitoring` profile (lighter on the machine):
@@ -170,10 +137,11 @@ In a separate terminal:
 ```bash
 docker compose ps
 ```
-Services should reach `healthy` within ~60 s. A detector reports `healthy` only after its models
-loaded; if one stays `unhealthy`, check its logs for `failed_to_load_*_inference`:
+Services should reach `healthy` within ~60 s; on the first start the detectors need a few more
+minutes to download their models. A detector reports `healthy` only after its models loaded; if one
+stays `unhealthy`, check its logs for `model_file_*` and `failed_to_load_*_inference`:
 ```bash
-docker compose logs audio-detector video-detector | grep -iE "ready|load|error"
+docker compose logs audio-detector video-detector | grep -iE "model_file|ready|load|error"
 ```
 
 ---
@@ -225,13 +193,12 @@ Stop the frontend with `Ctrl+C` in its terminal.
 
 ## Troubleshooting
 
-- **Detector `unhealthy`, analyses end `FAILED` with `MODEL_UNAVAILABLE`** → missing models or a wrong file name.
-  Check Step 2 (especially exact names and the `*.onnx.data` sidecars), then rebuild the detectors:
+- **Detector `unhealthy`, analyses end `FAILED` with `MODEL_UNAVAILABLE`** → the model download failed
+  (`model_file_download_failed`: no internet or Hugging Face unavailable) or a file does not match
+  `models.toml` (`model_file_checksum_mismatch`). Fix the cause and restart the detector:
   ```bash
-  docker compose --profile ml up -d --build video-detector audio-detector
+  docker compose --profile ml restart video-detector audio-detector
   ```
-- **I added the models after `--build` and nothing changed** → the images still have the old (empty) `training/`.
-  Rebuild as above (`up -d --build ...`).
 - **Frontend: "Brak zmiennej środowiskowej: VITE_..."** → missing `frontend/.env` (Step 1, second command).
 - **The first `--build` hangs for a long time on `video-detector`** → that is normal: compiling `insightface`
   and downloading the `buffalo_l` pack. It needs internet; later builds use the cache.
