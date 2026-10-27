@@ -1,15 +1,13 @@
 # DeepfakeDetector
 
-A web application for detecting deepfakes in audio and video. Upload a file,
-choose an analysis mode, follow its progress, and view or download the result.
-
-Built with React, Spring Boot and Python ML services, with Keycloak authentication
-and an asynchronous RabbitMQ pipeline.
+A web application for detecting deepfakes in video and audio. Upload a file, follow the analysis
+live and get a FAKE/REAL verdict with its confidence, Grad-CAM heatmaps and a PDF report. Built
+with React, Spring Boot microservices and Python ML detectors, Keycloak login and an asynchronous
+RabbitMQ pipeline.
 
 ## Quick start
 
-With Docker Engine 24+ and Compose v2, two commands run the whole application from the images
-CI publishes to GHCR, nothing is built locally:
+With Docker Engine 24+ and Compose v2, run the images CI publishes to GHCR (nothing is built):
 
 ```bash
 cp .env.example .env
@@ -17,59 +15,39 @@ docker compose up -d
 ```
 
 Open **[http://localhost:4173](http://localhost:4173)** and create an account. The first start
-downloads the images and the detectors' models (~1.6 GB) and takes a few minutes; analyses run
-once `docker compose ps` shows the detectors `healthy`. `COMPOSE_PROFILES` in `.env` selects what
-starts (default `core,auth,ml`); `DEEPFAKE_IMAGE_TAG=sha-<commit>` runs a specific build of `main`.
-See [SETUP.md](SETUP.md#quick-start-published-images-nothing-to-build).
+downloads the images and the detectors' models (~1.6 GB) and takes a few minutes; files are
+analysed once `docker compose ps` shows both detectors `healthy`. Memory requirements, test users,
+updates and version pinning are in [SETUP.md](SETUP.md).
 
-## Getting started (development)
+## Development
 
-You need Docker Engine 24+ with Compose v2, Node.js 22 LTS (or 20.19+) and npm. Allow about 8 GB
-of RAM for the backend and authentication, or 14–16 GB with both ML detectors.
-On Windows, WSL2 defaults to 50% of host RAM. On a 16 GB laptop, set
-`memory=14GB` in `%UserProfile%\.wslconfig`, run `wsl --shutdown`, and use
-`FILE_SERVICE_REPLICAS=1` without the `monitoring` profile. The memory limits then add up to
-14.375 GiB, but they are ceilings; during analyses the stack used about 6.6 GiB. See
-[Windows memory configuration](SETUP.md#windows--wsl2-memory).
-
-**First time here?** Follow [SETUP.md](SETUP.md) for the complete walkthrough,
-including model downloads, configuration and troubleshooting.
-
-Build and start the backend from your checkout (`auth` also builds the Keycloak login theme):
+Build the images from your checkout and run the frontend dev server (Node.js 22 LTS) with hot
+reload:
 
 ```bash
 cp .env.example .env
 cp frontend/.env.example frontend/.env
-docker compose --profile core --profile auth up -d --build
-```
+docker compose up -d --build
 
-Start the frontend in another terminal:
-
-```bash
 cd frontend
 npm ci
 npm run dev
 ```
 
-Open **[http://localhost:5173](http://localhost:5173)** and create an account.
-The example credentials and published backend ports are for local development.
-
-To run actual analyses, add `--profile ml` to the backend command. On their first start the
-detectors download the model weights (~1.6 GB) from the Hugging Face commit pinned in each
-detector's `models.toml` and verify their SHA-256; see
-[SETUP.md](SETUP.md#step-2--models-downloaded-automatically), which also covers changing a model.
+The dev server runs on **[http://localhost:5173](http://localhost:5173)**. Tests and linters:
+[running the checks locally](docs/ci-cd.md#running-the-same-checks-locally).
 
 ## Compose profiles
 
-A plain `docker compose up` starts the profiles listed in `COMPOSE_PROFILES` in `.env`
-(default `core,auth,ml`); an explicit `--profile` replaces that list.
+`COMPOSE_PROFILES` in `.env` selects what a plain `docker compose up` starts (default
+`core,auth,ml`); an explicit `--profile` replaces that list.
 
-| Profile | Purpose |
+| Profile | Starts |
 | --- | --- |
-| `core` | API gateway, application services, discovery, databases, broker and storage |
-| `auth` | Keycloak login and account management, web UI container (port 4173) |
-| `ml` | Audio and video detectors; download their models on first start |
-| `monitoring` | Grafana, metrics, logs and traces |
+| `core` | gateway, orchestrator, file-service, Eureka, PostgreSQL, Redis, RabbitMQ, SeaweedFS |
+| `auth` | Keycloak and the web UI container (port 4173) |
+| `ml` | video and audio detectors (download their models on first start) |
+| `monitoring` | Grafana, Prometheus, Loki, Tempo, Alloy |
 
 ## Architecture
 
@@ -83,23 +61,22 @@ Frontend ──► Gateway ──► File Service ──► SeaweedFS (S3)
                                   └─SSE──► Frontend
 ```
 
-The gateway is available at `http://localhost:8080`. Services discover each other
-through an internal Eureka registry, and the frontend receives progress via SSE.
+The gateway listens on `http://localhost:8080` and routes to services found through Eureka.
 
 ## Documentation
 
 - [Setup, models and troubleshooting](SETUP.md)
 - [Local backend configuration](docs/local-backend.md)
-- [API and message contracts](docs/contracts/)
-- [Monitoring](docs/observability.md)
-- [Backend reliability](docs/reliability.md)
-- [Keycloak configuration](infra/keycloak/README.md)
-- [Infisical secrets setup](infra/INFISICAL.md)
+- [API, message, storage and metric contracts](docs/contracts/)
+- [Reliability](docs/reliability.md), [security](docs/security.md),
+  [monitoring](docs/observability.md), [CI/CD](docs/ci-cd.md)
+- [Architecture decisions](docs/adr/) and [measurement reports](docs/reports/)
+- [Keycloak configuration](infra/keycloak/README.md), [Infisical secrets](infra/INFISICAL.md)
 
-## Stopping the application
-
-Stop the frontend with `Ctrl+C`. Stop the backend while keeping its data:
+## Stopping
 
 ```bash
-docker compose down
+docker compose down      # keeps the data; add -v to delete it
 ```
+
+Stop the frontend dev server with `Ctrl+C`.

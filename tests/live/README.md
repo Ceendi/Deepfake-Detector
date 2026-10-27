@@ -41,19 +41,13 @@ LIVE_REPORT=live-report.md python tests/live/live_acceptance.py
 | `LIVE_REPORT` | — | ścieżka tabeli wyników (Markdown) |
 
 Zestaw restartuje kontenery, więc uruchamiaj go wyłącznie na jednorazowym projekcie compose.
-Każda awaria sprawdza status analizy bezpośrednio przed restartem oraz po nim.
-Wynik terminalny uzyskany podczas restartu jest porównywany z bazowym; komunikat o spóźnionej
-awarii dotyczy wyłącznie analizy zakończonej przed jej wywołaniem.
-Powrót stosu do zdrowia jest sprawdzany w `finally`, także po nieudanym restarcie lub asercji.
-Sprawdzenie obejmuje `compose ps --all`: kontenery restartujące się, zatrzymane i niezdrowe
-blokują następną awarię. Wyjątkiem są znane jednorazowe serwisy inicjalizujące zakończone kodem 0.
-Jeśli stos nie wróci do zdrowia w 300 s, seria awarii zostaje przerwana.
-Regresje tego mechanizmu (bez modeli i Dockera) uruchamia
-`PYTHONUTF8=1 python infra/tests/test_live_acceptance.py`; ten test działa również w CI.
+Każda awaria musi trafić w trwającą analizę (status sprawdzany tuż przed restartem i po nim).
+Po każdej awarii, także nieudanej, `compose ps --all` musi pokazać zdrowy stos (poza zakończonymi
+jednorazowymi serwisami inicjalizującymi); jeśli stos nie wróci do zdrowia w 300 s, seria awarii
+zostaje przerwana. Regresje tego mechanizmu (bez modeli i Dockera, również w CI):
+`PYTHONUTF8=1 python infra/tests/test_live_acceptance.py`.
 
-Uploady w obu skryptach są sekwencyjne, więc domyślny limit
-`UPLOAD_MAX_CONCURRENT_PER_USER=2` wystarcza. Równoległe testy Playwright w CI
-ustawiają `UPLOAD_MAX_CONCURRENT_PER_USER=4`, do globalnego limitu repliki.
+Uploady są sekwencyjne, więc wystarcza domyślny `UPLOAD_MAX_CONCURRENT_PER_USER=2`.
 
 ## Skalowanie detektorów
 

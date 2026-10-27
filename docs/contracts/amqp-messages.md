@@ -22,7 +22,7 @@ Exchange `analysis.dlx` — type `direct`, durable. Receives dead-lettered messa
 | `analysis.results`  | `analysis.results`  | Detectors    | Orchestrator    |
 
 Cancellation is deliberately **not** an AMQP event — see
-[Cancellation](#cancellation-orchestrator--detector-via-redis) below. (The
+[Cancellation](#cancellation--orchestrator--detector-via-redis) below. (The
 `analysis.cancel` queue existed pre-V2 with no consumer; deployments that still
 have it on the broker can delete it.)
 
