@@ -1,0 +1,9 @@
+# Weights pinned to a Hugging Face commit; the image tag therefore fixes code and model together.
+# A new model is one PR: upload a new Hub commit, then update revision and checksums here.
+repo = "Ceendi/deepfake-audio-detector"
+revision = "7d72318292b203392bc6523cbb782e2758647c61"
+
+[files]
+"w2v2/w2v2.onnx" = "89cabc3b3cbdc50999b051402251457bf95ad68bd42b52cb75b8bc5fc2f3a3f8"
+"w2v2/w2v2.onnx.data" = "08ec200331b9cf66df9244bbf0ba3dd49fe26237aa15e017ca927f1ae7df7335"
+"mel_resnet/mel_model-epoch=49-val_eer=0.0816.ckpt" = "04263282059d5fcc36d428cb6bd416cc760bb53a2bb383264dcef259bd82c173"

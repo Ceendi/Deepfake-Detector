@@ -1,0 +1,9 @@
+# Weights pinned to a Hugging Face commit; the image tag therefore fixes code and model together.
+# A new model is one PR: upload a new Hub commit, then update revision and checksums here.
+repo = "Ceendi/deepfake-video-detector"
+revision = "7c1df935f52d836a27316bb98b42ea1f55b448a8"
+
+[files]
+"backbone.onnx" = "6c57979bb2064974402d6ce47d270de936fa02db6624d9401326b7b39c6912f6"
+"temporal.onnx" = "435931bc47e5a0cdc559d9f54bf947970857b848fddda45e1425d45359f03d13"
+"last.ckpt" = "3bf02c8cf1a7eba06c50784dbf38c98a528f71245877cfe5b65e27e0d17fa817"

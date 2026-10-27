@@ -7,13 +7,8 @@ training/cache*
 training/WaveFake*
 training/data/
 training/lightning_logs/
-# Ignoruj absolutnie wszystkie checkpointy, ważą gigabajty
+# Weights come from the Hub at start (models.toml), never from the build context.
 training/checkpoints/
-
-# Zrób wyjątek TYLKO dla tych dwóch plików, których potrzebuje inference.py:
-!training/checkpoints/w2v2/w2v2.onnx
-!training/checkpoints/w2v2/w2v2.onnx.data
-!training/checkpoints/mel_resnet/mel_model-epoch=49-val_eer=0.0816.ckpt
 *.flac
 *.wav
 *.parquet

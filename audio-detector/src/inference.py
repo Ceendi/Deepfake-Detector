@@ -11,6 +11,7 @@ import structlog
 import torch
 from detector_runtime import DetectorError, MediaTooLongError
 from detector_runtime.metrics import inference_duration_buckets
+from detector_runtime.model_files import ensure_model_files
 from matplotlib.figure import Figure
 from matplotlib.image import imsave
 from prometheus_client import Gauge, Histogram
@@ -22,10 +23,10 @@ from .score_contract import build_audio_result
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 
-W2V2_ONNX_PATH = os.path.join(PROJECT_ROOT, "training", "checkpoints", "w2v2", "w2v2.onnx")
-MEL_CKPT_PATH = os.path.join(
-    PROJECT_ROOT, "training", "checkpoints", "mel_resnet", "mel_model-epoch=49-val_eer=0.0816.ckpt"
-)
+MODELS_MANIFEST = os.path.join(PROJECT_ROOT, "models.toml")
+MODEL_DIR = os.getenv("MODEL_DIR", os.path.join(PROJECT_ROOT, "training", "checkpoints"))
+W2V2_ONNX_PATH = os.path.join(MODEL_DIR, "w2v2", "w2v2.onnx")
+MEL_CKPT_PATH = os.path.join(MODEL_DIR, "mel_resnet", "mel_model-epoch=49-val_eer=0.0816.ckpt")
 
 SETTINGS = load_config()
 MEL_EER_THRESHOLD = SETTINGS["MEL_EER_THRESHOLD"]
@@ -58,6 +59,7 @@ MODEL_LOAD_TIME = Gauge(
 
 class AudioInference:
     def __init__(self):
+        ensure_model_files(MODELS_MANIFEST, MODEL_DIR)
         start_load = time.time()
         opts = ort.SessionOptions()
         if ONNX_INTRA_THREADS:
