@@ -13,13 +13,14 @@ CI publishes to GHCR, nothing is built locally:
 
 ```bash
 cp .env.example .env
-docker compose --profile core --profile auth --profile ml up -d
+docker compose up -d
 ```
 
 Open **[http://localhost:4173](http://localhost:4173)** and create an account. The first start
 downloads the images and the detectors' models (~1.6 GB) and takes a few minutes; analyses run
-once `docker compose ps` shows the detectors `healthy`. Set `DEEPFAKE_IMAGE_TAG=sha-<commit>` in
-`.env` to run a specific build of `main`; see [SETUP.md](SETUP.md#quick-start-published-images-nothing-to-build).
+once `docker compose ps` shows the detectors `healthy`. `COMPOSE_PROFILES` in `.env` selects what
+starts (default `core,auth,ml`); `DEEPFAKE_IMAGE_TAG=sha-<commit>` runs a specific build of `main`.
+See [SETUP.md](SETUP.md#quick-start-published-images-nothing-to-build).
 
 ## Getting started (development)
 
@@ -59,6 +60,9 @@ detector's `models.toml` and verify their SHA-256; see
 [SETUP.md](SETUP.md#step-2--models-downloaded-automatically), which also covers changing a model.
 
 ## Compose profiles
+
+A plain `docker compose up` starts the profiles listed in `COMPOSE_PROFILES` in `.env`
+(default `core,auth,ml`); an explicit `--profile` replaces that list.
 
 | Profile | Purpose |
 | --- | --- |
