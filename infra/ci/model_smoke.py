@@ -5,8 +5,10 @@ detection quality is out of scope. Usage: python model_smoke.py audio|video
 """
 
 import math
+import os
 import subprocess
 import sys
+import tempfile
 
 import numpy as np
 
@@ -15,12 +17,14 @@ def audio():
     from src.inference import AudioInference
 
     model = AudioInference()
-    subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi",
-                    "-i", "sine=frequency=440:duration=3", "/tmp/smoke.wav"], check=True)
-    for mode in ("accurate", "fast"):
-        result = model.analyze("/tmp/smoke.wav", mode=mode)
-        assert result["verdict"] in ("REAL", "FAKE"), result
-        print(f"audio {mode}: {result['verdict']} confidence={result['confidence']}")
+    with tempfile.TemporaryDirectory() as workdir:
+        tone = os.path.join(workdir, "tone.wav")
+        subprocess.run(["ffmpeg", "-nostdin", "-loglevel", "error", "-y", "-f", "lavfi",
+                        "-i", "sine=frequency=440:duration=3", tone], check=True)
+        for mode in ("accurate", "fast"):
+            result = model.analyze(tone, mode=mode)
+            assert result["verdict"] in ("REAL", "FAKE"), result
+            print(f"audio {mode}: {result['verdict']} confidence={result['confidence']}")
 
 
 def video():

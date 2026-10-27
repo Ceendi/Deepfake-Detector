@@ -134,7 +134,9 @@ jobs:
           IMAGE: ${{ steps.ns.outputs.image }}:sha-${{ steps.ns.outputs.short }}
           DETECTOR: ${{ matrix.models }}
         run: |
-          mkdir -p models && chmod 777 models
+          # Hand the cache directory to the image's own non-root user rather than opening it to all.
+          mkdir -p models
+          sudo chown -R "$(docker run --rm --entrypoint id "$IMAGE" -u)" models
           docker run --rm -e PYTHONPATH=/app -v "$PWD/models:/models" \
             -v "$PWD/infra/ci:/smoke:ro" "$IMAGE" python /smoke/model_smoke.py "$DETECTOR"
 
