@@ -47,6 +47,15 @@ kontekst `frontend/`), więc JAR nie trafia do Git, a na hoście nie są potrzeb
 Po zmianie motywu: `docker compose --profile auth up -d --build keycloak`. Lokalnie
 `npm run build-keycloak-theme` nadal działa (wymaga Javy 17+ i Mavena).
 
+## Konfiguracja w obrazie
+
+`src/config/env.ts` czyta najpierw `window.__APP_CONFIG__` z `/config.js`, a brakujące
+wartości bierze z `VITE_*` wkompilowanych przy budowaniu. W obrazie Dockera `/config.js`
+generuje nginx przy starcie kontenera ze zmiennych `KEYCLOAK_URL`, `KEYCLOAK_REALM`,
+`KEYCLOAK_CLIENT_ID` i `API_BASE_URL` (`nginx/default.conf.template`), więc jeden obraz z GHCR
+działa z dowolnym adresem Keycloaka; Compose ustawia `KEYCLOAK_URL` z `KEYCLOAK_PORT`.
+Przy `npm run dev` serwowany jest pusty `public/config.js`, więc obowiązuje `frontend/.env`.
+
 ## Wylogowanie
 
 Wylogowanie zawsze kończy sesję SSO w Keycloak i wraca na stronę główną; stan

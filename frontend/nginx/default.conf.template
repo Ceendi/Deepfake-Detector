@@ -13,6 +13,16 @@ server {
         return 200 "ok\n";
     }
 
+    # Runtime settings for src/config/env.ts, rendered from the container env at start, so a
+    # published image is not tied to the Keycloak address it was built with.
+    location = /config.js {
+        default_type application/javascript;
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        return 200 'window.__APP_CONFIG__ = {"apiBaseUrl": "${API_BASE_URL}", "keycloakUrl": "${KEYCLOAK_URL}", "keycloakRealm": "${KEYCLOAK_REALM}", "keycloakClientId": "${KEYCLOAK_CLIENT_ID}"};\n';
+    }
+
     # Resolve the gateway per request, so nginx starts (and serves the SPA) before it exists.
     resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
 
