@@ -46,7 +46,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /** Real HTTP and PostgreSQL boundaries; real file-service authorization is covered by the Docker smoke. */
-@DataJpaTest(properties = {"file-service.lookup-timeout=500ms", "backpressure.max-inflight=20"})
+// Production lookup timeout: 500 ms let a cold first HttpClient call time out on a busy CI runner.
+@DataJpaTest(properties = {"file-service.lookup-timeout=2s", "backpressure.max-inflight=20"})
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
 @Import({AnalysisService.class, AnalysisCreationService.class, FileMetadataClient.class, BackpressureGuard.class})
@@ -77,10 +78,10 @@ class AnalysisFileResolutionIntegrationTest {
                 traceparent = exchange.getRequestHeaders().getFirst("traceparent");
                 identityHeader = exchange.getRequestHeaders().getFirst("X-User-ID");
                 try {
-                    if (slowHeaders) Thread.sleep(1500);
+                    if (slowHeaders) Thread.sleep(3000);
                     byte[] bytes = body.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                     exchange.sendResponseHeaders(status.get(), bytes.length);
-                    if (slowBody) Thread.sleep(1500);
+                    if (slowBody) Thread.sleep(3000);
                     exchange.getResponseBody().write(bytes);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
