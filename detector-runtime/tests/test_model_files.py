@@ -86,7 +86,7 @@ def test_transient_failures_are_retried(tmp_path):
     delays = []
 
     ensure_model_files(write_manifest(tmp_path), str(tmp_path / "models"),
-                       download=FakeHub(failures=2), sleep=delays.append)
+                       download=FakeHub(failures=2), sleep=delays.append, offline=False)
 
     assert delays == [5, 15]
 
@@ -96,9 +96,19 @@ def test_gives_up_after_the_last_retry(tmp_path):
 
     with pytest.raises(ModelFilesError, match="Could not download"):
         ensure_model_files(write_manifest(tmp_path), str(tmp_path / "models"),
-                           download=FakeHub(failures=99), sleep=delays.append)
+                           download=FakeHub(failures=99), sleep=delays.append, offline=False)
 
     assert delays == [5, 15, 30]
+
+
+def test_offline_mode_fails_at_once(tmp_path):
+    delays, hub = [], FakeHub(failures=99)
+
+    with pytest.raises(ModelFilesError, match="Could not download"):
+        ensure_model_files(write_manifest(tmp_path), str(tmp_path / "models"),
+                           download=hub, sleep=delays.append, offline=True)
+
+    assert delays == [] and len(hub.calls) == 1
 
 
 @pytest.mark.parametrize("revision", ["main", "v1.0", "A" * 40, "a" * 39])

@@ -8,7 +8,7 @@ import time
 import tomllib
 
 import structlog
-from huggingface_hub import hf_hub_download
+from huggingface_hub import constants, hf_hub_download
 
 # Transient network failures at container start must not leave the detector without a model.
 RETRY_DELAYS_SECONDS = (5, 15, 30)
@@ -52,17 +52,20 @@ def sha256(path: str) -> str:
 
 
 def ensure_model_files(manifest_path: str, model_dir: str, *, download=hf_hub_download,
-                       sleep=time.sleep) -> dict:
+                       sleep=time.sleep, offline=None) -> dict:
     """Download missing or altered files; files that already match their checksum stay offline."""
     manifest = load_manifest(manifest_path)
     repo, revision = manifest["repo"], manifest["revision"]
     staging = os.path.join(model_dir, _STAGING)
+    # HF_HUB_OFFLINE=1 means only verified local files may be used, so waiting cannot help.
+    offline = constants.HF_HUB_OFFLINE if offline is None else offline
+    delays = () if offline else RETRY_DELAYS_SECONDS
     for name, expected in manifest["files"].items():
         target = os.path.join(model_dir, *name.split("/"))
         if os.path.isfile(target) and sha256(target) == expected:
             continue
         log.info("model_file_download", repo=repo, revision=revision, file=name)
-        for attempt, delay in enumerate((*RETRY_DELAYS_SECONDS, None), start=1):
+        for attempt, delay in enumerate((*delays, None), start=1):
             try:
                 path = download(repo_id=repo, filename=name, revision=revision, local_dir=staging)
                 break

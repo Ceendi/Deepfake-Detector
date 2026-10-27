@@ -72,7 +72,9 @@ for suite in "${suites[@]}"; do
     --basetemp=/tmp/detector-check "$suite"
 done
 
+# Without network or weights the model fetch must fail at once, leaving /health to report DOWN.
 docker run --detach --name "$smoke_container" --platform "$platform" --network none \
+  --env HF_HUB_OFFLINE=1 \
   --env AWS_EC2_METADATA_DISABLED=true --env S3_ACCESS_KEY=test --env S3_SECRET_KEY=test \
   --env RABBITMQ_PASSWORD=test \
   --env OMP_NUM_THREADS=2 --env MKL_NUM_THREADS=2 "$image" >/dev/null
