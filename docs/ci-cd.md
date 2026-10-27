@@ -20,11 +20,27 @@ Every workflow runs on pull requests and on pushes to `main`. Pull request runs 
 superseded by a new push are cancelled; runs on `main` always finish. Path filters skip
 workflows that a change cannot affect (for example E2E for a documentation-only change).
 
+Inside CI, a pull request runs only the test jobs its changed files can affect
+(`infra/ci/ci_scope.py`, guarded by `infra/tests/test_ci_scope.py`):
+
+| Pull request changes | Runs |
+|---|---|
+| only `frontend/` | `frontend`; Java services only compile (classes for Sonar) |
+| one Java service | that service's `mvn verify`; the other three only compile |
+| a detector, `detector-runtime/` or `tests/worker_redelivery/` | detector jobs and the orchestrator tests that start the real detector consumers |
+| shared wire fixtures (`orchestrator/src/test/resources/contracts/`) | orchestrator, detectors and frontend |
+| only `docs/` or root `*.md` | no test job |
+| anything else (`docker-compose.yml`, `infra/`, `.github/`, configuration, a new directory) | everything |
+
+Pushes to `main` always run everything, and a failed selection runs everything. Ruff, the
+dependency scan and SonarCloud run on every pull request; SonarCloud also runs when a test job was
+skipped, cancelled or failed, so a skipped required check never stands in for an analysis.
+
 ## Workflows
 
 | Workflow | Trigger | Jobs | Fails when |
 |---|---|---|---|
-| `ci.yml` (CI) | PR, push | `java (*)` (Maven verify of 4 services), `python (*)` (ruff), `Lightweight detector contract (*)`, `ML dependency compatibility (*)`, `Worker process redelivery`, `frontend` (lint, vitest, build, npm audit), `Application dependency vulnerabilities`, `Detector image security and compatibility (*)`, `Test report`, `SonarCloud Quality Gate` | a test or lint fails, the Quality Gate fails, a fixable HIGH/CRITICAL dependency or image vulnerability exists |
+| `ci.yml` (CI) | PR (jobs by changed paths), push | `java (*)` (Maven verify of 4 services), `python (*)` (ruff), `Lightweight detector contract (*)`, `ML dependency compatibility (*)`, `Worker process redelivery`, `frontend` (lint, vitest, build, npm audit), `Application dependency vulnerabilities`, `Detector image security and compatibility (*)`, `Test report`, `SonarCloud Quality Gate` | a test or lint fails, the Quality Gate fails, a fixable HIGH/CRITICAL dependency or image vulnerability exists |
 | `e2e.yml` (E2E) | PR (app paths), push | `playwright`: `docker compose up --wait` of the core and auth profiles, then Playwright through Keycloak login, upload and analysis | a service is unhealthy or a browser test fails |
 | `infra-smoke.yml` | PR (infra paths), push | restart and persistence, Prometheus scraping of every replica, Tempo ingest, Keycloak import, discovery isolation, S3 and RabbitMQ permissions | a running stack does not behave as configured |
 | `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability |
