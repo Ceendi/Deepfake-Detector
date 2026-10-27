@@ -97,8 +97,8 @@ resources will silently disappear on the next sync.
 
 ## Compatibility note
 
-Compose builds `deepfake-keycloak-config-cli:6.5.1-security` from the pinned
-upstream source with patched dependencies and tests it against Keycloak `26.8.0`.
+The `keycloak-config-cli` image (published to GHCR, or built by `docker compose up --build`)
+is v6.5.1 built from the pinned upstream source with patched dependencies and tests it against Keycloak `26.8.0`.
 The archive is fetched directly from `codeload.github.com` by commit and SHA-256;
 building does not spend the unauthenticated GitHub REST API quota. The source commit
 and archive checksum are unchanged.

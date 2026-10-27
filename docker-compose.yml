@@ -5,6 +5,9 @@ name: deepfake-detector
 #   auth       - identity provider (Keycloak)
 #   ml         - CPU-only detector services
 #   monitoring - Prometheus, Loki, Tempo, Grafana
+#
+# Images: `up` pulls the images build-push.yml publishes to GHCR (DEEPFAKE_IMAGE_TAG, default
+# latest) when they are not present locally; `up --build` builds every one from this checkout.
 
 # Cap container logs so a forgotten dev stack can't fill the disk.
 x-logging: &default-logging
@@ -67,7 +70,8 @@ x-logging-env: &logging-env
 
 services:
   postgres:
-    image: deepfake-postgres:18.6-alpine3.24
+    image: ghcr.io/ceendi/deepfake-detector/postgres:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./infra/postgres
     profiles: ["core"]
     restart: unless-stopped
@@ -372,7 +376,8 @@ services:
     # Dedicated Postgres for Keycloak. Without this, start-dev would fall back
     # to in-memory H2 — every `compose down` would wipe users created in dev,
     # which is annoying when testing login flows. Postgres from day one.
-    image: deepfake-postgres:18.6-alpine3.24
+    image: ghcr.io/ceendi/deepfake-detector/postgres:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./infra/postgres
     profiles: ["auth"]
     restart: unless-stopped
@@ -401,7 +406,8 @@ services:
     networks: [deepfake]
 
   keycloak:
-    image: deepfake-keycloak:local
+    image: ghcr.io/ceendi/deepfake-detector/keycloak:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build:
       context: ./frontend
       dockerfile: ../infra/keycloak/Dockerfile
@@ -453,7 +459,8 @@ services:
 
   keycloak-config-cli:
     # The pinned CLI was smoke-tested against Keycloak 26.8.0 with this realm.
-    image: deepfake-keycloak-config-cli:6.5.1-security
+    image: ghcr.io/ceendi/deepfake-detector/keycloak-config-cli:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./infra/keycloak-config-cli
     profiles: ["auth"]
     restart: "no"
@@ -491,8 +498,40 @@ services:
       - ./infra/keycloak:/config:ro
     networks: [deepfake]
 
+  frontend:
+    # Static build behind unprivileged nginx; /api is proxied to the gateway on this network.
+    # In `auth`, because the UI is unusable before the realm and its client exist.
+    image: ghcr.io/ceendi/deepfake-detector/frontend:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
+    build: ./frontend
+    profiles: ["auth"]
+    restart: unless-stopped
+    <<: *runtime-hardening
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      # The image entrypoint renders its nginx config here from the template at start, as UID 101.
+      - /etc/nginx/conf.d:rw,noexec,nosuid,size=1m,uid=101,gid=101,mode=0755
+    mem_limit: 128m
+    logging: *default-logging
+    depends_on:
+      keycloak-config-cli: { condition: service_completed_successfully }
+    environment:
+      # Read by the browser (/config.js), so it is the published Keycloak URL, as in KC_HOSTNAME.
+      KEYCLOAK_URL: http://localhost:${KEYCLOAK_PORT:-8180}
+    ports:
+      # Default 4173 is already an allowed origin of the deepfake-web client in the realm.
+      - "127.0.0.1:${FRONTEND_PORT:-4173}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [deepfake]
+
   eureka-server:
-    image: deepfake-eureka-server:local
+    image: ghcr.io/ceendi/deepfake-detector/eureka-server:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./eureka-server
     profiles: ["core"]
     restart: unless-stopped
@@ -510,7 +549,8 @@ services:
     networks: [deepfake]
 
   gateway:
-    image: deepfake-gateway:local
+    image: ghcr.io/ceendi/deepfake-detector/gateway:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./gateway
     profiles: ["core"]
     restart: unless-stopped
@@ -545,7 +585,8 @@ services:
     networks: [deepfake]
 
   file-service:
-    image: deepfake-file-service:local
+    image: ghcr.io/ceendi/deepfake-detector/file-service:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./file-service
     profiles: ["core"]
     restart: unless-stopped
@@ -593,7 +634,8 @@ services:
     networks: [deepfake]
 
   orchestrator:
-    image: deepfake-orchestrator:local
+    image: ghcr.io/ceendi/deepfake-detector/orchestrator:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./orchestrator
     profiles: ["core"]
     restart: unless-stopped
@@ -671,6 +713,8 @@ services:
     networks: [deepfake]
 
   video-detector:
+    image: ghcr.io/ceendi/deepfake-detector/video-detector:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build:
       context: ./video-detector
       additional_contexts:
@@ -718,6 +762,8 @@ services:
     networks: [deepfake]
 
   audio-detector:
+    image: ghcr.io/ceendi/deepfake-detector/audio-detector:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build:
       context: ./audio-detector
       additional_contexts:
@@ -871,7 +917,8 @@ services:
     networks: [deepfake]
 
   alloy:
-    image: deepfake-alloy:1.20.1-security
+    image: ghcr.io/ceendi/deepfake-detector/alloy:${DEEPFAKE_IMAGE_TAG:-latest}
+    pull_policy: missing
     build: ./infra/alloy
     profiles: ["monitoring"]
     restart: unless-stopped

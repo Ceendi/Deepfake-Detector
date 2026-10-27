@@ -1,25 +1,58 @@
 # DeepfakeDetector — setup & run guide
 
 Web application for video/audio deepfake detection. The backend is a set of
-microservices (Spring Boot + Python ML services) run via Docker Compose; the
-frontend is a React (Vite) app run locally.
+microservices (Spring Boot + Python ML services) and the frontend a React (Vite) app; all of
+them run via Docker Compose.
+
+---
+
+## Quick start (published images, nothing to build)
+
+Needs only Docker (see [Requirements](#requirements)). From the project root:
+
+```bash
+cp .env.example .env
+docker compose --profile core --profile auth --profile ml up -d
+```
+
+Compose pulls the images that CI publishes to `ghcr.io/ceendi/deepfake-detector` (tag
+`latest` = the last green `main`) and starts the whole application, web UI included. Open
+**<http://localhost:4173>** and create an account (registration is open; the default realm has
+no test users). The first start takes a few minutes: the images are
+downloaded (several GB) and the detectors fetch their models (~1.6 GB, see
+[Step 2](#step-2--models-downloaded-automatically)). `docker compose ps` shows every
+service `healthy` when it is ready; uploads are analysed once both detectors are `healthy`.
+
+- **Test users:** add `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` to `.env` before the first
+  start to get `alice` / `bob` (password `Test1234!@`); local use only.
+- **Updating:** `docker compose --profile core --profile auth --profile ml pull`, then `up -d`
+  again. A plain `up` reuses the images already on the machine.
+- **Pinning a version:** set `DEEPFAKE_IMAGE_TAG=sha-<7-character commit>` in `.env` to run the
+  exact images built from that commit of `main` (a reproducible deployment).
+- **Monitoring:** add `--profile monitoring` (Grafana at <http://localhost:3000>).
+
+To work on the code, follow the steps below instead: they build the images from your checkout
+(`up --build`) and run the frontend with the Vite dev server.
+
+---
+
+## Development setup (build from source)
 
 Bringing it up takes **3 steps**: `.env` files → backend (Docker) → frontend (npm).
 The ML models are not in the repository; the detectors download pinned versions
 from Hugging Face on their first start (Step 2 explains how).
 
----
-
 ## Requirements
 
 - **Docker Engine 24+** with Compose v2 (`docker compose version`)
-- **Node.js 22 LTS** (or 20.19+, required by Vite) and `npm` (for the frontend)
+- **Node.js 22 LTS** (or 20.19+, required by Vite) and `npm` (for the frontend; not needed for
+  the quick start)
 - **RAM:** ~14–16 GB for the full set (`core` + `auth` + `ml` profiles; the detectors alone are 2×3 GB)
 - **Disk:** ~10–12 GB for the Docker images
 - **Internet for the first `--build`** — the `video-detector` image compiles `insightface`
   and downloads the `buffalo_l` face-detector pack; the first build takes several to ~15 minutes.
-- Free host ports: `5432, 5672, 6379, 8080, 8180, 8333, 15672, 15692` and `5173` (frontend);
-  with `monitoring` also `3000, 3100, 3200, 9090, 12345`.
+- Free host ports: `4173` (frontend container), `5432, 5672, 6379, 8080, 8180, 8333, 15672, 15692`
+  and `5173` (Vite dev server); with `monitoring` also `3000, 3100, 3200, 9090, 12345`.
 
 ### Windows — WSL2 memory
 
@@ -68,15 +101,15 @@ Application broker passwords are reconciled on every `rabbitmq-init` run; update
 `.env` and recreate all affected clients (including the `ml` profile when used).
 See [broker users](docs/reliability.md#broker-users-and-internal-storage-apis).
 
-The `auth` profile builds the Keycloak image with the login theme from `frontend/` sources
-(`infra/keycloak/Dockerfile`), so no JAR is committed and the host needs no Java or Maven.
-The first build takes a few minutes. After changing the theme, rebuild it with
+With `--build`, the `auth` profile builds the Keycloak image with the login theme from
+`frontend/` sources (`infra/keycloak/Dockerfile`), so no JAR is committed and the host needs no
+Java or Maven. The first build takes a few minutes. After changing the theme, rebuild it with
 `docker compose --profile auth up -d --build keycloak`.
 
 Keycloak realm policy is synchronized separately by `keycloak-config-cli`.
 
 If you override `KEYCLOAK_PORT`, also set `VITE_KEYCLOAK_URL` in `frontend/.env`
-(e.g. `http://localhost:8280`). For Java services started from an IDE, update
+(e.g. `http://localhost:8280`); the `frontend` container picks the new port up by itself. For Java services started from an IDE, update
 `JWT_ISSUER_URI` too; Compose derives its issuer from `KEYCLOAK_PORT`.
 
 ---
@@ -122,7 +155,7 @@ Profiles:
 | Profile | What it starts | Needed for |
 |---|---|---|
 | `core` | eureka, gateway, orchestrator, file-service + postgres, redis, rabbitmq, seaweedfs | the backend to work (required) |
-| `auth` | Keycloak (login) + its database | login / registration in the app |
+| `auth` | Keycloak (login) + its database, `frontend` (web UI on port 4173) | login / registration in the app |
 | `ml` | `video-detector`, `audio-detector` | actual file analysis (downloads the models on first start) |
 | `monitoring` | Prometheus, Loki, Tempo, Grafana, Alloy | metrics/logs view (optional, can be skipped for a lighter start) |
 
@@ -162,13 +195,17 @@ the realm, so registration/login work out of the box.
 
 You can create an account (open registration) and upload a video or audio file for analysis.
 
+The `frontend` container keeps serving the production build of your checkout at
+<http://localhost:4173> (rebuilt by `up --build`); use the dev server for hot reload.
+
 ---
 
 ## Useful addresses (dev)
 
 | Service | URL | Login |
 |---|---|---|
-| App (frontend) | <http://localhost:5173> | create an account in the app |
+| App (frontend container, `auth` profile) | <http://localhost:4173> | create an account in the app |
+| App (Vite dev server, Step 4) | <http://localhost:5173> | the same accounts |
 | Keycloak (admin console) | <http://localhost:8180> | `admin` / `changeme_dev` |
 | RabbitMQ UI | <http://localhost:15672> | `deepfake` / `changeme_dev` (administrator; services use the `orchestrator`/`detector` users) |
 | Grafana (`monitoring` profile) | <http://localhost:3000> | `admin` / `admin` |

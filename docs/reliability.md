@@ -19,10 +19,10 @@ Compose runs Eureka, gateway, file-service and the single orchestrator instance 
 stopped. An unhealthy healthcheck alone does not restart a container. Java containers use bounded
 `json-file` logs (three 10 MiB files) and memory limits: 512 MiB each for Eureka/gateway, 1 GiB
 each for orchestrator/file-service (per replica). With two file-service replicas, the running
-`core` + `auth` + `ml` services have 15.25 GiB of configured memory limits (14.25 GiB with one
-replica; SeaweedFS alone has 2 GiB). Monitoring adds 2 GiB: 512 MiB each for Prometheus, Loki
-and Tempo, and 256 MiB each for Grafana and Alloy. The combined limit is 17.25 GiB (16.25 GiB
-with one file-service replica), excluding one-shot init containers. These are ceilings, not
+`core` + `auth` + `ml` services have 15.375 GiB of configured memory limits (14.375 GiB with
+one replica; SeaweedFS alone has 2 GiB, the frontend's nginx 128 MiB). Monitoring adds 2 GiB:
+512 MiB each for Prometheus, Loki and Tempo, and 256 MiB each for Grafana and Alloy. The combined
+limit is 17.375 GiB (16.375 GiB with one file-service replica), excluding one-shot init containers. These are ceilings, not
 reservations: with one replica and both detectors analysing, the stack used about 6.6 GiB.
 Allow additional room for Docker and the host, and use fewer profiles on a 16 GiB machine.
 

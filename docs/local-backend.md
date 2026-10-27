@@ -176,21 +176,22 @@ startup; the broker needs no definitions file. `rabbitmq-init` creates the least
 `RABBITMQ_DETECTOR_PASSWORD`); `RABBITMQ_USER` is the administrator for manual operations only.
 See [broker users and internal storage APIs](reliability.md#broker-users-and-internal-storage-apis).
 
-## Locally built infrastructure images
+## Patched infrastructure images
 
 Some infrastructure images are rebuilt from pinned upstream bases to remove vulnerable
-components; rebuild them after changing their Dockerfiles:
+components. `build-push.yml` publishes them to GHCR with the application images, so a plain
+`docker compose up` pulls them; rebuild them locally after changing their Dockerfiles:
 
 ```bash
 docker compose --profile core --profile auth --profile monitoring build \
   postgres keycloak-db keycloak-config-cli alloy
 ```
 
-| Image | Source | Change |
+| Image (`ghcr.io/ceendi/deepfake-detector/…`) | Source | Change |
 |---|---|---|
-| `deepfake-postgres` (`postgres`, `keycloak-db`) | `infra/postgres` | Replaces `gosu` with `su-exec`; runs as `postgres` |
-| `deepfake-keycloak-config-cli` | `infra/keycloak-config-cli` | Upstream v6.5.1 built with patched dependencies; UID 65534 |
-| `deepfake-alloy` | `infra/alloy` | Patched OpenSSL; image default UID 65534 |
+| `postgres` (services `postgres`, `keycloak-db`) | `infra/postgres` | Replaces `gosu` with `su-exec`; runs as `postgres` |
+| `keycloak-config-cli` | `infra/keycloak-config-cli` | Upstream v6.5.1 built with patched dependencies; UID 65534 |
+| `alloy` | `infra/alloy` | Patched OpenSSL; image default UID 65534 |
 
 The development Compose service still runs Alloy as root to read the Docker socket; that is a
 dev-only trade-off. The **Security scan** workflow scans every Compose image with Trivy: CRITICAL
@@ -200,4 +201,5 @@ scan does not mean zero CVEs.
 Infrastructure regression tests in `infra/tests/` run in disposable Compose projects and are
 part of the **Infrastructure smoke** workflow: `test_discovery.py`, `test_keycloak.py`
 (realm import and password-reset flow), `test_tempo.py`, `test_s3_configuration.py`,
-`test_analysis_file_ownership.py` and `test_security_report.py`.
+`test_analysis_file_ownership.py` and `test_security_report.py`. `test_compose_images.py` checks
+that every image Compose builds is also published by `build-push.yml` from the same build inputs.

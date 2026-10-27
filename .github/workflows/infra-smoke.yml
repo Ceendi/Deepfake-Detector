@@ -11,6 +11,7 @@ on:
       - .github/dependabot.yml
       - .github/workflows/build-push.yml
       - .github/workflows/security-scan.yml
+      - .github/workflows/e2e.yml
       - .env.example
       - infra/rabbitmq/**
       - infra/security/**
@@ -46,6 +47,7 @@ on:
       - .github/dependabot.yml
       - .github/workflows/build-push.yml
       - .github/workflows/security-scan.yml
+      - .github/workflows/e2e.yml
       - .env.example
       - infra/rabbitmq/**
       - infra/security/**
@@ -92,6 +94,7 @@ jobs:
       - run: python3 infra/tests/test_live_acceptance.py
       - run: python3 infra/tests/test_test_ports.py
       - run: python3 infra/tests/test_monitoring_configuration.py
+      - run: python3 infra/tests/test_compose_images.py
 
   observability-configuration:
     name: Observability overrides, dashboard and alert rules

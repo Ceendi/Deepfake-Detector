@@ -15,6 +15,9 @@ on:
       - "*/Dockerfile"
       - "frontend/nginx/**"
       - "infra/keycloak/Dockerfile"
+      - "infra/postgres/**"
+      - "infra/keycloak-config-cli/**"
+      - "infra/alloy/Dockerfile"
       - "*/models.toml"
       - "detector-runtime/detector_runtime/model_files.py"
       - "infra/ci/model_smoke.py"
@@ -60,6 +63,13 @@ jobs:
             file: ./infra/keycloak/Dockerfile
           - service: frontend
             context: ./frontend
+          # Patched upstream images: published too, so Compose can pull every image it runs.
+          - service: postgres
+            context: ./infra/postgres
+          - service: keycloak-config-cli
+            context: ./infra/keycloak-config-cli
+          - service: alloy
+            context: ./infra/alloy
     steps:
       # workflow_run runs on the default branch head; build the commit CI actually verified.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,8 +102,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha || github.sha }}
 
       # Backend Dockerfiles are self-contained per service dir; keycloak and frontend build
-      # from the frontend sources. The image is loaded locally first so it is scanned before
-      # anything is pushed.
+      # from the frontend sources, the patched infrastructure images from infra/<image>. The image
+      # is loaded locally first so it is scanned before anything is pushed.
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.context || format('./{0}', matrix.service) }}

@@ -109,7 +109,8 @@ class KeycloakSecurityTest(unittest.TestCase):
         self.compose_file.write_text(json.dumps(config))
         self.addCleanup(self.compose, 'down', '--volumes', '--remove-orphans')
         self.addCleanup(self.failure_logs)
-        self.compose('up', '-d')
+        # Build from this checkout; a plain `up` would pull the published images instead.
+        self.compose('up', '-d', '--build')
         self.admin = self.eventually(lambda: self.token('master', {
             'grant_type': 'password', 'client_id': 'admin-cli',
             'username': 'admin', 'password': 'changeme_dev',
