@@ -207,7 +207,7 @@ services:
     # Post-healthy, idempotent: (re)creates the `orchestrator` and `detector` users with
     # permissions limited to their own queues and routing keys. Every run resets their
     # passwords, so it also migrates an existing broker volume and rotates credentials.
-    image: python:3.14.8-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
+    image: python:3.14.10-alpine3.24@sha256:cfe4b5079e5852da965ae14f74a6e2b137ece05b918d27c575fb70de3c85db2b
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -311,7 +311,7 @@ services:
     # Runs before the main seaweedfs service starts (via depends_on).
     # Runs as root: the seaweedfs image entrypoint also runs as root, so a
     # 0644 file written here is readable downstream regardless of ownership.
-    image: python:3.14.8-alpine3.24@sha256:f6a589d43c42b9e7f7dc67a12d37132491f362859a5d750607710cc56da3bc72
+    image: python:3.14.10-alpine3.24@sha256:cfe4b5079e5852da965ae14f74a6e2b137ece05b918d27c575fb70de3c85db2b
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
@@ -830,7 +830,7 @@ services:
     networks: [deepfake]
 
   grafana:
-    image: grafana/grafana:13.2.4
+    image: grafana/grafana:13.2.5
     profiles: ["monitoring"]
     restart: unless-stopped
     <<: *readonly-runtime
