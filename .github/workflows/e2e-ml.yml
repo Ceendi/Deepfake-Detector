@@ -100,7 +100,7 @@ jobs:
           ff -f lavfi -i testsrc2=size=1280x720:rate=25:duration=10 \
             -f lavfi -i sine=frequency=440:duration=10 \
             -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest media/other/no-face.mp4
-          curl -fsSL --retry 3 -A "DeepfakeDetector-CI (https://github.com/$GITHUB_REPOSITORY)" \
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -A "DeepfakeDetector-CI (https://github.com/$GITHUB_REPOSITORY)" \
             -o "$RUNNER_TEMP/face/address.webm" "$FACE_URL"
           echo "$FACE_SHA256  $RUNNER_TEMP/face/address.webm" | sha256sum -c -
           ff -ss 5 -t 30 -i "$RUNNER_TEMP/face/address.webm" -vf scale=-2:720 \
