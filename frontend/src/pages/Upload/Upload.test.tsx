@@ -140,6 +140,20 @@ describe('Upload — wiele plików', () => {
     expect(leaving.defaultPrevented).toBe(true)
   })
 
+  it('z folderu bierze tylko media i wymienia pominięte pliki', () => {
+    const { input } = renderUpload()
+    Object.defineProperty(input, 'webkitdirectory', { configurable: true, value: true })
+    const note = new File(['x'], 'notatka.txt')
+    Object.defineProperty(note, 'webkitRelativePath', { value: 'nagrania/notatka.txt' })
+    const clips = ['a.mp4', 'b.wav'].map((name) => new File(['x'], name))
+    fireEvent.change(input, { target: { files: [clips[0], note, clips[1]] } })
+
+    expect(screen.getByRole('heading', { name: '2 pliki' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Pominięto 1 plik spoza obsługiwanych formatów: nagrania/notatka.txt'),
+    ).toBeInTheDocument()
+  })
+
   it('folder bez plików wideo ani audio daje komunikat', () => {
     const { input } = renderUpload()
     Object.defineProperty(input, 'webkitdirectory', { configurable: true, value: true })

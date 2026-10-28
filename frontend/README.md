@@ -54,7 +54,8 @@ kontekst `frontend/`); po zmianie motywu: `docker compose up -d --build keycloak
 - **Wiele plików lub folder** na stronie uploadu trafia do kolejki (`use-batch-queue.ts`): najwyżej
   2 wysyłki i 3 aktywne analizy naraz (`BATCH_LIMITS`), 429/503 czekają `Retry-After` (bez nagłówka
   5 → 60 s) i ponawiają ten sam krok; pozostałe limity (10 wysyłek/min, 5 GB) egzekwuje serwer.
-  Z folderu brane są tylko obsługiwane formaty; jeden plik działa jak dotąd.
+  Z folderu brane są tylko obsługiwane formaty (pominięte pliki są wymienione z nazwy, do pięciu);
+  jeden plik działa jak dotąd.
 - **Błędy API:** `UPLOAD_USER_LIMIT` (429) ma osobny komunikat, `MEDIA_TOO_LONG`
   i `UNSUPPORTED_MEDIA` są rozpoznawane w polu `code` i w prefiksie `[KOD]` komunikatu 422,
   a techniczne komunikaty 400/409/503 mają polskie odpowiedniki.
