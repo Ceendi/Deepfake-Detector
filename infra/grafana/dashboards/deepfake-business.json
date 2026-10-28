@@ -4,7 +4,7 @@
   "tags": ["deepfake", "d3"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "refresh": "10s",
   "time": { "from": "now-1h", "to": "now" },
   "panels": [
@@ -30,12 +30,12 @@
       "title": "Cache hit ratio",
       "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1, "noValue": "No lookups in 5 min" }, "overrides": [] },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(cache_requests_total{result=\"hit\"}[5m])) / sum(rate(cache_requests_total[5m]))"
+          "expr": "sum(rate(cache_requests_total{result=\"hit\"}[5m])) / (sum(rate(cache_requests_total[5m])) > 0)"
         }
       ]
     },
@@ -60,7 +60,7 @@
       "title": "Analysis duration p95 (by type)",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "s", "noValue": "No completed analysis in 5 min", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "targets": [
         {
           "refId": "A",
@@ -76,7 +76,7 @@
       "title": "HTTP API latency p95 (by service, excl. SSE and actuator)",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "s", "noValue": "No API request in 5 min", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "targets": [
         {
           "refId": "A",
@@ -182,6 +182,7 @@
         "defaults": {
           "unit": "s",
           "min": 0,
+          "noValue": "No detector task in 5 min (ml profile)",
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 10
@@ -228,6 +229,7 @@
         "defaults": {
           "unit": "ops",
           "min": 0,
+          "noValue": "No detector scraped (ml profile)",
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 10

@@ -74,6 +74,7 @@ class JwtClientSecurityTest {
 
     @Test void allowedClientsPassAuthenticationAndReachRouting() throws Exception {
         check("deepfake-web", List.of("account"), 200);
+        check("deepfake-cli", List.of("account"), 200);
         check("deepfake-loadtest", List.of("account"), 200);
         check(null, List.of("account", "deepfake-web"), 200);
     }

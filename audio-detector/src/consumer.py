@@ -22,6 +22,9 @@ PROCESSED_AUDIO_TOTAL = Counter(
     "Total number of audio files processed",
     ["status"]
 )
+# Expose every status at 0 from the first scrape, so the dashboard does not read "No data".
+for _status in ("success", "error", "cancelled"):
+    PROCESSED_AUDIO_TOTAL.labels(status=_status)
 
 try:
     # Import inside the guard: a broken ML stack yields MODEL_UNAVAILABLE, not a crash loop.

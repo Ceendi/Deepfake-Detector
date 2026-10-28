@@ -17,6 +17,7 @@ from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
+from urllib.parse import parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import batch_analyze as ba
@@ -199,6 +200,13 @@ class FakeBackend:
         self.analyses = {}
         self.calls = {'upload': 0, 'create': 0}
         self.expired = set()
+        self.grants = []  # (grant_type, client_id) per token request
+        self.device_codes = 0
+        self.device_answers = []  # token endpoint errors before the user confirms the code
+        self.refresh_works = True
+        self.hold_slow = True  # files named *slow* stay PROCESSING until released
+        self.held = threading.Event()  # set once a held analysis is being polled
+        self.cancelled = []
         backend = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -227,12 +235,19 @@ class FakeBackend:
 
             def do_POST(self):
                 payload = self.body()
-                if self.path == '/realms/deepfake/protocol/openid-connect/token':
-                    assert b'client_id=deepfake-loadtest' in payload
+                if self.path == '/realms/deepfake/protocol/openid-connect/auth/device':
+                    form = parse_qs(payload.decode())
+                    assert form['client_id'] == ['deepfake-cli'], form
                     with backend.lock:
-                        backend.tokens += 1
-                        token = f'token-{backend.tokens}'
-                    return self.send(200, {'access_token': token, 'expires_in': 300})
+                        backend.device_codes += 1
+                        code = backend.device_codes
+                    return self.send(200, {
+                        'device_code': f'device-{code}', 'user_code': 'WXYZ-ABCD',
+                        'verification_uri': backend.url + '/realms/deepfake/device',
+                        'verification_uri_complete': backend.url + '/realms/deepfake/device?user_code=WXYZ-ABCD',
+                        'expires_in': 600, 'interval': 0})
+                if self.path == '/realms/deepfake/protocol/openid-connect/token':
+                    return self.token(parse_qs(payload.decode()))
                 if not self.authorized():
                     return None
                 if self.path == '/api/files/upload':
@@ -240,6 +255,39 @@ class FakeBackend:
                 if self.path == '/api/analysis':
                     return self.create(json.loads(payload))
                 return self.send(404)
+
+            def token(self, form):
+                grant, client = form['grant_type'][0], form['client_id'][0]
+                with backend.lock:
+                    backend.grants.append((grant, client))
+                    if grant == 'client_credentials':
+                        assert client == 'deepfake-loadtest' and form['client_secret'], form
+                    elif grant == ba.DEVICE_GRANT:
+                        assert client == 'deepfake-cli' and form['device_code'][0].startswith('device-')
+                        if backend.device_answers:
+                            return self.send(400, {'error': backend.device_answers.pop(0)})
+                    elif grant == 'refresh_token':
+                        assert form['refresh_token'][0].startswith('refresh-'), form
+                        if not backend.refresh_works:
+                            return self.send(400, {'error': 'invalid_grant'})
+                    backend.tokens += 1
+                    token = f'token-{backend.tokens}'
+                body = {'access_token': token, 'expires_in': 300}
+                if grant != 'client_credentials':
+                    body.update(refresh_token=f'refresh-{backend.tokens}', refresh_expires_in=1800)
+                return self.send(200, body)
+
+            def do_DELETE(self):
+                if not self.authorized():
+                    return None
+                analysis_id = self.path.rsplit('/', 1)[-1]
+                with backend.lock:
+                    analysis = backend.analyses.get(analysis_id)
+                    if analysis is None:
+                        return self.send(404)
+                    backend.cancelled.append(analysis['name'])
+                    analysis['cancelled'] = True
+                return self.send(200, {'id': analysis_id, 'status': 'CANCELLED'})
 
             def upload(self, payload):
                 name = re.search(rb'filename="([^"]+)"', payload).group(1).decode()
@@ -281,7 +329,12 @@ class FakeBackend:
                 name, kind = analysis['name'], analysis['type']
                 body = {'id': analysis_id, 'type': kind, 'status': 'PROCESSING', 'verdict': None,
                         'videoProb': None, 'audioProb': None, 'errorMessage': None}
+                if analysis.get('cancelled'):
+                    return self.send(200, {**body, 'status': 'CANCELLED'})
                 if polls == 1:
+                    return self.send(200, body)
+                if 'slow' in name and backend.hold_slow:
+                    backend.held.set()
                     return self.send(200, body)
                 if 'noface' in name:
                     return self.send(200, {**body, 'status': 'FAILED',
@@ -308,7 +361,8 @@ class EndToEndTest(unittest.TestCase):
     def setUp(self):
         self.backend = FakeBackend()
         self.addCleanup(self.backend.close)
-        tmp = tempfile.TemporaryDirectory()
+        # Interrupted runs leave daemon workers that may still hold a media file open (Windows).
+        tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name, 'media')
         for rel in self.files:
@@ -320,11 +374,15 @@ class EndToEndTest(unittest.TestCase):
         self.log.start()
         self.addCleanup(self.log.stop)
 
-    def run_cli(self, *extra):
+    def run_cli(self, *extra, secret='secret'):
         args = [str(self.root), '--out', str(self.out), '--gateway', self.backend.url,
                 '--keycloak', self.backend.url, '--poll-interval', '0', '--upload-interval', '0', '--timeout', '30', *extra]
+        if secret:
+            args += ['--client-secret', secret]
         stdout = io.StringIO()
-        with redirect_stdout(stdout):
+        with redirect_stdout(stdout), patch.dict(ba.os.environ, {}, clear=False) as env:
+            for name in ('BATCH_CLIENT_ID', 'BATCH_CLIENT_SECRET'):
+                env.pop(name, None)
             code = ba.main(args, wait=lambda s: self.delays.append(s))
         return code, stdout.getvalue()
 
@@ -373,6 +431,18 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual(0, ba.main(['--metrics-only', '--out', str(self.out)]))
         self.assertIn('NO_FACE_DETECTED: 1', stdout.getvalue())
 
+    def test_without_a_secret_the_user_signs_in_with_the_device_flow(self):
+        self.backend.device_answers = ['authorization_pending']
+        self.assertEqual(0, self.run_cli(secret=None)[0])
+        self.assertEqual(8, len(self.rows()))
+        self.assertEqual({'deepfake-cli'}, {client for _, client in self.backend.grants})
+        self.assertEqual(1, self.backend.device_codes)
+
+    def test_failed_sign_in_ends_the_run_before_any_upload(self):
+        self.backend.device_answers = ['expired_token']
+        self.assertEqual(3, self.run_cli(secret=None)[0])
+        self.assertEqual([], self.backend.uploads)
+
     def test_expired_token_is_renewed_once(self):
         self.backend.expired.add('token-1')
         self.assertEqual(0, self.run_cli()[0])
@@ -399,6 +469,47 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(0, self.run_cli()[0])
         self.assertEqual(8, len(self.rows()))
 
+    def interrupt_with_slow_analysis_in_flight(self, *extra):
+        touch(self.root, 'fake/slow.mp4', size=64 * 1024)
+        messages = []
+
+        def interrupt(message):
+            messages.append(message)
+            # Interrupt after a row is written, while the slow analysis is still on the server.
+            if message.startswith('[1/'):
+                self.assertTrue(self.backend.held.wait(10))
+                raise KeyboardInterrupt
+
+        with patch.object(ba, 'log', side_effect=interrupt):
+            self.assertEqual(130, self.run_cli('--concurrency', '9', *extra)[0])
+        return messages
+
+    def test_ctrl_c_cancels_analyses_in_flight_and_resume_reruns_them(self):
+        messages = self.interrupt_with_slow_analysis_in_flight()
+        self.assertIn('slow.mp4', self.backend.cancelled)
+        self.assertTrue(any(m.startswith('Anulowano:') for m in messages), messages)
+        self.assertNotIn('fake/slow.mp4', self.rows())
+        self.backend.hold_slow = False
+        uploads = len(self.backend.uploads)
+        self.assertEqual(0, self.run_cli()[0])
+        self.assertIn('slow.mp4', self.backend.uploads[uploads:])
+        self.assertEqual('COMPLETED', self.rows()['fake/slow.mp4']['status'])
+
+    def test_no_cancel_leaves_analyses_running(self):
+        messages = self.interrupt_with_slow_analysis_in_flight('--no-cancel')
+        self.assertEqual([], self.backend.cancelled)
+        self.assertTrue(any(m.startswith('Przerwano') and 'kończą się na serwerze' in m for m in messages))
+
+    def test_cancel_uses_the_cached_token_and_tolerates_failures(self):
+        tokens = ba.TokenSource(self.backend.url + '/realms/deepfake/protocol/openid-connect/token',
+                                'deepfake-loadtest', 'secret')
+        api = ba.Api(self.backend.url, tokens)
+        batch = ba.Batch(api, ba.Settings())
+        batch.active.update({'missing-1', 'missing-2'})
+        batch.cancel_active(timeout=2)  # no token yet: 401, nothing renewed, no exception
+        self.assertEqual(0, self.backend.tokens)
+        self.assertEqual(401, api.cancel('missing-1').status)
+
     def test_per_file_timeout_is_recorded_as_a_retryable_error(self):
         code, _ = self.run_cli('--timeout', '0.000001', '--poll-interval', '1')
         self.assertEqual(0, code)
@@ -407,6 +518,74 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(7, len(timed_out))
         self.assertTrue(all(r['blad'].startswith('[CLIENT_TIMEOUT]') for r in timed_out))
         self.assertEqual(['real/broken.wav'], list(ba.plan_resume(rows.values())))
+
+
+class DeviceLoginTest(unittest.TestCase):
+    def setUp(self):
+        self.backend = FakeBackend()
+        self.addCleanup(self.backend.close)
+        self.now = [0.0]
+        self.sleeps = []
+        self.messages = []
+        patcher = patch.object(ba, 'log', side_effect=self.messages.append)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def sleep(self, seconds):
+        self.sleeps.append(seconds)
+        self.now[0] += seconds
+
+    def login(self):
+        return ba.DeviceLogin(self.backend.url + '/realms/deepfake/protocol/openid-connect/token',
+                              'deepfake-cli', clock=lambda: self.now[0], sleep=self.sleep)
+
+    def test_polls_until_authorized_and_honours_slow_down(self):
+        self.backend.device_answers = ['authorization_pending', 'slow_down', 'authorization_pending']
+        self.assertEqual('token-1', self.login().get())
+        # Interval 0 from the server; slow_down adds 5 s for the remaining polls (RFC 8628).
+        self.assertEqual([0.0, 0.0, 5.0, 5.0], self.sleeps)
+        self.assertIn(self.backend.url + '/realms/deepfake/device?user_code=WXYZ-ABCD', self.messages[0])
+        self.assertIn('WXYZ-ABCD', self.messages[1])
+        self.assertFalse([m for m in self.messages if 'token-' in m or 'refresh-' in m or 'device-' in m])
+
+    def test_expired_or_denied_code_is_fatal(self):
+        for answer in ('expired_token', 'access_denied'):
+            with self.subTest(answer=answer):
+                self.backend.device_answers = ['authorization_pending', answer]
+                with self.assertRaises(ba.FatalError):
+                    self.login().get()
+        self.assertEqual(0, self.backend.tokens)
+
+    def test_code_lifetime_bounds_the_wait(self):
+        self.backend.device_answers = ['authorization_pending'] * 1000
+        tokens = self.login()
+        tokens.sleep = lambda s: self.sleep(100)
+        with self.assertRaises(ba.FatalError):
+            tokens.get()
+        self.assertLessEqual(len(self.sleeps), 7)
+
+    def test_refresh_before_expiry_then_sign_in_again_when_the_session_ended(self):
+        tokens = self.login()
+        self.assertEqual('token-1', tokens.get())
+        self.now[0] = 239.0
+        self.assertEqual('token-1', tokens.get())
+        self.now[0] = 240.0
+        self.assertEqual('token-2', tokens.get())
+        self.assertEqual(('refresh_token', 'deepfake-cli'), self.backend.grants[-1])
+        self.assertEqual(1, self.backend.device_codes)
+        self.backend.refresh_works = False
+        self.now[0] = 500.0
+        self.assertEqual('token-3', tokens.get())
+        self.assertEqual(2, self.backend.device_codes)
+        self.assertEqual(ba.DEVICE_GRANT, self.backend.grants[-1][0])
+
+    def test_rejected_access_token_is_refreshed(self):
+        tokens = self.login()
+        self.backend.expired.add('token-1')
+        api = ba.Api(self.backend.url, tokens)
+        self.assertEqual(404, api.request('GET', '/api/analysis/unknown').status)
+        self.assertEqual(['token-2'], [tokens.current()])
+        self.assertEqual(1, self.backend.device_codes)
 
 
 if __name__ == '__main__':

@@ -26,7 +26,7 @@ public class SecurityConfig {
     JwtDecoder jwtDecoder(
             @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwks,
             @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuer,
-            @Value("${security.jwt.allowed-clients:deepfake-web,deepfake-loadtest}") String clients) {
+            @Value("${security.jwt.allowed-clients:deepfake-web,deepfake-cli,deepfake-loadtest}") String clients) {
         var decoder = NimbusJwtDecoder.withJwkSetUri(jwks).build();
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
                 JwtValidators.createDefaultWithIssuer(issuer), new JwtClientValidator(clients)));

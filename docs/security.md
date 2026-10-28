@@ -19,8 +19,9 @@ caller itself instead of trusting the network.
 - **Every service validates the JWT itself:** the gateway, orchestrator and file-service check the
   signature against the Keycloak JWKS, the issuer and the expiry. The orchestrator and file-service
   also check the token's client (`azp`) against an allow-list (`JWT_ALLOWED_CLIENTS`, default
-  `deepfake-web,deepfake-loadtest`), so a token minted for another Keycloak client is rejected even
-  when its signature is valid.
+  `deepfake-web,deepfake-cli,deepfake-loadtest`), so a token minted for another Keycloak client is
+  rejected even when its signature is valid. `deepfake-cli` is the batch CLI's public client; it
+  allows only the device authorization grant, so it signs in a real user.
 - **Ownership:** every endpoint that returns a user resource checks `resource.user_id == jwt.sub`
   and answers **404**, not 403, so other users' IDs cannot be probed (IDOR).
 - **Internal endpoints:** gateway Actuator listens on internal port 9090 and checks the real local
