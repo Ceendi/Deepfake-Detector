@@ -286,7 +286,7 @@ class KeycloakSecurityTest(unittest.TestCase):
         grant = self.oidc('deepfake', 'auth/device', {'client_id': 'deepfake-cli'})
         self.browser = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar(policy=LocalBrowserCookiePolicy())))
         _, login = self.browser_get(grant['verification_uri_complete'])
-        _, consent = self.browser_post(self.form_action(login), {'username': 'alice', 'password': 'Test1234!@'})
+        consent_url, consent = self.browser_post(self.form_action(login), {'username': 'alice', 'password': 'Test1234!@'})
         # Keycloak always asks the user to grant a device its access, whatever consentRequired says.
         self.assertIn('name="accept"', consent, consent[-2000:])
         hidden = {}
@@ -294,7 +294,8 @@ class KeycloakSecurityTest(unittest.TestCase):
             name, value = re.search(r'\bname="([^"]*)"', tag), re.search(r'\bvalue="([^"]*)"', tag)
             if 'type="hidden"' in tag and name:
                 hidden[name.group(1)] = html.unescape(value.group(1)) if value else ''
-        _, done = self.browser_post(self.form_action(consent), {**hidden, 'accept': 'Yes'})
+        # The consent form posts to a relative URL.
+        _, done = self.browser_post(urljoin(consent_url, self.form_action(consent)), {**hidden, 'accept': 'Yes'})
         self.assertNotIn('name="accept"', done)
         tokens = self.oidc('deepfake', 'token', self.device_poll(grant['device_code']))
         claims = self.claims(tokens['access_token'])
