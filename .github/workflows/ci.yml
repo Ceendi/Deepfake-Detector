@@ -107,7 +107,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [video-detector, audio-detector, detector-runtime]
+        service: [video-detector, audio-detector, detector-runtime, tools]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -115,6 +115,20 @@ jobs:
       - name: ruff
         working-directory: ${{ matrix.service }}
         run: uvx --no-build ruff==0.16.10 check .
+      # The tools are standard library only; pytest only collects JUnit and coverage for Sonar.
+      - name: Batch CLI against a fake REST API
+        if: matrix.service == 'tools'
+        working-directory: tools
+        run: >-
+          uv run --no-project --no-build --python 3.12 --with 'pytest>=8,<10' --with 'pytest-cov>=7,<8'
+          python -m pytest -q batch/tests --junitxml=reports/junit.xml
+          --cov=batch --cov-report=xml:reports/coverage.xml --cov-report=term
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && matrix.service == 'tools'
+        with:
+          name: test-results-tools
+          path: tools/reports/
+          retention-days: 14
 
   detector-contract:
     name: Lightweight detector contract (${{ matrix.service }})
@@ -337,7 +351,7 @@ jobs:
 
   test-report:
     name: Test report
-    needs: [java, detector-contract, frontend, ml-compatibility]
+    needs: [java, python, detector-contract, frontend, ml-compatibility]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -361,7 +375,7 @@ jobs:
 
   sonar:
     name: SonarCloud Quality Gate
-    needs: [java, detector-contract, frontend, ml-compatibility]
+    needs: [java, python, detector-contract, frontend, ml-compatibility]
     # Fork PRs get no SONAR_TOKEN; they still run every other check. Skipped or failed test jobs
     # must not skip the analysis: a skipped required check would count as passed.
     if: ${{ !cancelled() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -397,6 +411,10 @@ jobs:
         with:
           pattern: test-results-ml-*
           path: python-reports
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: test-results-tools
+          path: python-reports/tools
       - name: Put reports where sonar-project.properties expects them
         run: |
           for service in gateway eureka-server orchestrator file-service; do

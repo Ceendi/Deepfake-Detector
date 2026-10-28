@@ -30,6 +30,7 @@ Inside CI, a pull request runs only the test jobs its changed files can affect
 | a detector, `detector-runtime/` or `tests/worker_redelivery/` | detector jobs and the orchestrator tests that start the real detector consumers |
 | shared wire fixtures (`orchestrator/src/test/resources/contracts/`) | orchestrator, detectors and frontend |
 | only `docs/` or root `*.md` | no test job |
+| only `tools/` | no gated job; the always-running `python (tools)` lints and tests it |
 | anything else (`docker-compose.yml`, `infra/`, `.github/`, configuration, a new directory) | everything |
 
 Pushes to `main` always run everything, and a failed selection runs everything. Ruff, the
@@ -40,7 +41,7 @@ skipped, cancelled or failed, so a skipped required check never stands in for an
 
 | Workflow | Trigger | Jobs | Fails when |
 |---|---|---|---|
-| `ci.yml` (CI) | PR (jobs by changed paths), push | `java (*)` (Maven verify of 4 services), `python (*)` (ruff), `Lightweight detector contract (*)`, `ML dependency compatibility (*)`, `Worker process redelivery`, `frontend` (lint, vitest, build, npm audit), `Application dependency vulnerabilities`, `Detector image security and compatibility (*)`, `Test report`, `SonarCloud Quality Gate` | a test or lint fails, the Quality Gate fails, a fixable HIGH/CRITICAL dependency or image vulnerability exists |
+| `ci.yml` (CI) | PR (jobs by changed paths), push | `java (*)` (Maven verify of 4 services), `python (*)` (ruff; unit tests of `tools/`), `Lightweight detector contract (*)`, `ML dependency compatibility (*)`, `Worker process redelivery`, `frontend` (lint, vitest, build, npm audit), `Application dependency vulnerabilities`, `Detector image security and compatibility (*)`, `Test report`, `SonarCloud Quality Gate` | a test or lint fails, the Quality Gate fails, a fixable HIGH/CRITICAL dependency or image vulnerability exists |
 | `e2e.yml` (E2E) | PR (app paths), push | `playwright`: `docker compose up --wait` of the core and auth profiles, then Playwright through Keycloak login, upload and analysis | a service is unhealthy or a browser test fails |
 | `infra-smoke.yml` | PR (infra paths), push | restart and persistence, Prometheus scraping of every replica, Tempo ingest, Keycloak import, discovery isolation, S3 and RabbitMQ permissions | a running stack does not behave as configured |
 | `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability |

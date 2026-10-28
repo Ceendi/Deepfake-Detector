@@ -15,6 +15,8 @@ EVERYTHING = {"frontend", "detectors", *(f"java:{service}" for service in JAVA)}
 RULES = [
     # Documentation is not read by any job in ci.yml.
     (re.compile(r"^docs/|^[^/]+\.md$"), set()),
+    # Standalone stdlib tools: the python job, which always runs, lints and tests them.
+    (re.compile(r"^tools/"), set()),
     # Shared wire fixtures: the audio detector and frontend tests load them too.
     (re.compile(r"^orchestrator/src/test/resources/contracts/"),
      {"java:orchestrator", "detectors", "frontend"}),

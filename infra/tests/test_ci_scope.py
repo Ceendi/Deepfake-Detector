@@ -41,6 +41,16 @@ class CiScopeTest(unittest.TestCase):
         self.assertEqual({'java': '[]', 'frontend': 'false', 'detectors': 'false'},
                          run('README.md', 'docs/ci-cd.md'))
 
+    def test_tools_change_runs_only_the_always_on_python_job(self):
+        self.assertEqual({'java': '[]', 'frontend': 'false', 'detectors': 'false'},
+                         run('tools/batch/batch_analyze.py', 'tools/batch/tests/test_batch_analyze.py'))
+        workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+        python = workflow[workflow.index('\n  python:'):workflow.index('\n  detector-contract:')]
+        self.assertNotIn('needs:', python)
+        self.assertNotIn('\n    if:', python)
+        self.assertIn('detector-runtime, tools]', python)
+        self.assertIn('python -m pytest -q batch/tests', python)
+
     def test_unknown_or_shared_paths_run_everything(self):
         for path in ('docker-compose.yml', '.github/workflows/ci.yml', 'infra/rabbitmq/rabbitmq.conf',
                      'sonar-project.properties', 'scripts/check-detector-image.sh', 'new-dir/x.py'):
