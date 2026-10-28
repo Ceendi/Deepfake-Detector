@@ -161,6 +161,31 @@ describe('useBatchQueue', () => {
     expect(statusOf(view)).toEqual(['analyzing', 'completed', 'analyzing', 'analyzing', 'queued'])
   })
 
+  it('uploads at most one analysis batch ahead while analyses are busy', async () => {
+    holdUploads()
+    const view = renderQueue(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((n) => `${n}.mp4`))
+    act(() => view.result.current.start())
+    await flush()
+
+    // Analyses never finish here; resolve every upload that the queue lets start.
+    for (let done = 0; done < inFlight.length; done += 1) {
+      inFlight[done].resolve()
+      await flush()
+    }
+
+    expect(inFlight).toHaveLength(BATCH_LIMITS.analyses * 2)
+    expect(statusOf(view)).toEqual([
+      ...Array(BATCH_LIMITS.analyses).fill('analyzing'),
+      ...Array(BATCH_LIMITS.analyses).fill('queued'),
+      'pending',
+      'pending',
+    ])
+
+    await act(async () => results.get('an-f-a.mp4')!(analysis({ status: 'COMPLETED' })))
+    await flush()
+    expect(inFlight).toHaveLength(BATCH_LIMITS.analyses * 2 + 1)
+  })
+
   it('waits Retry-After before retrying the same upload', async () => {
     vi.useFakeTimers()
     vi.mocked(uploadFileWithProgress).mockRejectedValueOnce(

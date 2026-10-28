@@ -156,25 +156,32 @@ export function useBatchQueue() {
     const run = runRef.current
     if (!run || run.signal.aborted || cancelledRef.current) return
     const list = itemsRef.current
-    let uploads = list.filter((item) => item.status === 'uploading').length
-    let analyses = list.filter((item) => item.status === 'analyzing').length
+    const count = (status: BatchStatus) => list.filter((item) => item.status === status).length
+    let analyses = count('analyzing')
+    // Uploaded files not yet analysed hold quota and become orphans on cancel or leaving the page,
+    // so uploads run at most one analysis batch ahead.
+    let backlog = count('uploading') + count('queued')
+    let uploads = count('uploading')
 
     for (const item of list) {
+      if (item.status !== 'queued' || analyses >= BATCH_LIMITS.analyses) continue
+      if (pausedRef.current.analysis) break
+      analyses += 1
+      backlog -= 1
+      void runAnalysis(item.key, run.signal)
+    }
+    for (const item of list) {
+      if (item.status !== 'pending') continue
       if (
-        item.status === 'queued' &&
-        analyses < BATCH_LIMITS.analyses &&
-        !pausedRef.current.analysis
+        uploads >= BATCH_LIMITS.uploads ||
+        backlog >= BATCH_LIMITS.analyses ||
+        pausedRef.current.upload
       ) {
-        analyses += 1
-        void runAnalysis(item.key, run.signal)
-      } else if (
-        item.status === 'pending' &&
-        uploads < BATCH_LIMITS.uploads &&
-        !pausedRef.current.upload
-      ) {
-        uploads += 1
-        void runUpload(item, run.signal)
+        break
       }
+      uploads += 1
+      backlog += 1
+      void runUpload(item, run.signal)
     }
   }
 
