@@ -18,6 +18,9 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
 RUN ./node_modules/.bin/vite build
 
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+# Takes Alpine security fixes released after the base image was built.
+USER root
+RUN apk upgrade --no-cache
 # The image's entrypoint renders templates with envsubst, only for variables that are set.
 # API_BASE_URL and KEYCLOAK_* reach the browser as /config.js.
 ENV GATEWAY_URL=http://gateway:8080 \
@@ -28,7 +31,7 @@ ENV GATEWAY_URL=http://gateway:8080 \
     KEYCLOAK_CLIENT_ID=deepfake-web
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
-# The base image already runs as nginx (101); stated explicitly so scanners can verify it.
+# Back to the base image's nginx user (101); stated explicitly so scanners can verify it.
 USER 101
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
