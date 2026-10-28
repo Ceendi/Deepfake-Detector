@@ -13,10 +13,6 @@ on:
         description: Published image tag (latest or sha-<7-character commit>)
         type: string
         default: latest
-  # TEMPORARY: lets this pull request run the workflow before it exists on main. Removed before merge.
-  pull_request:
-    paths:
-      - .github/workflows/e2e-ml.yml
 
 permissions:
   contents: read

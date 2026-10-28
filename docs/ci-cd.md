@@ -142,7 +142,7 @@ every audio file and the speaker clip, and `FAILED NO_FACE_DETECTED` for the fac
 Verdicts themselves are not asserted: model quality is measured separately. A second run must
 find nothing left to analyse (resume). The CSV, metrics and, on failure, `docker compose logs`
 are uploaded as the `e2e-ml-report` artifact. The runner frees preinstalled toolchains first;
-the job takes about half an hour.
+the job takes about 10 minutes.
 
 ## Security checks
 
