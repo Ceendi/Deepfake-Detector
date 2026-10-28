@@ -71,6 +71,26 @@ class AnalysisMetricsTest {
         assertThat(registry.get("analyses.stuck.recovered").counter().count()).isEqualTo(2.0);
     }
 
+    // A fresh stack must expose every business series at 0, or dashboard panels read "No data".
+    @Test
+    void businessSeriesExistAtZeroBeforeAnyEvent() {
+        PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        new AnalysisMetrics(registry, repository);
+
+        String scrape = registry.scrape();
+
+        for (String status : new String[] {"completed", "failed", "cancelled"}) {
+            for (String type : new String[] {"video", "audio", "full"}) {
+                assertThat(scrape).contains(
+                        "analyses_total{status=\"" + status + "\",type=\"" + type + "\"} 0.0");
+            }
+            assertThat(scrape).contains("analyses_deleted_total{status=\"" + status + "\"} 0.0");
+        }
+        assertThat(scrape).doesNotContain("status=\"pending\"").doesNotContain("status=\"processing\"");
+        assertThat(scrape).contains("cache_requests_total{result=\"hit\"} 0.0");
+        assertThat(scrape).contains("cache_requests_total{result=\"miss\"} 0.0");
+    }
+
     // Pins the actual Prometheus exposition names — Micrometer must not double the _total suffix.
     @Test
     void prometheusScrapeUsesExpectedNames() {

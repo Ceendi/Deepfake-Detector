@@ -84,6 +84,14 @@ class CoreReliabilityConfigurationTest(unittest.TestCase):
             self.assertTrue(services[name].get('read_only'))
             self.assertTrue(any(mount.startswith('/tmp:') for mount in services[name]['tmpfs']))
 
+    def test_gateway_does_not_load_netty_native_transport_from_noexec_tmp(self):
+        gateway = resolved_compose()['services']['gateway']
+        self.assertTrue(any(mount.startswith('/tmp:') and 'noexec' in mount
+                            for mount in gateway['tmpfs']))
+        self.assertIn('ENV JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders -XX:MaxRAMPercentage=75 '
+                      '-Dio.netty.transport.noNative=true"',
+                      (ROOT / 'gateway/Dockerfile').read_text())
+
     def test_redis_reserves_container_headroom_and_only_evicts_expiring_hints(self):
         arguments = resolved_compose()['services']['redis']['command']
         self.assertIn('--maxmemory', arguments)
@@ -195,6 +203,33 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
             self.assertEqual('up', targets[0]['health'], targets[0]['lastError'])
 
         self.eventually(scraped)
+
+    def test_gateway_starts_on_nio_without_native_library_warnings(self):
+        logs = self.compose('logs', '--no-color', 'gateway')
+        self.assertIn('Netty started on port', logs)
+        # Netty's noexec warning and the JDK warning about Netty calling System::loadLibrary.
+        for marker in ('libnetty', 'NativeLibraryUtil'):
+            self.assertNotIn(marker, logs)
+
+    def test_fresh_stack_dashboard_counters_have_data_before_any_analysis(self):
+        # Percentiles and ratios have no value without observations; detectors are not in core.
+        dashboard = json.loads((ROOT / 'infra/grafana/dashboards/deepfake-business.json').read_text())
+        expressions = [target['expr'] for panel in dashboard['panels']
+                       for target in panel.get('targets', [])
+                       if not any(skip in target['expr'] for skip in (
+                           'histogram_quantile', ' / ', 'video-detector', 'audio-detector'))]
+        for metric in ('analyses_total', 'analyses_deleted_total', 'analyses_inflight',
+                       'gateway_ratelimiter_degraded_total', 'rabbitmq_queue_messages_ready'):
+            self.assertTrue(any(metric in expression for expression in expressions), metric)
+
+        def every_panel_has_data():
+            for expression in expressions:
+                status, response = self.request(
+                    self.prometheus_url, '/api/v1/query?query=' + quote(expression, safe=''))
+                self.assertEqual(200, status)
+                self.assertTrue(response['data']['result'], expression)
+
+        self.eventually(every_panel_has_data, timeout=180)
 
     def test_gateway_stays_healthy_during_redis_outage(self):
         original = self.containers('gateway')[0]

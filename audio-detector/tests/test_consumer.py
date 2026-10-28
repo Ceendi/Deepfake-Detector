@@ -160,3 +160,10 @@ def test_runtime_retains_audio_metric_labels(monkeypatch, outcome, status):
     consumer.runtime.record_outcome(outcome, {"verdict": "FAKE"})
     metric.labels.assert_called_once_with(status=status)
     metric.labels.return_value.inc.assert_called_once_with()
+
+
+def test_every_audio_status_is_exposed_before_the_first_task():
+    samples = next(iter(consumer.PROCESSED_AUDIO_TOTAL.collect())).samples
+    exposed = {sample.labels["status"] for sample in samples
+               if sample.name == "audio_processed_total"}
+    assert exposed == {"success", "error", "cancelled"}
