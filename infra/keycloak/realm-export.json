@@ -66,6 +66,18 @@
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:4173/*"
       }
+    },
+    {
+      "clientId": "deepfake-cli",
+      "name": "Batch CLI (tools/batch): user sign-in through the device authorization grant",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "oauth2.device.authorization.grant.enabled": "true"
+      }
     }
   ]
 }

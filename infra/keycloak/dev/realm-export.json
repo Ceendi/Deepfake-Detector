@@ -68,6 +68,18 @@
       }
     },
     {
+      "clientId": "deepfake-cli",
+      "name": "Batch CLI (tools/batch): user sign-in through the device authorization grant",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "oauth2.device.authorization.grant.enabled": "true"
+      }
+    },
+    {
       "clientId": "deepfake-loadtest",
       "name": "Load-test client (DEV only): client_credentials grant for the D4 JMeter run",
       "publicClient": false,

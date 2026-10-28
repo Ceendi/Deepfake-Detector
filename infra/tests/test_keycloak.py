@@ -64,13 +64,31 @@ class KeycloakSecurityTest(unittest.TestCase):
         self.fail(f'Identity provider did not satisfy the check: {last_error}')
 
     def token(self, realm, fields):
+        return self.oidc(realm, 'token', fields)['access_token']
+
+    def oidc(self, realm, endpoint, fields):
         request = Request(
-            self.base + f'/realms/{realm}/protocol/openid-connect/token',
+            self.base + f'/realms/{realm}/protocol/openid-connect/{endpoint}',
             data=urlencode(fields).encode(),
             headers={'Content-Type': 'application/x-www-form-urlencoded'},
         )
         with urlopen(request, timeout=10) as response:
-            return json.load(response)['access_token']
+            return json.load(response)
+
+    def oidc_error(self, realm, endpoint, fields):
+        with self.assertRaises(HTTPError) as raised:
+            self.oidc(realm, endpoint, fields)
+        with raised.exception as error:
+            return error.code, json.load(error).get('error')
+
+    def device_poll(self, device_code):
+        return {'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+                'client_id': 'deepfake-cli', 'device_code': device_code}
+
+    @staticmethod
+    def claims(token):
+        encoded = token.split('.')[1]
+        return json.loads(base64.urlsafe_b64decode(encoded + '=' * (-len(encoded) % 4)))
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory(prefix='keycloak-security-')
@@ -158,6 +176,17 @@ class KeycloakSecurityTest(unittest.TestCase):
         self.assertNotIn('deepfake-loadtest', {client['clientId'] for client in clients})
         realm = self.request('/admin/realms/deepfake', token=self.admin)
         self.assertFalse(realm['resetPasswordAllowed'])
+        # The batch CLI client gets device codes in the default realm; the SPA client does not.
+        grant = self.oidc('deepfake', 'auth/device', {'client_id': 'deepfake-cli'})
+        self.assertTrue(grant['verification_uri_complete'].startswith(self.base + '/realms/deepfake/device'))
+        self.assertIn(grant['user_code'], grant['verification_uri_complete'])
+        self.assertEqual((400, 'authorization_pending'),
+                         self.oidc_error('deepfake', 'token', self.device_poll(grant['device_code'])))
+        self.assertEqual((400, 'unauthorized_client'),
+                         self.oidc_error('deepfake', 'auth/device', {'client_id': 'deepfake-web'}))
+        self.assertEqual((400, 'unauthorized_client'), self.oidc_error('deepfake', 'token', {
+            'grant_type': 'password', 'client_id': 'deepfake-cli', 'username': 'x', 'password': 'y',
+        }))
         self.request('/admin/realms/deepfake/users', {
             'username': 'registered-user', 'enabled': True,
         }, method='POST', token=self.admin)
@@ -250,6 +279,33 @@ class KeycloakSecurityTest(unittest.TestCase):
             'grant_type': 'password', 'client_id': 'security-password-check',
             'username': 'alice', 'password': 'Test1234!@',
         }))
+        self.assert_device_login_as_alice()
+
+    def assert_device_login_as_alice(self):
+        """Batch CLI sign-in: a user confirms the device code in a browser, the CLI polls a token."""
+        grant = self.oidc('deepfake', 'auth/device', {'client_id': 'deepfake-cli'})
+        self.browser = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar(policy=LocalBrowserCookiePolicy())))
+        _, login = self.browser_get(grant['verification_uri_complete'])
+        consent_url, consent = self.browser_post(self.form_action(login), {'username': 'alice', 'password': 'Test1234!@'})
+        # Keycloak always asks the user to grant a device its access, whatever consentRequired says.
+        self.assertIn('name="accept"', consent, consent[-2000:])
+        hidden = {}
+        for tag in re.findall(r'<input\b[^>]*>', consent):
+            name, value = re.search(r'\bname="([^"]*)"', tag), re.search(r'\bvalue="([^"]*)"', tag)
+            if 'type="hidden"' in tag and name:
+                hidden[name.group(1)] = html.unescape(value.group(1)) if value else ''
+        # The consent form posts to a relative URL.
+        _, done = self.browser_post(urljoin(consent_url, self.form_action(consent)), {**hidden, 'accept': 'Yes'})
+        self.assertNotIn('name="accept"', done)
+        tokens = self.oidc('deepfake', 'token', self.device_poll(grant['device_code']))
+        claims = self.claims(tokens['access_token'])
+        self.assertEqual(('deepfake-cli', 'alice'), (claims['azp'], claims['preferred_username']))
+        self.assertIn('USER', claims['realm_access']['roles'])
+        refreshed = self.oidc('deepfake', 'token', {
+            'grant_type': 'refresh_token', 'client_id': 'deepfake-cli',
+            'refresh_token': tokens['refresh_token'],
+        })
+        self.assertEqual('deepfake-cli', self.claims(refreshed['access_token'])['azp'])
 
 
 if __name__ == '__main__':

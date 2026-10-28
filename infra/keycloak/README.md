@@ -7,7 +7,12 @@ Keycloak on every `docker compose up` with the `auth` profile; see
 
 ## What's in the realm
 
-- One public client, `deepfake-web` (PKCE S256), for the SPA; open registration.
+- Public client `deepfake-web` (PKCE S256) for the SPA; open registration.
+- Public client `deepfake-cli` for the batch CLI (`tools/batch`): only the OAuth 2.0 device
+  authorization grant (no secret, no browser redirect, no password grant). The user signs in at
+  `/realms/deepfake/device` in a browser and grants the device access (Keycloak always shows this
+  consent for the device grant), so analyses land in that user's history. Like the SPA it
+  gets the `USER` role through the realm's default client scopes.
 - Realm role `USER`, granted to every new user through `default-roles-deepfake`.
 - No fixture users or service-account clients in the default import.
 - Password policy, brute-force protection and token lifetimes (below).
@@ -35,10 +40,11 @@ service account are gone. Registered users are kept; no volume reset is needed.
 ### Allowed clients
 
 File-service and orchestrator accept only tokens of clients in `JWT_ALLOWED_CLIENTS` (default
-`deepfake-web,deepfake-loadtest`). They check `azp`; only when `azp` is absent must one audience be
-allowed. A foreign, empty or malformed `azp` is rejected (`401`) even with an allowed audience, and
-signature, issuer, expiry, roles and ownership are still checked. Adding a client to the realm does
-not grant API access: also add it to `JWT_ALLOWED_CLIENTS` of both services.
+`deepfake-web,deepfake-cli,deepfake-loadtest`). They check `azp`; only when `azp` is absent must
+one audience be allowed. A foreign, empty or malformed `azp` is rejected (`401`) even with an
+allowed audience, and signature, issuer, expiry, roles and ownership are still checked. Adding a
+client to the realm does not grant API access: also add it to `JWT_ALLOWED_CLIENTS` of both
+services. A local `.env` that sets `JWT_ALLOWED_CLIENTS` explicitly must list `deepfake-cli` too.
 
 ## Changing the realm
 

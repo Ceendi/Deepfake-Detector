@@ -8,7 +8,7 @@ Base path: `/api`. Auth: Bearer JWT (Keycloak OIDC, PKCE).
 
 File-service and orchestrator validate the signature, issuer, timestamps and client.
 `JWT_ALLOWED_CLIENTS` is a comma-separated allowlist (default
-`deepfake-web,deepfake-loadtest`). When present, `azp` must be a non-empty allowed
+`deepfake-web,deepfake-cli,deepfake-loadtest`). When present, `azp` must be a non-empty allowed
 client ID; an allowed `aud` cannot override a foreign or malformed `azp`.
 Without `azp`, at least one `aud` must be allowed. Missing client claims and tokens
 for another client in the same realm return `401`. Roles and ownership checks still apply.

@@ -98,9 +98,24 @@ class RealModelWorkflowTest(unittest.TestCase):
     def test_downloaded_clip_is_pinned_and_media_is_generated(self):
         self.assertRegex(self.workflow, r'FACE_SHA256: [0-9a-f]{64}\n')
         self.assertIn('sha256sum -c -', self.workflow)
-        self.assertIn('batch_analyze.py media --labels-from-folders', self.workflow)
+        self.assertIn('--labels-from-folders --timeout 900', self.workflow)
         self.assertIn('python3 infra/ci/e2e_ml_outcomes.py results.csv media', self.workflow)
         self.assertIn("grep -F 'do analizy: 0' resume.log", self.workflow)
+
+    def test_batch_cli_in_workflows_never_waits_for_a_browser(self):
+        # Without a client secret the CLI signs in through the device flow and polls until the
+        # code expires; CI must use the dev realm's service account instead.
+        calls = []
+        for workflow in sorted((ROOT / '.github/workflows').glob('*.y*ml')):
+            for line in workflow.read_text().splitlines():
+                if 'batch_analyze.py' in line and not line.lstrip().startswith('#'):
+                    calls.append((workflow.name, line))
+        self.assertTrue(calls)
+        for name, line in calls:
+            with self.subTest(workflow=name, line=line.strip()):
+                self.assertIn('--client-secret "$LOADTEST_CLIENT_SECRET"', line)
+        self.assertIn("grep -m1 '^LOADTEST_CLIENT_SECRET=' .env", self.workflow)
+        self.assertIn('>> "$GITHUB_ENV"', self.workflow)
 
     def test_actions_are_pinned(self):
         actions = re.findall(r'(?m)^\s+(?:- )?uses: (\S+)', self.workflow)

@@ -132,7 +132,7 @@ reliability:
     initial-delay: ${RELIABILITY_STUCK_JOB_INITIAL_DELAY:${reliability.stuck-job.threshold-seconds}s}
 security:
   jwt:
-    allowed-clients: ${JWT_ALLOWED_CLIENTS:deepfake-web,deepfake-loadtest}
+    allowed-clients: ${JWT_ALLOWED_CLIENTS:deepfake-web,deepfake-cli,deepfake-loadtest}
 management:
   metrics:
     distribution:
