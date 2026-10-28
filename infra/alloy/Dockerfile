@@ -1,4 +1,4 @@
-FROM grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+FROM grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
 USER root
 # Patch CVE-2026-84782 while the upstream image still ships the old OpenSSL.
 RUN apt-get update \

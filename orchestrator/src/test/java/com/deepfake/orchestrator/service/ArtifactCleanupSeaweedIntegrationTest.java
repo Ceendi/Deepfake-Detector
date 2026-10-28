@@ -34,7 +34,7 @@ import software.amazon.awssdk.services.s3.model.*;
 @Testcontainers
 class ArtifactCleanupSeaweedIntegrationTest {
     @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
-    @Container static final GenericContainer<?> seaweed = new GenericContainer<>("chrislusf/seaweedfs:4.48")
+    @Container static final GenericContainer<?> seaweed = new GenericContainer<>("chrislusf/seaweedfs:4.51")
         .withExposedPorts(8333)
         .withCopyToContainer(Transferable.of("""
             {"identities":[

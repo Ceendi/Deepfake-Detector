@@ -237,7 +237,7 @@ services:
     networks: [deepfake]
 
   seaweedfs:
-    image: chrislusf/seaweedfs:4.48
+    image: chrislusf/seaweedfs:4.51
     profiles: ["core"]
     restart: unless-stopped
     stop_grace_period: 30s # volume server flushes outstanding writes on SIGTERM
@@ -884,7 +884,7 @@ services:
     networks: [deepfake]
 
   grafana:
-    image: grafana/grafana:13.2.5
+    image: grafana/grafana:13.3.0
     profiles: ["monitoring"]
     restart: unless-stopped
     <<: *readonly-runtime
