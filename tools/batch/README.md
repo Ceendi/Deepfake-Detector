@@ -18,7 +18,7 @@ Na Windows ustaw `PYTHONUTF8=1`.
 
 Domyślnie logujesz się jako zwykły użytkownik (klient `deepfake-cli`, device authorization grant):
 narzędzie wypisuje link i kod, otwierasz link w przeglądarce, logujesz się tym samym kontem co w
-UI, a analizy trafiają do Twojej historii. Token odświeża się sam przed wygaśnięciem; gdy sesja
+UI i potwierdzasz dostęp („Tak”), a analizy trafiają do Twojej historii. Token odświeża się sam przed wygaśnięciem; gdy sesja
 Keycloak się skończy (30 min bezczynności, maks. 10 h), narzędzie poprosi o ponowne logowanie.
 Tokenów nigdy nie wypisuje. Nieudane logowanie (np. wygasły kod) kończy przebieg przed pierwszym
 uploadem (kod 3).

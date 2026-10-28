@@ -286,8 +286,16 @@ class KeycloakSecurityTest(unittest.TestCase):
         grant = self.oidc('deepfake', 'auth/device', {'client_id': 'deepfake-cli'})
         self.browser = build_opener(HTTPCookieProcessor(http.cookiejar.CookieJar(policy=LocalBrowserCookiePolicy())))
         _, login = self.browser_get(grant['verification_uri_complete'])
-        _, done = self.browser_post(self.form_action(login), {'username': 'alice', 'password': 'Test1234!@'})
-        self.assertNotIn('name="password"', done)
+        _, consent = self.browser_post(self.form_action(login), {'username': 'alice', 'password': 'Test1234!@'})
+        # Keycloak always asks the user to grant a device its access, whatever consentRequired says.
+        self.assertIn('name="accept"', consent, consent[-2000:])
+        hidden = {}
+        for tag in re.findall(r'<input\b[^>]*>', consent):
+            name, value = re.search(r'\bname="([^"]*)"', tag), re.search(r'\bvalue="([^"]*)"', tag)
+            if 'type="hidden"' in tag and name:
+                hidden[name.group(1)] = html.unescape(value.group(1)) if value else ''
+        _, done = self.browser_post(self.form_action(consent), {**hidden, 'accept': 'Yes'})
+        self.assertNotIn('name="accept"', done)
         tokens = self.oidc('deepfake', 'token', self.device_poll(grant['device_code']))
         claims = self.claims(tokens['access_token'])
         self.assertEqual(('deepfake-cli', 'alice'), (claims['azp'], claims['preferred_username']))

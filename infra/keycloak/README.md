@@ -9,8 +9,9 @@ Keycloak on every `docker compose up` with the `auth` profile; see
 
 - Public client `deepfake-web` (PKCE S256) for the SPA; open registration.
 - Public client `deepfake-cli` for the batch CLI (`tools/batch`): only the OAuth 2.0 device
-  authorization grant (no secret, no browser redirect, no password grant). The user confirms a code
-  at `/realms/deepfake/device` in a browser, so analyses land in that user's history. Like the SPA it
+  authorization grant (no secret, no browser redirect, no password grant). The user signs in at
+  `/realms/deepfake/device` in a browser and grants the device access (Keycloak always shows this
+  consent for the device grant), so analyses land in that user's history. Like the SPA it
   gets the `USER` role through the realm's default client scopes.
 - Realm role `USER`, granted to every new user through `default-roles-deepfake`.
 - No fixture users or service-account clients in the default import.
