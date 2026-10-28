@@ -10,7 +10,9 @@ RUN python3 /tmp/patch_dependencies.py pom.xml \
     && mvn -B -ntp package -Dlicense.skip=true -Dlicense.skipCheckFileHeader=true -Dmaven.test.skip=true -Dlicense.skipCheckLicense \
         -Dcheckstyle.skip -Dmaven.site.skip=true -Dmaven.javadoc.skip=true -Dmaven.gitcommitid.skip=true
 
-FROM eclipse-temurin:21-jre-alpine@sha256:51ab5e3302e7141ce665ca3ea85e8b5cd648eafbc3c0c90dd79d6537684e4555
+FROM eclipse-temurin:21-jre-alpine@sha256:b48e02e0ea88d7bfb305335df94923bdef394905f4147dccd52e873cf17b1088
+# Takes Alpine security fixes released after the base image was built.
+RUN apk upgrade --no-cache
 COPY --from=builder /source/target/keycloak-config-cli.jar /app/keycloak-config-cli.jar
 ENV KEYCLOAK_SSL_VERIFY=true IMPORT_FILES_LOCATIONS=file:/config/*
 USER 65534:65534
