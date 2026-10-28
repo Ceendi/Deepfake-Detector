@@ -80,6 +80,16 @@ class ObservabilityConfigurationTest(unittest.TestCase):
             self.assertIn(metric, expressions)
         self.assertIn('row', {panel['type'] for panel in panels.values()})
 
+    def test_panels_without_observations_explain_the_empty_value(self):
+        dashboard = json.loads((ROOT / 'infra/grafana/dashboards/deepfake-business.json').read_text())
+        panels = {panel['id']: panel for panel in dashboard['panels']}
+        # Counters exist at 0 from startup; percentiles and ratios have no value until traffic.
+        for panel_id in (2, 4, 5, 12, 13):
+            with self.subTest(panel=panel_id):
+                self.assertTrue(panels[panel_id]['fieldConfig']['defaults'].get('noValue'))
+        # 0/0 would render NaN instead of the explanation.
+        self.assertIn('/ (sum(rate(cache_requests_total[5m])) > 0)', panels[2]['targets'][0]['expr'])
+
     def test_native_prometheus_validation_and_alert_scenarios(self):
         service = resolved_compose()['services']['prometheus']
         mounts = [value for volume in service['volumes'] if volume['type'] == 'bind'

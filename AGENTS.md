@@ -66,7 +66,8 @@ Nie podnoś wersji bez potrzeby i nie przepisuj ich tutaj. Rzeczy nieoczywiste:
   Flyway przez `spring-boot-starter-flyway`. Null safety: JSpecify.
   Retry listenerów: `max-retries` (SB 4.0 po cichu ignoruje `max-attempts`).
 - Każdy Dockerfile Java ustawia
-  `JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders -XX:MaxRAMPercentage=75"` (budżet RAM 16 GB).
+  `JAVA_TOOL_OPTIONS="-XX:+UseCompactObjectHeaders -XX:MaxRAMPercentage=75"` (budżet RAM 16 GB);
+  gateway dodatkowo `-Dio.netty.transport.noNative=true` (NIO, bo `/tmp` jest `noexec`).
 - **Detektory:** inferencja wyłącznie CPU (ONNX `CPUExecutionProvider`, torch `map_location='cpu'`).
   Audio używa `soundfile` zamiast `torchaudio.load` (ten wymaga `torchcodec`, którego nie instalujemy).
   Obrazy instalują zależności runtime z locka (`uv sync --frozen --no-dev`), bez grupy dev i extra `training`.

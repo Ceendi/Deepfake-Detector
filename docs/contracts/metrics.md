@@ -20,6 +20,11 @@ Cardinality: labels are enum-valued only — never `analysis_id`/`user_id` (thos
 metric series). RabbitMQ queue depth (`rabbitmq_queue_messages`) comes from the RabbitMQ Prometheus
 plugin, not from app code.
 
+Every counter series above is registered at 0 at startup, one per label combination (terminal
+statuses × types, terminal statuses, hit/miss), so a fresh stack shows 0 on the dashboard instead
+of "No data". "No data" on a counter panel therefore means the target is not scraped. Percentiles
+and the cache hit ratio have no value without observations; those panels say so (`noValue`).
+
 ## File Service (`/actuator/prometheus`)
 
 | Prometheus name                 | Type    | Labels | Meaning |
@@ -34,7 +39,8 @@ plugin, not from app code.
 | `gateway_ratelimiter_degraded_total` | counter | `route` (`file-service`, `orchestrator`) | Requests forwarded without Redis rate limiting on error, timeout or `remaining=-1`, including the shared degraded bypass window. Uploads fail closed and do not increment this counter. |
 
 Java name: `gateway.ratelimiter.degraded`. Route labels come from static gateway
-configuration, never user IDs or URLs. The Business dashboard shows the request
+configuration, never user IDs or URLs; every route behind the fail-open limiter is registered at 0
+at startup (`DegradedRequestMeters`). The Business dashboard shows the request
 rate by route. `GatewayRateLimitIntegrationTest` checks the actual Prometheus name.
 
 ## Detectors (`/metrics`)
@@ -59,7 +65,8 @@ bound, including fractional values. A lower configured limit keeps the base buck
 The setting retains its existing positive finite validation and default of 3600 s;
 these buckets do not change execution deadlines. Metric names and labels stay the same.
 
-Histogram exposition includes `_bucket{le}`, `_sum` and `_count`; all include an
+Every `detector_results_total` outcome and `audio_processed_total` status is exposed at 0 from
+startup. Histogram exposition includes `_bucket{le}`, `_sum` and `_count`; all include an
 infinite bucket. The detector dashboard row shows p95 separately for video and
 audio, plus their existing outcome labels. These counters count delivery attempts,
 not unique analyses: use `analyses_total` for committed analysis outcomes.
