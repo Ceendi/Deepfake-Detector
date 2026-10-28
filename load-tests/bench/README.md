@@ -5,16 +5,16 @@ Measures the three backend optimizations (orchestrator). Report:
 
 **Tools:** `psql` (in the postgres container), `wrk` (via the immutable image
 `williamyeh/wrk@sha256:78adc0d9d51a99e6759e702a08d03eaece81c890ffcc9790ef9e5b199d54f091`, run on the `deepfake`
-network), and the `deepfake-loadtest` client for a token (added in the D4 PR; the orchestrator
-validates its USER role). Set `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in the local
+network), and the `deepfake-loadtest` client for a token (the orchestrator validates its USER
+role). Set `KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in the local
 `.env` to enable this client, then bring up `docker compose --profile core --profile auth up -d`.
 See [Keycloak configuration](../../infra/keycloak/README.md).
 
 ## 1. Indexes — `EXPLAIN (ANALYZE, BUFFERS)`, no auth
 
 ```powershell
-docker exec -i deepfake-detector-postgres-1 psql -U deepfake -d deepfake < seed-analyses.sql      # ~100k rows
-docker exec -i deepfake-detector-postgres-1 psql -U deepfake -d deepfake < explain-history.sql     # with vs without index
+Get-Content seed-analyses.sql | docker compose exec -T postgres psql -U deepfake -d deepfake    # ~100k rows
+Get-Content explain-history.sql | docker compose exec -T postgres psql -U deepfake -d deepfake   # with vs without index
 ```
 
 The history query (`findByUserId`, ORDER BY created_at DESC LIMIT 20) should be an **Index Only Scan**
@@ -30,7 +30,7 @@ $env:LOADTEST_CLIENT_SECRET = "<same as .env>"
 # hit (cache on, default):
 docker compose --profile core --profile auth up -d orchestrator
 .\bench-http.ps1 -Label cache-hit
-# miss (cache off): rebuild not needed, just set env and recreate orchestrator
+# miss (cache off): no rebuild, the changed env recreates the orchestrator
 $env:CACHE_ENABLED = "false"; docker compose --profile core --profile auth up -d orchestrator
 .\bench-http.ps1 -Label cache-miss
 ```
@@ -46,7 +46,7 @@ $env:DB_POOL_MAX = "20"; docker compose --profile core --profile auth up -d orch
 ```
 
 Pool saturation shows up in `hikaricp_connections_pending` / `hikaricp_connections_acquire_seconds`
-(`docker exec deepfake-detector-orchestrator-1 wget -qO- http://localhost:8082/actuator/prometheus | findstr hikari`).
+(`docker compose exec orchestrator wget -qO- http://localhost:8082/actuator/prometheus | findstr hikari`).
 
 ## Notes
 

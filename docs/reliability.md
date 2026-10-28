@@ -47,8 +47,7 @@ remains in readiness, which can stay DOWN after a broker outage until a successf
 recovery publication. That readiness state must not make a live process an unhealthy container.
 Gateway probes liveness on its internal management port (`9090/actuator/health/liveness`),
 so a Redis outage leaves the live container healthy. The full `/actuator/health` remains
-available for dependency diagnostics; upload fail-closed and other routes' fail-open
-policies stay the same. RabbitMQ checks both
+available for dependency diagnostics. RabbitMQ checks both
 `check_running` and `check_port_connectivity`, rather than only Erlang-node reachability.
 
 RabbitMQ's effective memory budget is explicitly `512MB` (512,000,000 bytes) and the quorum WAL is capped at
@@ -76,51 +75,9 @@ It also reads the live broker/Redis memory settings. `infra/tests/test_monitorin
 runs native Prometheus/Loki/Alloy validators against valid and broken configs, checks dashboard JSON,
 boots monitoring on fresh volumes and verifies that Alloy excludes another project's logs.
 
-Alloy filters Docker discovery by `com.docker.compose.project`, using the automatically resolved
-Compose project name (including `--project-name` overrides). Prometheus's HTTP lifecycle/reload
-endpoint is disabled; edit configuration and recreate the container to apply it.
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `ALLOY_COMPOSE_PROJECT` | resolved Compose project name | Internal Alloy environment value supplied by Compose, not a separate deployment override |
-
-## Identity, management and image updates
-
-The default Keycloak import provisions the SPA client and realm policy without
-fixture users or the load-test service account. Development/load-test installations
-explicitly select `KEYCLOAK_REALM_CONFIG=dev/realm-export.json`; managed users stay
-`no-delete`, so registered accounts survive sync. Switching an existing dev database
-to deployment requires explicit removal of fixture users, as described in
-[Keycloak configuration](../infra/keycloak/README.md).
-
-Gateway Actuator endpoints listen on internal port 9090; Compose publishes only
-application port 8080. Security checks the actual local socket port before allowing
-health, info or Prometheus requests. Forwarded headers cannot make a request internal.
-Anonymous health responses omit components and details, including component health.
-Prometheus scrapes `gateway:9090/actuator/prometheus`. This does not change the gateway's
-Redis failure policy or application JWT checks.
-
-All four Java services declare local Compose image names, so the existing Trivy
-inventory builds and scans their actual runtime images. CRITICAL findings block that
-workflow; HIGH findings remain reported under its existing policy. Dependabot updates
-the four Java Dockerfiles, and every action in the job with `packages: write` is pinned
-to a verified full commit SHA with its version comment. The publishing workflow runs after CI
-passes on `main` (tests and the SonarCloud Quality Gate). Regression guards run in Infrastructure
-smoke.
-
-Dependabot also tracks the detector Dockerfiles, all three uv projects, four Maven projects and
-frontend npm dependencies. Spring Boot/Spring Cloud major updates require a deliberate migration.
-Alloy upgrades OpenSSL without pinning an apt revision and asserts both packages are at least
-`3.0.13-0ubuntu3.16`; PostgreSQL installs/upgrades su-exec and asserts at least `0.3-r0`.
-Newer base-image packages are never downgraded. Checksum-based remote `ADD` uses the versioned
-Dockerfile 1.7 frontend rather than depending on the engine's bundled frontend.
-
-Application/detector CI reports every HIGH/CRITICAL finding in JSON artifacts, but blocks only
-findings with a published fix (`ignore-unfixed: true` in the blocking scan). The separate Compose
-security scan keeps its existing CRITICAL gate. CI and infrastructure actions are pinned to full
-SHAs. Superseded PR runs are cancelled; main runs are allowed to finish. Infrastructure smoke now
-covers all monitoring/security configs and the Keycloak theme, including native config validation
-and the regression guards in `infra/tests/test_ci_reliability.py`.
+Alloy filters Docker discovery by `com.docker.compose.project`, using the resolved Compose project
+name (`ALLOY_COMPOSE_PROJECT`, set by Compose, including `--project-name` overrides). Prometheus's
+HTTP lifecycle/reload endpoint is disabled; edit configuration and recreate the container to apply it.
 
 ## Broker users and internal storage APIs
 
@@ -215,27 +172,13 @@ filter tests, `SecurityConfigIntegrationTest`, `AnalysisServiceListTest`,
 
 ## Operator defaults and monitoring
 
-The root `.env.example` keeps tracing export disabled and runs one file-service
-replica. Set `OTEL_TRACING_EXPORT_ENABLED=true` only with Tempo available.
-Windows/WSL2 memory limits and the lighter 16 GB setup are described in
-[SETUP.md](../SETUP.md#windows--wsl2-memory).
-
-Compose now forwards the existing stuck-job idle/scan/initial-delay, idempotency,
-file-service lookup and backpressure retry variables. Defaults are unchanged;
-`RELIABILITY_STUCK_JOB_INITIAL_DELAY` follows the idle threshold when unset.
-Histogram finite ranges cover 2 h for analysis and 10 min for HTTP; these are metric
-bounds, not execution deadlines. The dashboard uses p95 for those durations and
-adds existing detector metrics. Prometheus evaluates DLQ/stuck/backlog and scrape
-availability alerts; see [observability](observability.md#alerts). There is no
-outbound alert transport. No new application metric or recovery policy is added.
-
-Both Keycloak realm variants disable self-service password reset until SMTP is
-configured. Password history and refresh-token rotation remain unconfigured;
-[Keycloak documentation](../infra/keycloak/README.md) describes the actual policy.
-Persistent database and RabbitMQ administrator credentials must be rotated
-administratively on existing volumes; changing bootstrap environment values alone
-does not update stored accounts. Application broker passwords are reconciled by
-`rabbitmq-init` on each run, as described [above](#broker-users-and-internal-storage-apis).
+`.env.example` keeps tracing export off (enable `OTEL_TRACING_EXPORT_ENABLED` only with Tempo
+running) and runs one file-service replica; Windows/WSL2 memory is covered in
+[SETUP.md](../SETUP.md#windows--wsl2-memory). Histogram ranges cover 2 h for analyses and 10 min
+for HTTP; they are metric bounds, not execution deadlines. Prometheus evaluates DLQ, stuck-recovery,
+backlog and availability alerts ([observability](observability.md#alerts)); there is no outbound
+alert transport. Database and RabbitMQ administrator credentials apply only to empty volumes;
+application broker passwords are reconciled as described [above](#broker-users-and-internal-storage-apis).
 
 ## Creating an analysis
 
@@ -402,7 +345,7 @@ decoded frame count against the same limit on every `grab()`. Reading continues 
 instead of trusting the advertised frame count, so understated metadata cannot bypass
 the guard. Missing, non-positive or non-finite FPS assumes 60 fps only for the guard
 (default 108 000 frames): decoding stays bounded, and ordinary 24–60 fps clips within the
-limit are not rejected. Reported timestamps/FPS keep their existing zero fallback. An overlong
+limit are not rejected. Reported timestamps/FPS fall back to zero. An overlong
 video returns the same confirmed `FAILED/MEDIA_TOO_LONG` before ACK, and the capture is
 released on success and all failures. Both detectors use the shared runtime error class.
 FPS metadata above 240 is capped for the guard, so an inflated frame rate cannot grant
@@ -436,7 +379,7 @@ the private attempt directory. SIGKILL cannot run cleanup and may leave local fi
 Audio keeps every inference/cancellation tick but publishes progress only on a stage
 change, one percentage point of progress, or one elapsed second. Final segment and
 completion ticks bypass throttling. The gate runs in the shared runtime and is enabled
-only by the audio adapter; video keeps its existing publication behavior.
+only by the audio adapter; video progress is not throttled.
 
 Tests: `FileValidatorTest`, `FfprobeMediaProbeIntegrationTest`,
 `audio-detector/tests/test_media_limits.py`, `video-detector/tests/test_media_limits.py`
@@ -467,7 +410,7 @@ only these two task queues; it does not purge DLQs, results, progress or broker 
    `x-delivery-limit=5` and both DLX arguments, then re-enable dispatch/admission.
 
 Rollback also requires draining and recreating these two empty queues before deploying the old
-classic declarations. This PR does not perform queue deletion automatically.
+classic declarations. Nothing deletes these queues automatically.
 
 ## Result acceptance and idempotence
 
@@ -500,7 +443,6 @@ with an empty audio-stream list produces `NO_AUDIO_TRACK`; corrupt input, invali
 output, timeout and extraction failure remain generic processing errors. Shared
 runtime failures without a domain code publish a neutral message rather than raw
 exception text containing private paths; internal logs retain the exception.
-Deploy orchestrator/frontend support before enabling the new detector code.
 
 Tests: `AnalysisResultAcceptanceIntegrationTest`, `AudioScoreContractIntegrationTest`,
 `ReportPdfServiceTest`, `audio-detector/tests/test_inference_extract.py` (including
@@ -662,7 +604,8 @@ Legacy rows without outbox entries use `updated_at` as the queue baseline. No ta
 
 The scan is only a candidate list: the final transaction locks the row and rechecks all
 conditions with a fresh timestamp. These are eligibility deadlines; the actual failure happens
-on the next scan. All terminal states remain protected by the status CAS.
+on the next scan. All terminal states remain protected by the status CAS. A recovered analysis
+stores `[ANALYSIS_TIMEOUT] Analiza trwała zbyt długo i została przerwana.`
 
 Tests: `TaskDeliveryLimitIntegrationTest` proves actual connection loss increments the counter
 on RabbitMQ 4.3.6 before testing production queue arguments. `WorkerRedeliveryIntegrationTest`
@@ -670,6 +613,7 @@ kills each source's worker six times, verifies DLQ → FAILED, skips queued sibl
 completes a subsequent healthy task. `TransactionalDispatchIntegrationTest` verifies queue,
 idle and absolute deadlines plus rollback/commit ordering of all FAILED stop hints.
 `AnalysisStuckRecoveryIntegrationTest` checks source guards and first-pickup preservation;
+`AnalysisServiceFailFromDlqTest` checks the DLQ failure path;
 `StuckJobRecoverySchedulingTest` exercises the real scheduler's startup delay;
 `FlywayMigrationIntegrationTest` upgrades populated V6 data to V7.
 
@@ -758,13 +702,6 @@ Tests: `RedisDownDegradationIntegrationTest`, `GatewayRateLimitIntegrationTest`,
 `ProtectiveRedisRateLimiterTest`. The gateway integration test stops/starts real Redis, checks
 forwarding to a stub backend, immediate bypass responses and the Prometheus counter, then verifies
 `429` returns after recovery. Unit tests cover the sentinel, timeouts and shared window expiry.
-
-DLQ failures persist `[DEAD_LETTERED] Nie udało się zakończyć analizy.`;
-stuck recovery persists `[ANALYSIS_TIMEOUT] Analiza trwała zbyt długo i została przerwana.`
-Exception headers remain only in logs with `analysis_id`; recovery thresholds and
-source-specific CAS guards are unchanged. Regression tests:
-`AnalysisServiceFailFromDlqTest`, `WorkerRedeliveryIntegrationTest`,
-`AnalysisStuckRecoveryIntegrationTest`.
 
 ## SSE delivery
 

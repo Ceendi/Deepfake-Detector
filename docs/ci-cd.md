@@ -94,9 +94,8 @@ unprivileged nginx) and the patched infrastructure images `postgres`, `keycloak-
 selects the tag: `latest` by default, or `sha-<commit>` for a reproducible deployment. The
 frontend image reads its Keycloak address from the container environment at start (`/config.js`),
 so the same image works with any `KEYCLOAK_PORT`. Each image carries the OCI `revision` label of
-its commit. A failed CI run
-publishes nothing. Pull requests that change an image definition build and scan all images without
-pushing.
+its commit. A failed CI run publishes nothing. Pull requests that change an image definition build
+and scan all images without pushing.
 
 Each image is built and loaded locally first, scanned with Trivy (a CRITICAL vulnerability stops
 it, HIGH findings are listed in the job summary), and only then pushed from the same build cache.
@@ -110,18 +109,11 @@ gh attestation verify oci://ghcr.io/ceendi/deepfake-detector/frontend:latest --o
 
 ## Deployment verification
 
-The E2E workflow starts the stack from the commit with `docker compose up --build --wait`, which
-waits for every healthcheck, and then drives the real UI. `--build` makes Compose build every
-image from the checkout instead of pulling the published ones, so E2E always tests the pull
-request's own code. Infrastructure smoke restarts services
-and checks that state survives, that every file-service replica is registered and scraped, and that
-traces reach Tempo.
-
-## Observability in the pipeline
-
-Infrastructure smoke validates the Grafana dashboards and Prometheus alert rules, scrapes
-`/actuator/prometheus` of every replica through a real Prometheus, and writes and reads back a
-trace in Tempo. See [observability](observability.md).
+E2E starts the stack with `docker compose up --build --wait`, which builds every image from the
+pull request's own code and waits for every healthcheck, then drives the real UI. Infrastructure
+smoke restarts services and checks that state survives, that every file-service replica is
+registered and scraped, that the Grafana dashboards and alert rules are valid and that traces reach
+Tempo ([observability](observability.md)).
 
 ## Security checks
 

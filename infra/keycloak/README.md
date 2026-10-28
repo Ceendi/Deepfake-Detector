@@ -1,174 +1,87 @@
 # Keycloak realm
 
-`realm-export.json` is the **declared state** of the `deepfake` realm. It is
-synced into a running Keycloak by [`keycloak-config-cli`](https://github.com/adorsys/keycloak-config-cli)
-on every `docker compose --profile auth up` — see [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md).
+`realm-export.json` is the **declared state** of the `deepfake` realm.
+[`keycloak-config-cli`](https://github.com/adorsys/keycloak-config-cli) syncs it into the running
+Keycloak on every `docker compose up` with the `auth` profile; see
+[ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for the reasoning and upgrade risks.
 
 ## What's in the realm
 
-- One public client (`deepfake-web`, PKCE S256) for the SPA
-- Realm role `USER`, granted by default to every newly-registered user via the
-  composite meta-role `default-roles-deepfake`
-- No fixture users or service-account clients in the default import
-- Password policy, brute-force protection, token lifespans (details below)
+- One public client, `deepfake-web` (PKCE S256), for the SPA; open registration.
+- Realm role `USER`, granted to every new user through `default-roles-deepfake`.
+- No fixture users or service-account clients in the default import.
+- Password policy, brute-force protection and token lifetimes (below).
 
 ## Local smoke tests and load tests
 
-Test identities live in `dev/realm-export.json`, a complete development variant
-of the same realm. Its policy and SPA client must match `realm-export.json`;
-`infra/tests/test_security_configuration.py` checks this to prevent drift.
-It adds `alice` and `bob` (password `Test1234!@`) and the confidential
-`deepfake-loadtest` client with its USER service account. The client secret
-comes from `LOADTEST_CLIENT_SECRET`; use these identities only locally.
-
-File-service and orchestrator accept only clients listed in `JWT_ALLOWED_CLIENTS`
-(default `deepfake-web,deepfake-loadtest`). Keycloak access tokens normally identify
-the requester in `azp`, while `aud` may contain only `account`: an allowed `azp`
-therefore suffices. If `azp` is absent, at least one audience must be allowed.
-A foreign, empty or malformed `azp` is rejected even with an allowed audience.
-Signature, issuer, expiry, roles and ownership are still checked. Tokens for unrelated
-clients in this realm return `401`. Adding a client to the realm alone does not grant
-API access; configure the same explicit allowlist in both services. Isolated infra
-test realms override this list for their disposable clients only.
-
-The default `.env.example` keeps this variant disabled. To opt in, put
-`KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in your local `.env`, then run:
+`dev/realm-export.json` is a complete development variant of the same realm. It adds `alice` and
+`bob` (password `Test1234!@`) and the confidential `deepfake-loadtest` client with a USER service
+account; its secret comes from `LOADTEST_CLIENT_SECRET`. Its policy and SPA client must match
+`realm-export.json`, which `infra/tests/test_security_configuration.py` checks. To opt in, put
+`KEYCLOAK_REALM_CONFIG=dev/realm-export.json` in your local `.env` and run:
 
 ```bash
 docker compose --profile auth up -d keycloak-config-cli
 ```
 
-Compose mounts the config directory read-only and imports only the selected
-file, never a wildcard. Keep `KEYCLOAK_REALM_CONFIG` unset in deployments.
+Compose mounts the config directory read-only and imports only the selected file. Keep
+`KEYCLOAK_REALM_CONFIG` unset in deployments.
 
-**Existing installations:** switching back to the default import removes the
-managed load-test client, but `IMPORT_MANAGED_USER=no-delete` preserves existing
-users, including previously imported `alice` and `bob`. Removing the dev option
-alone therefore does not revoke those passwords. Before using an existing dev
-database in a deployment, remove the two fixture users and verify the load-test
-client and service account are absent through the Keycloak Admin API. Preserve
-real registered users; no volume reset is needed.
+**Leaving the dev variant:** switching back removes the load-test client, but `alice` and `bob`
+stay (users are `no-delete`, see below) and keep their passwords. Before using a dev database in a
+deployment, delete the two users and check through the Admin API that the load-test client and its
+service account are gone. Registered users are kept; no volume reset is needed.
 
-## Update flow — how to change realm config
+### Allowed clients
 
-The realm is **idempotent IaC** — edit the JSON, commit, and the next compose
-up applies the diff. Concretely:
+File-service and orchestrator accept only tokens of clients in `JWT_ALLOWED_CLIENTS` (default
+`deepfake-web,deepfake-loadtest`). They check `azp`; only when `azp` is absent must one audience be
+allowed. A foreign, empty or malformed `azp` is rejected (`401`) even with an allowed audience, and
+signature, issuer, expiry, roles and ownership are still checked. Adding a client to the realm does
+not grant API access: also add it to `JWT_ALLOWED_CLIENTS` of both services.
 
-```bash
-# 1. Edit infra/keycloak/realm-export.json
-# 2. Restart the sync container (or run a full up)
-docker compose --profile auth up keycloak-config-cli
-# Exits 0 when the realm matches the file. Re-runs are no-ops.
-```
+## Changing the realm
 
-`keycloak-config-cli` connects to KC's Admin REST API as the bootstrap admin
-(`KEYCLOAK_ADMIN` from `.env`), diffs declared vs actual, and applies the
-delta. It does **not** wipe and reimport — existing user sessions, audit logs,
-and manually-created users are preserved (see Managed modes below).
-
-### What happens to teammates who pulled an older branch
-
-The previous setup used `start-dev --import-realm`, which imported the realm
-only on first boot (when DB was empty). After `git pull` of this branch, run:
+Edit the JSON, commit, and apply it:
 
 ```bash
-docker compose --profile auth up keycloak-config-cli
+docker compose --profile auth up keycloak-config-cli   # exits 0 when the realm matches the file
 ```
 
-This applies the new declared state to your existing realm. **No volume drop
-is required** — that's the entire point of switching to kc-config-cli. Users
-you created manually for testing survive.
+The CLI connects as the bootstrap admin (`KEYCLOAK_ADMIN`), diffs declared and actual state and
+applies only the difference; re-runs are no-ops. It never wipes and reimports the realm, so
+sessions and registered users survive.
 
-## Managed modes (resource ownership)
+| Resource | Mode | Effect |
+|---|---|---|
+| roles, clients, authentication flows | `full` | The file is the only source of truth; changes made in the Admin UI are removed on the next sync. |
+| users | `no-delete` | Users declared in the file are reconciled (including their password); users created elsewhere are kept. |
 
-| Resource          | Mode        | Effect                                                                 |
-|-------------------|-------------|------------------------------------------------------------------------|
-| roles, clients, authentication flows | `full` (default) | File is the sole source of truth. UI additions get purged on next sync. |
-| users             | `no-delete` | File-declared users are reconciled (incl. password reset). UI-created users are preserved. |
+With the dev variant, `alice` and `bob` get their password reset to `Test1234!@` on every sync, so
+scripted tests start from a known state. **Rule:** change roles, clients and policies only in the
+JSON, never in the Admin UI.
 
-With the development variant enabled, **dev users `alice` and `bob` have their passwords reset to
-`Test1234!@` on every sync** — that's deliberate, gives the team a known good
-state for scripted tests. If you want a dev account whose password sticks,
-create it via Admin UI; `no-delete` will leave it alone.
+The `keycloak-config-cli` image is v6.5.1 built from the pinned upstream source with patched
+dependencies; the source archive is fetched from `codeload.github.com` by commit and SHA-256.
+`infra/tests/test_keycloak.py` checks both imports and the password-reset flow.
 
-**Rule for the team:** for anything other than ad-hoc throwaway users (roles,
-clients, password policy, etc.), edit the JSON. Admin UI changes to managed
-resources will silently disappear on the next sync.
+## Policies
 
-## Compatibility note
+- **Passwords:** at least 10 characters with a digit, an upper-case letter, a lower-case letter and
+  a special character; not the username or email. Argon2id hashing (Keycloak default). No password
+  history and no forced rotation (NIST SP 800-63B advises against expiry-based rotation).
+- **Brute force:** 10 failed logins lock the account, with an exponential wait of up to 15 min
+  (`failureFactor`, `waitIncrementSeconds`, `maxFailureWaitSeconds`).
+- **Tokens:** access token 15 min, SSO session 30 min idle / 10 h maximum, deliberately short for
+  biometric data. The SPA refreshes access tokens within the session; refresh-token rotation is
+  not configured.
 
-The `keycloak-config-cli` image (published to GHCR, or built by `docker compose up --build`)
-is v6.5.1 built from the pinned upstream source with patched dependencies and tests it against Keycloak `26.8.0`.
-The archive is fetched directly from `codeload.github.com` by commit and SHA-256;
-building does not spend the unauthenticated GitHub REST API quota. The source commit
-and archive checksum are unchanged.
-The integration test verifies both the default import and the development
-variant, then verifies reset is disabled without SMTP and exercises the password-reset flow
-with SMTP enabled only in the disposable test realm. See [ADR-0001](../../docs/adr/0001-keycloak-realm-as-code.md) for
-the full risk analysis and upgrade plan.
+## Email verification and password reset — disabled
 
-## Password policy
-
-Currently enforced:
-
-- min length 10
-- not username, not email
-- ≥1 digit, ≥1 uppercase, ≥1 lowercase, ≥1 special char
-
-Password history is not configured (`passwordHistory` is absent).
-
-Hash algorithm is Argon2id (Keycloak 26 default) — no `hashIterations(...)`
-override needed.
-
-**No forced password rotation** — NIST SP 800-63B (rev 4) explicitly recommends
-against arbitrary expiry-based rotation: users adapt by appending counters
-(`!1`, `!2`, …) which weakens passwords. Strong length + brute-force lockout +
-optional 2FA is the modern stance; PCI DSS 4.0 and ISO 27002:2022 align.
-
-## Email verification — DISABLED
-
-Verification + SMTP are intentionally omitted because there's no SMTP server
-in the dev stack. To enable later:
-
-1. Add `verifyEmail: true` at realm root.
-2. Add an `smtpServer` block:
-   ```json
-   "smtpServer": {
-     "host": "smtp.example.com",
-     "port": "587",
-     "from": "noreply@deepfake.local",
-     "auth": "true",
-     "user": "${SMTP_USER}",
-     "password": "${SMTP_PASSWORD}",
-     "starttls": "true"
-   }
-   ```
-3. Add `VERIFY_EMAIL` to `defaultActions` for new users.
-
-For dev, MailHog or Mailpit in a separate compose profile is the usual
-pattern (no real outbound mail).
-
-## Brute-force protection
-
-Enabled (`bruteForceProtected: true`): 10 failed logins → exponential lockout
-up to 15 min. Tweak `failureFactor` and `waitIncrementSeconds` per
-deployment.
-
-## Token lifetimes
-
-- `accessTokenLifespan`: 15 min
-- `ssoSessionIdleTimeout`: 30 min
-- `ssoSessionMaxLifespan`: 10 h
-
-These are deliberately short for a project handling biometric (face/voice)
-data. The SPA refreshes access tokens within the session. Refresh-token revocation/rotation
-is not configured (`revokeRefreshToken` defaults to `false`); the README does not
-promise single-use refresh tokens.
-
-## Password reset — DISABLED
-
-Both realm variants set `resetPasswordAllowed: false`, hiding “Forgot password”
-until SMTP is available. Enable it in both JSON variants only after configuring
-SMTP. `infra/tests/test_keycloak.py` verifies the default and development imports
-keep reset disabled, then enables it with a local mail sink to retain the existing
-password-reset security regression.
+The dev stack has no SMTP server, so email verification is off and both realm variants set
+`resetPasswordAllowed: false` (no "Forgot password" link). `infra/tests/test_keycloak.py` checks
+that reset stays disabled and exercises the reset flow with a local mail sink in a disposable
+realm. To enable them, add an `smtpServer` block (credentials from environment variables, e.g.
+`${SMTP_PASSWORD}`), set `verifyEmail: true`, add `VERIFY_EMAIL` to the default actions and set
+`resetPasswordAllowed: true` in both JSON variants. For development a mail sink such as Mailpit is
+enough.
