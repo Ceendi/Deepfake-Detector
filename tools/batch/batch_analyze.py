@@ -49,15 +49,18 @@ UPLOAD_INTERVAL = 12.0  # gateway upload bucket default: 5 per minute
 BACKOFF_START, BACKOFF_CAP = 5.0, 60.0
 RETRY_AFTER_CAP = 300.0
 MAX_TRANSIENT_RETRIES = 8
+CANCEL_TIMEOUT = 5.0
 CODE_RE = re.compile(r'^\[([A-Z0-9_]+)\]')
 
+USER_CLIENT = 'deepfake-cli'  # public client with the device authorization grant
+SERVICE_CLIENT = 'deepfake-loadtest'  # dev-realm service account, used with a client secret
+DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
 DEFAULTS = {
     'gateway': ('BATCH_GATEWAY', 'http://localhost:8080'),
     'keycloak': ('BATCH_KEYCLOAK', 'http://localhost:8180'),
     'realm': ('BATCH_REALM', 'deepfake'),
-    'client_id': ('BATCH_CLIENT_ID', 'deepfake-loadtest'),
-    # Dev-only value from .env.example (LOADTEST_CLIENT_SECRET); never a deployment secret.
-    'client_secret': ('BATCH_CLIENT_SECRET', 'changeme_dev_loadtest'),
+    'client_id': ('BATCH_CLIENT_ID', None),
+    'client_secret': ('BATCH_CLIENT_SECRET', None),
 }
 
 
@@ -216,6 +219,26 @@ def _parse(raw):
         return raw.decode('utf-8', errors='replace')
 
 
+def post_form(url, fields, timeout=30):
+    """POST to Keycloak; returns (status, JSON object). Network errors raise OSError."""
+    request = Request(url, data=urlencode(fields).encode(), headers={
+        'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json'})
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            status, raw = response.status, response.read()
+    except HTTPError as error:
+        with error:
+            status, raw = error.code, error.read()
+    body = _parse(raw)
+    return status, body if isinstance(body, dict) else {}
+
+
+def keycloak_failure(status, hint):
+    if status in RETRY_STATUSES or status >= 500:
+        return OSError(f'Keycloak HTTP {status}')
+    return FatalError(f'Keycloak odrzucił klienta (HTTP {status}): {hint}')
+
+
 class TokenSource:
     """client_credentials token, renewed before expiry so runs of many hours keep working."""
 
@@ -231,26 +254,92 @@ class TokenSource:
                 self._fetch()
             return self.token
 
+    def current(self):
+        """The cached token without renewing it (may be None or expired)."""
+        return self.token
+
     def invalidate(self, rejected):
         # Only the rejected token: parallel 401s for one expired token trigger one renewal.
         with self.lock:
             if self.token == rejected:
                 self.token = None
 
-    def _fetch(self):
-        body = urlencode({'grant_type': 'client_credentials', 'client_id': self.client_id,
-                          'client_secret': self.client_secret}).encode()
-        try:
-            with urlopen(Request(self.url, data=body), timeout=30) as response:
-                data = json.load(response)
-        except HTTPError as error:
-            if error.code in RETRY_STATUSES or error.code >= 500:
-                raise OSError(f'Keycloak HTTP {error.code}') from error
-            raise FatalError(f'Keycloak odrzucił klienta (HTTP {error.code}): sprawdź '
-                             '--keycloak, --realm, --client-id i --client-secret.') from error
+    def _store(self, data):
         lifetime = float(data.get('expires_in') or 60)
         self.token = data['access_token']
         self.renew_at = self.clock() + max(lifetime - 60, lifetime / 2)
+
+    def _fetch(self):
+        status, data = post_form(self.url, {'grant_type': 'client_credentials',
+                                            'client_id': self.client_id,
+                                            'client_secret': self.client_secret})
+        if status != 200:
+            raise keycloak_failure(status, 'sprawdź --keycloak, --realm, --client-id i --client-secret.')
+        self._store(data)
+
+
+class DeviceLogin(TokenSource):
+    """User sign-in through the OAuth 2.0 device authorization grant (RFC 8628).
+
+    The user confirms a code in a browser, so analyses land in that user's history. The refresh
+    token renews the access token; when the session has ended, the user is asked to sign in again.
+    """
+
+    def __init__(self, url, client_id, clock=time.monotonic, sleep=time.sleep):
+        super().__init__(url, client_id, None, clock)
+        self.device_url = url.rsplit('/', 1)[0] + '/auth/device'
+        self.sleep = sleep
+        self.refresh_token = None
+
+    def _store(self, data):
+        super()._store(data)
+        self.refresh_token = data.get('refresh_token')
+
+    def _fetch(self):
+        if self.refresh_token:
+            status, data = post_form(self.url, {'grant_type': 'refresh_token', 'client_id': self.client_id,
+                                                'refresh_token': self.refresh_token})
+            if status == 200:
+                return self._store(data)
+            if status in RETRY_STATUSES or status >= 500:
+                raise keycloak_failure(status, '')
+            self.refresh_token = None
+            log('Sesja Keycloak wygasła, zaloguj się ponownie.')
+        return self._login()
+
+    def _login(self):
+        status, grant = post_form(self.device_url, {'client_id': self.client_id})
+        if status != 200 or 'device_code' not in grant:
+            raise keycloak_failure(status, f'klient {self.client_id} musi mieć włączony device '
+                                           'authorization grant (infra/keycloak/README.md).')
+        interval = float(grant.get('interval', 5))
+        deadline = self.clock() + float(grant.get('expires_in', 600))
+        link = grant.get('verification_uri_complete') or grant.get('verification_uri')
+        log(f'Zaloguj się w przeglądarce: {link}')
+        log(f'Kod do potwierdzenia: {grant.get("user_code")}. Czekam na logowanie '
+            f'(do {deadline - self.clock():.0f} s)...')
+        fields = {'grant_type': DEVICE_GRANT, 'device_code': grant['device_code'],
+                  'client_id': self.client_id}
+        while True:
+            self.sleep(interval)
+            if self.clock() > deadline:
+                raise FatalError('Kod logowania wygasł. Uruchom narzędzie ponownie.')
+            try:
+                status, data = post_form(self.url, fields)
+            except OSError:
+                continue  # Keycloak briefly unreachable: keep polling until the code expires
+            if status == 200:
+                log('Zalogowano.')
+                return self._store(data)
+            error = data.get('error')
+            if error == 'slow_down':
+                interval += 5  # RFC 8628 section 3.5
+            elif error == 'expired_token':
+                raise FatalError('Kod logowania wygasł. Uruchom narzędzie ponownie.')
+            elif error == 'access_denied':
+                raise FatalError('Logowanie zostało odrzucone w przeglądarce.')
+            elif error != 'authorization_pending' and status not in RETRY_STATUSES and status < 500:
+                raise FatalError(f'Keycloak odrzucił logowanie (HTTP {status}, {error}).')
 
 
 class Api:
@@ -258,11 +347,14 @@ class Api:
         self.gateway, self.tokens = gateway.rstrip('/'), tokens
         self.timeout, self.upload_timeout = timeout, upload_timeout
 
-    def request(self, method, path, data=None, headers=None, timeout=None):
-        """One HTTP exchange; a 401 renews the token once. Network errors raise OSError."""
-        for attempt in range(2):
+    def request(self, method, path, data=None, headers=None, timeout=None, renew=True):
+        """One HTTP exchange; a 401 renews the token once. Network errors raise OSError.
+
+        renew=False sends the cached token as is and never contacts Keycloak.
+        """
+        for attempt in range(2 if renew else 1):
             body = data() if callable(data) else data
-            token = self.tokens.get()
+            token = (self.tokens.get() if renew else self.tokens.current()) or ''
             request = Request(self.gateway + path, data=body, method=method, headers={
                 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', **(headers or {})})
             try:
@@ -271,10 +363,14 @@ class Api:
             except HTTPError as error:
                 with error:
                     result = Response(error.code, error.headers, _parse(error.read()))
-            if result.status != 401 or attempt:
+            if result.status != 401 or attempt or not renew:
                 return result
             self.tokens.invalidate(token)
         return result
+
+    def cancel(self, analysis_id, timeout=CANCEL_TIMEOUT):
+        # Cached token only: an interrupted run must not start a browser login.
+        return self.request('DELETE', f'/api/analysis/{quote(analysis_id)}', timeout=timeout, renew=False)
 
 
 def multipart(path, mime):
@@ -322,6 +418,7 @@ class Settings:
     type_override: str | None = None
     upload_interval: float = UPLOAD_INTERVAL
     max_retries: int = MAX_TRANSIENT_RETRIES
+    cancel_on_interrupt: bool = True
 
 
 class Batch:
@@ -333,6 +430,8 @@ class Batch:
         self.pace_lock = threading.Lock()
         self.next_upload = 0.0
         self.wait = wait or self.stop.wait
+        self.active_lock = threading.Lock()
+        self.active = set()  # analyses created on the server and not yet seen terminal
 
     def pause(self, seconds):
         if self.wait(seconds) or self.stop.is_set():
@@ -394,7 +493,50 @@ class Batch:
                              {'Content-Type': 'application/json'}, typ=typ)
         if response.status != 201:
             raise http_error(response, typ)
-        return self.poll(response.body['id'], typ)
+        analysis_id = response.body['id']
+        with self.active_lock:
+            self.active.add(analysis_id)
+        try:
+            analysis = self.poll(analysis_id, typ)
+        except Stopped:
+            raise  # stays active: the interrupt handler cancels it on the server
+        except Exception:
+            self._settled(analysis_id)
+            raise
+        self._settled(analysis_id)
+        return analysis
+
+    def _settled(self, analysis_id):
+        with self.active_lock:
+            self.active.discard(analysis_id)
+
+    def cancel_active(self, timeout=CANCEL_TIMEOUT):
+        """Ctrl+C: best-effort DELETE of analyses still running on the server, in parallel."""
+        with self.active_lock:
+            ids = sorted(self.active)
+        if not ids:
+            return
+        log(f'Anuluję analizy w toku na serwerze: {len(ids)}...')
+        settled = []
+
+        def cancel(analysis_id):
+            try:
+                response = self.api.cancel(analysis_id, timeout)
+            except OSError:
+                return
+            # 409: it finished first; either way nothing keeps running for this file.
+            if response.status in (200, 409):
+                settled.append(analysis_id)
+
+        threads = [threading.Thread(target=cancel, args=(i,), daemon=True) for i in ids]
+        for thread in threads:
+            thread.start()
+        deadline = time.monotonic() + timeout + 1
+        for thread in threads:
+            thread.join(max(0.0, deadline - time.monotonic()))
+        missed = len(ids) - len(settled)
+        log(f'Anulowano: {len(settled)} z {len(ids)}.' + (
+            f' {missed} może nadal trwać na serwerze (anuluj w UI).' if missed else ''))
 
     def poll(self, analysis_id, typ):
         deadline = time.monotonic() + self.settings.timeout
@@ -485,6 +627,12 @@ class Batch:
                          f'{payload["werdykt"] or payload["blad"]} ({payload["czas_s"]} s)'.rstrip())
         except KeyboardInterrupt:
             self.stop.set()
+            # A short grace lets workers notice the stop and an answered create register its id.
+            deadline = time.monotonic() + 1
+            for thread in threads:
+                thread.join(max(0.0, deadline - time.monotonic()))
+            if self.settings.cancel_on_interrupt:
+                self.cancel_active()
             raise
         return 3 if fatal else 0
 
@@ -626,16 +774,36 @@ def parse_args(argv=None):
     parser.add_argument('--upload-interval', type=float, default=UPLOAD_INTERVAL,
                         help='min. odstęp między uploadami w s (domyślnie %(default).0f = 5 na minutę, '
                              'limit gatewaya; 0 przy podniesionym UPLOAD_RL_*)')
+    parser.add_argument('--no-cancel', dest='cancel', action='store_false',
+                        help='po Ctrl+C nie anuluj analiz w toku na serwerze')
+    helps = {
+        'client_id': f'zmienna BATCH_CLIENT_ID, domyślnie {USER_CLIENT} (logowanie w przeglądarce), '
+                     f'a z sekretem {SERVICE_CLIENT}',
+        'client_secret': 'zmienna BATCH_CLIENT_SECRET; podany = konto serwisowe (client_credentials) '
+                         'zamiast logowania użytkownika',
+    }
     for name, (env, default) in DEFAULTS.items():
-        shown = '***' if name == 'client_secret' else default
-        parser.add_argument('--' + name.replace('_', '-'), default=os.environ.get(env, default),
-                            help=f'zmienna {env}, domyślnie {shown}')
+        parser.add_argument('--' + name.replace('_', '-'), default=os.environ.get(env) or default,
+                            help=helps.get(name, f'zmienna {env}, domyślnie {default}'))
     args = parser.parse_args(argv)
+    if not args.client_id:
+        args.client_id = SERVICE_CLIENT if args.client_secret else USER_CLIENT
     if not args.metrics_only and not args.folder:
         parser.error('podaj folder z nagraniami albo --metrics-only')
     if args.concurrency < 1 or args.timeout <= 0 or args.poll_interval < 0 or args.upload_interval < 0:
         parser.error('--concurrency >= 1, --timeout > 0, --poll-interval i --upload-interval >= 0')
     return args
+
+
+def login(args, sleep=time.sleep):
+    """Token source signed in before the first upload, so the browser prompt comes first."""
+    token_url = f'{args.keycloak.rstrip("/")}/realms/{quote(args.realm)}/protocol/openid-connect/token'
+    if args.client_secret:
+        tokens = TokenSource(token_url, args.client_id, args.client_secret)
+    else:
+        tokens = DeviceLogin(token_url, args.client_id, sleep=sleep)
+    tokens.get()
+    return tokens
 
 
 def main(argv=None, api=None, wait=None):
@@ -665,19 +833,23 @@ def main(argv=None, api=None, wait=None):
 
     code = 0
     if todo:
-        if api is None:
-            token_url = f'{args.keycloak.rstrip("/")}/realms/{quote(args.realm)}/protocol/openid-connect/token'
-            api = Api(args.gateway, TokenSource(token_url, args.client_id, args.client_secret))
         settings = Settings(args.concurrency, args.timeout, args.poll_interval, args.type_override,
-                            args.upload_interval)
-        batch = Batch(api, settings, wait)
-        with out.open('a', newline='', encoding='utf-8') as f:
-            try:
+                            args.upload_interval, cancel_on_interrupt=args.cancel)
+        try:
+            if api is None:
+                try:
+                    api = Api(args.gateway, login(args))
+                except (FatalError, OSError) as error:
+                    log(f'BŁĄD logowania: {error}')
+                    return 3
+            batch = Batch(api, settings, wait)
+            with out.open('a', newline='', encoding='utf-8') as f:
                 code = batch.run(todo, RowWriter(f))
-            except KeyboardInterrupt:
-                log(f'Przerwano. Zapisane wiersze zostają w {out}; uruchom ponownie, aby wznowić. '
-                    'Analizy w toku kończą się na serwerze.')
-                return 130
+        except KeyboardInterrupt:
+            log(f'Przerwano. Zapisane wiersze zostają w {out}; uruchom ponownie, aby wznowić '
+                '(przerwane pliki zostaną przeanalizowane od nowa).'
+                + ('' if args.cancel else ' Analizy w toku kończą się na serwerze.'))
+            return 130
     if args.labels_from_folders:
         report_metrics(read_results(out), args.metrics_out)
     return code

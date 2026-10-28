@@ -16,19 +16,29 @@ Na Windows ustaw `PYTHONUTF8=1`.
 
 ## Logowanie
 
-Token pobierany jest z Keycloak (`client_credentials`) i odnawiany przed wygaśnięciem, więc
-wielogodzinne przebiegi działają bez przerw. Domyślnie to konto serwisowe `deepfake-loadtest`
-z realmu dev (jak w `tests/live`), dostępne po ustawieniu w `.env`
-`KEYCLOAK_REALM_CONFIG=dev/realm-export.json` (patrz `infra/keycloak/README.md`). Analizy trafiają
-do historii tego konta, nie do konta użytkownika w UI.
+Domyślnie logujesz się jako zwykły użytkownik (klient `deepfake-cli`, device authorization grant):
+narzędzie wypisuje link i kod, otwierasz link w przeglądarce, logujesz się tym samym kontem co w
+UI, a analizy trafiają do Twojej historii. Token odświeża się sam przed wygaśnięciem; gdy sesja
+Keycloak się skończy (30 min bezczynności, maks. 10 h), narzędzie poprosi o ponowne logowanie.
+Tokenów nigdy nie wypisuje. Nieudane logowanie (np. wygasły kod) kończy przebieg przed pierwszym
+uploadem (kod 3).
+
+Do przebiegów bez człowieka (CI, noc) podaj `--client-secret` / `BATCH_CLIENT_SECRET`: wtedy
+token jest pobierany przez `client_credentials` dla konta serwisowego `deepfake-loadtest` z realmu
+dev (sekret `LOADTEST_CLIENT_SECRET` z `.env.example`, realm po ustawieniu w `.env`
+`KEYCLOAK_REALM_CONFIG=dev/realm-export.json`, patrz `infra/keycloak/README.md`). Analizy trafiają
+wtedy do historii tego konta.
 
 | Flaga | Zmienna | Domyślnie |
 |---|---|---|
 | `--gateway` | `BATCH_GATEWAY` | `http://localhost:8080` |
 | `--keycloak` | `BATCH_KEYCLOAK` | `http://localhost:8180` |
 | `--realm` | `BATCH_REALM` | `deepfake` |
-| `--client-id` | `BATCH_CLIENT_ID` | `deepfake-loadtest` |
-| `--client-secret` | `BATCH_CLIENT_SECRET` | `LOADTEST_CLIENT_SECRET` z `.env.example` |
+| `--client-id` | `BATCH_CLIENT_ID` | `deepfake-cli`, z sekretem `deepfake-loadtest` |
+| `--client-secret` | `BATCH_CLIENT_SECRET` | brak (logowanie w przeglądarce) |
+
+Lokalny `.env` z własnym `JWT_ALLOWED_CLIENTS` musi zawierać `deepfake-cli`, inaczej API odpowie
+`401` (kod 3).
 
 ## Pliki i typ analizy
 
@@ -76,8 +86,10 @@ Przepustowość wyznacza czas detektorów, nie narzędzie: przy 3 analizach w to
 
 ## Wznawianie
 
-`Ctrl+C` przerywa przebieg (kod 130); zapisane wiersze zostają, a analizy w toku kończą się na
-serwerze. Ponowne uruchomienie z tym samym folderem i `--out` pomija pliki, które mają już wiersz,
+`Ctrl+C` przerywa przebieg (kod 130); zapisane wiersze zostają. Analizy w toku są anulowane na
+serwerze (`DELETE /api/analysis/{id}`, do ok. 5 s, bez gwarancji), chyba że podasz `--no-cancel`
+— wtedy kończą się na serwerze. Przerwane pliki nie dostają wiersza, więc wznowienie analizuje je
+od nowa. Ponowne uruchomienie z tym samym folderem i `--out` pomija pliki, które mają już wiersz,
 z wyjątkiem wierszy `ERROR` i uciętych wierszy, które są analizowane ponownie. `--retry-failed`
 analizuje ponownie także `FAILED`, `CANCELLED` i `REJECTED`; pomijane są wtedy tylko `COMPLETED`.
 Przed wznowieniem CSV jest przepisywany tak, by każdy plik miał co najwyżej jeden wiersz.
