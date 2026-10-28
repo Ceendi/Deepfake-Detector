@@ -14,6 +14,8 @@ pull request ─► CI ──────────────► tests, cove
 
 push to main ─► the same workflows
               └► CI passes ─► build-push ─► Trivy ─► GHCR: sha-<commit> + latest + provenance
+
+1st and 15th of the month, or manual ─► E2E real models: published images + real models
 ```
 
 Every workflow runs on pull requests and on pushes to `main`. Pull request runs that are
@@ -46,6 +48,7 @@ skipped, cancelled or failed, so a skipped required check never stands in for an
 | `infra-smoke.yml` | PR (infra paths), push | restart and persistence, Prometheus scraping of every replica, Tempo ingest, Keycloak import, discovery isolation, S3 and RabbitMQ permissions | a running stack does not behave as configured |
 | `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability |
 | `build-push.yml` | after CI on `main`, PR (image paths), manual | `image (*)` for 11 images: build, Trivy, push, provenance attestation | an image does not build or has a CRITICAL vulnerability |
+| `e2e-ml.yml` (E2E real models) | 1st and 15th of the month 03:00 UTC, manual | `Real-model batch analysis`: published images with the real models, batch CLI on generated media | an image or model does not start, or an analysis ends with an unexpected outcome |
 
 ## Tests and reports
 
@@ -115,6 +118,31 @@ pull request's own code and waits for every healthcheck, then drives the real UI
 smoke restarts services and checks that state survives, that every file-service replica is
 registered and scraped, that the Grafana dashboards and alert rules are valid and that traces reach
 Tempo ([observability](observability.md)).
+
+## Real models (E2E real models)
+
+Pull request checks never load the detector models: they are not in the repository, and images
+plus models need about 14 GB. `e2e-ml.yml` covers them on a schedule (1st and 15th of each month)
+and on demand:
+
+```bash
+gh workflow run e2e-ml.yml                          # latest
+gh workflow run e2e-ml.yml -f image_tag=sha-1234abc # a published commit
+```
+
+It pulls the published images of the chosen tag (`docker compose pull`, then `up --no-build`, so
+it tests exactly what a plain `docker compose up` deploys), starts `core`, `auth` and `ml` with the
+dev realm and one file-service replica, and waits until both detectors downloaded and loaded their
+models. Media is generated in the job and never committed: three ffmpeg `flite` speech files (WAV,
+MP3, FLAC), a test-pattern video without a face, and 30 s of a public-domain Wikimedia Commons
+clip of one speaker, pinned by SHA-256 (a changed file fails the run). The batch CLI
+(`tools/batch`) analyses the folder with `--labels-from-folders`;
+`infra/ci/e2e_ml_outcomes.py` then requires a FAKE/REAL verdict with probabilities in [0, 1] for
+every audio file and the speaker clip, and `FAILED NO_FACE_DETECTED` for the face-less video.
+Verdicts themselves are not asserted: model quality is measured separately. A second run must
+find nothing left to analyse (resume). The CSV, metrics and, on failure, `docker compose logs`
+are uploaded as the `e2e-ml-report` artifact. The runner frees preinstalled toolchains first;
+the job takes about half an hour.
 
 ## Security checks
 
