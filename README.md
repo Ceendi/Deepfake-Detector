@@ -1,7 +1,8 @@
 # DeepfakeDetector
 
-A web application for detecting deepfakes in video and audio. Upload a file, follow the analysis
-live and get a FAKE/REAL verdict with its confidence, Grad-CAM heatmaps and a PDF report. Built
+A web application for detecting deepfakes in video and audio. Upload a file (or several files and
+whole folders, processed in a queue), follow the analysis live and get a FAKE/REAL verdict with its
+confidence, Grad-CAM heatmaps and a PDF report. Built
 with React, Spring Boot microservices and Python ML detectors, Keycloak login and an asynchronous
 RabbitMQ pipeline.
 

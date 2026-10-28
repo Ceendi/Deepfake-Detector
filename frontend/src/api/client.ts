@@ -61,10 +61,15 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
 async function toApiError(response: Response, sentCorrelationId: string): Promise<ApiError> {
   const correlationId = response.headers.get('X-Correlation-Id') ?? sentCorrelationId
   const data = await readJsonSafe(response)
-  return apiErrorFrom(response.status, data, correlationId)
+  return apiErrorFrom(response.status, data, correlationId, response.headers.get('Retry-After'))
 }
 
-export function apiErrorFrom(status: number, body: unknown, correlationId?: string): ApiError {
+export function apiErrorFrom(
+  status: number,
+  body: unknown,
+  correlationId?: string,
+  retryAfter?: string | null,
+): ApiError {
   let code: string | undefined
   let message = `Żądanie nie powiodło się (HTTP ${status})`
   let backpressure: BackpressureInfo | undefined
@@ -85,7 +90,20 @@ export function apiErrorFrom(status: number, body: unknown, correlationId?: stri
     }
   }
 
-  return new ApiError({ status, message, code, correlationId, backpressure })
+  return new ApiError({
+    status,
+    message,
+    code,
+    correlationId,
+    backpressure,
+    retryAfterSeconds: parseRetryAfter(retryAfter),
+  })
+}
+
+// Only the delay-seconds form; the backend never sends an HTTP date.
+function parseRetryAfter(value: string | null | undefined): number | undefined {
+  const trimmed = value?.trim()
+  return trimmed && /^\d+$/.test(trimmed) ? Number(trimmed) : undefined
 }
 
 async function readJsonSafe(response: Response): Promise<unknown> {

@@ -32,13 +32,14 @@ Projekt `setup` (`auth.setup.ts`) loguje `alice` i `bob` raz i zapisuje sesje w 
 pozostałe testy z nich korzystają. Testy samego logowania działają tylko w Chromium (blokada
 brute-force Keycloaka).
 
-| Plik                 | Scenariusz                                                                                                                       |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `auth.spec.ts`       | przekierowanie niezalogowanego na `/login`, logowanie zachowujące ścieżkę/query/hash bez fragmentu w `redirect_uri`, wylogowanie |
-| `navigation.spec.ts` | nawigacja nagłówkiem: Dashboard → Upload → Historia → Profil                                                                     |
-| `upload.spec.ts`     | odrzucenie formatu po stronie klienta, upload + `POST /analysis` (201), oryginalna nazwa w wyniku, anulowanie                    |
-| `history.spec.ts`    | historia wczytuje listę bez błędu                                                                                                |
-| `idor.spec.ts`       | analiza alice jest dla boba „nie znaleziono”, właściciel ją widzi                                                                |
+| Plik                   | Scenariusz                                                                                                                       |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `auth.spec.ts`         | przekierowanie niezalogowanego na `/login`, logowanie zachowujące ścieżkę/query/hash bez fragmentu w `redirect_uri`, wylogowanie |
+| `navigation.spec.ts`   | nawigacja nagłówkiem: Dashboard → Upload → Historia → Profil                                                                     |
+| `upload.spec.ts`       | odrzucenie formatu po stronie klienta, upload + `POST /analysis` (201), oryginalna nazwa w wyniku, anulowanie                    |
+| `batch-upload.spec.ts` | kilka plików naraz: błąd niepoprawnego pliku, kolejka do aktywnych analiz z linkami, „Anuluj wszystko”                           |
+| `history.spec.ts`      | historia wczytuje listę bez błędu                                                                                                |
+| `idor.spec.ts`         | analiza alice jest dla boba „nie znaleziono”, właściciel ją widzi                                                                |
 
 Testy tworzą prawdziwe analizy na koncie `alice`. Wgrywany plik to WAV generowany w pamięci
 (`fixtures/media.ts`); binariów nie commitujemy.

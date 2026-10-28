@@ -1,18 +1,19 @@
-import { Upload as UploadIcon } from 'lucide-react'
+import { FolderOpen, Upload as UploadIcon } from 'lucide-react'
 import { clsx } from 'clsx'
 
 import { Button } from '@/components/ui/Button/Button'
 
 import { AUDIO_FORMATS_LABEL, VIDEO_FORMATS_LABEL } from '../upload-utils'
-import { useFileDrop } from '../use-file-drop'
+import { useFileDrop, type FilesHandler } from '../use-file-drop'
 import styles from '../Upload.module.css'
 
 interface DropzoneProps {
-  onFiles: (files: FileList | null) => void
+  onFiles: FilesHandler
   onPick: () => void
+  onPickFolder: () => void
 }
 
-export function Dropzone({ onFiles, onPick }: DropzoneProps) {
+export function Dropzone({ onFiles, onPick, onPickFolder }: DropzoneProps) {
   const { isDragging, dropHandlers } = useFileDrop(onFiles)
 
   return (
@@ -22,21 +23,32 @@ export function Dropzone({ onFiles, onPick }: DropzoneProps) {
       </div>
 
       <h2 className={styles.dzTitle}>
-        {isDragging ? 'Upuść plik, aby dodać' : 'Przeciągnij plik wideo lub audio'}
+        {isDragging ? 'Upuść, aby dodać' : 'Przeciągnij pliki wideo lub audio albo folder'}
       </h2>
       <p className={styles.dzHint}>
-        {isDragging ? 'zwolnij przycisk myszy' : 'albo wybierz go z dysku'}
+        {isDragging ? 'zwolnij przycisk myszy' : 'albo wybierz je z dysku'}
       </p>
 
-      <Button
-        variant="primary"
-        size="md"
-        className={styles.pickButton}
-        leftIcon={UploadIcon}
-        onClick={onPick}
-      >
-        Wybierz plik
-      </Button>
+      <div className={styles.pickActions}>
+        <Button
+          variant="primary"
+          size="md"
+          className={styles.pickButton}
+          leftIcon={UploadIcon}
+          onClick={onPick}
+        >
+          Wybierz pliki
+        </Button>
+        <Button
+          variant="ghost"
+          size="md"
+          className={styles.pickButton}
+          leftIcon={FolderOpen}
+          onClick={onPickFolder}
+        >
+          Wybierz folder
+        </Button>
+      </div>
 
       <hr className={styles.divider} />
       <p className={styles.formats}>

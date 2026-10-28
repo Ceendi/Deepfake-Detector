@@ -11,11 +11,13 @@ vi.mock('@/api/analysis', () => ({
   cancelAnalysis: vi.fn(),
 }))
 vi.mock('@/api/stream', () => ({ streamAnalysis: vi.fn() }))
+vi.mock('./media-duration', () => ({ probeDuration: vi.fn(() => Promise.resolve(null)) }))
 
 import { uploadFileWithProgress } from '@/api/files'
 
 beforeEach(() => {
-  vi.resetAllMocks()
+  vi.clearAllMocks()
+  vi.mocked(uploadFileWithProgress).mockReset()
   Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() })
 })
 
@@ -94,6 +96,58 @@ describe('Upload', () => {
     const uploading = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(uploading)
     expect(uploading.defaultPrevented).toBe(true)
+  })
+})
+
+describe('Upload — wiele plików', () => {
+  it('pokazuje listę z błędem przy niepoprawnym pliku zamiast podglądu', () => {
+    const { container, input } = renderUpload()
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(['x'], 'a.mp4', { type: 'video/mp4' }),
+          new File(['x'], 'notatka.txt', { type: 'text/plain' }),
+        ],
+      },
+    })
+
+    expect(screen.getByRole('heading', { name: '2 pliki' })).toBeInTheDocument()
+    expect(screen.getByRole('listitem', { name: 'a.mp4' })).toHaveTextContent('Czeka')
+    expect(screen.getByRole('listitem', { name: 'notatka.txt' })).toHaveTextContent(
+      'Nieobsługiwany format pliku (.txt)',
+    )
+    expect(screen.getByRole('button', { name: 'Analizuj wszystkie (1)' })).toBeEnabled()
+    expect(container.querySelector('video')).toBeNull()
+  })
+
+  it('wysyła pliki z kolejki i ostrzega przed zamknięciem karty', async () => {
+    vi.mocked(uploadFileWithProgress).mockReturnValue(new Promise(() => {}))
+    const { input } = renderUpload()
+    fireEvent.change(input, {
+      target: {
+        files: ['a.mp4', 'b.wav', 'c.mp4'].map((name) => new File(['x'], name)),
+      },
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Analizuj wszystkie (3)' }))
+    })
+
+    expect(uploadFileWithProgress).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('listitem', { name: 'c.mp4' })).toHaveTextContent('Czeka')
+    const leaving = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(leaving)
+    expect(leaving.defaultPrevented).toBe(true)
+  })
+
+  it('folder bez plików wideo ani audio daje komunikat', () => {
+    const { input } = renderUpload()
+    Object.defineProperty(input, 'webkitdirectory', { configurable: true, value: true })
+    fireEvent.change(input, { target: { files: [new File(['x'], '.DS_Store')] } })
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'W wybranym folderze nie ma plików wideo ani audio.',
+    )
   })
 })
 
