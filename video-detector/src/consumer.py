@@ -29,6 +29,9 @@ DETECTOR_RESULTS = Counter(
     "Detector outcomes",
     ["source", "outcome"],  # outcome: fake | real | failed | cancelled
 )
+# Expose every outcome at 0 from the first scrape, so the dashboard does not read "No data".
+for _outcome in ("fake", "real", "failed", "cancelled"):
+    DETECTOR_RESULTS.labels(SOURCE, _outcome)
 
 try:
     from .inference import VideoInference

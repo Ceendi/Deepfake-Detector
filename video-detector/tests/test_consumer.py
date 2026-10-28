@@ -145,6 +145,14 @@ def test_runtime_retains_video_metric_labels(monkeypatch, outcome, verdict, labe
     metric.labels.return_value.inc.assert_called_once_with()
 
 
+def test_every_video_outcome_is_exposed_before_the_first_task():
+    samples = next(iter(consumer.DETECTOR_RESULTS.collect())).samples
+    exposed = {(sample.labels["source"], sample.labels["outcome"]) for sample in samples
+               if sample.name == "detector_results_total"}
+    assert exposed == {(consumer.SOURCE, outcome)
+                       for outcome in ("fake", "real", "failed", "cancelled")}
+
+
 def test_runtime_retains_video_latency_labels(monkeypatch):
     metric = MagicMock()
     monkeypatch.setattr(consumer, "INFERENCE_LATENCY", metric)

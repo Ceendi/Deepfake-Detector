@@ -811,7 +811,7 @@ services:
   # --- Observability stack (profile: monitoring) ---------------------------------------------
   # Named volumes hold writable state while root filesystems stay read-only.
   prometheus:
-    image: prom/prometheus:v3.15.0
+    image: prom/prometheus:v3.15.1
     profiles: ["monitoring"]
     restart: unless-stopped
     <<: *monitoring-hardening
@@ -840,7 +840,7 @@ services:
     networks: [deepfake]
 
   loki:
-    image: grafana/loki:3.7.8
+    image: grafana/loki:3.7.9
     profiles: ["monitoring"]
     restart: unless-stopped
     <<: *monitoring-hardening
@@ -862,7 +862,7 @@ services:
     networks: [deepfake]
 
   tempo:
-    image: grafana/tempo:3.1.0
+    image: grafana/tempo:3.1.1
     profiles: ["monitoring"]
     restart: unless-stopped
     <<: *monitoring-hardening

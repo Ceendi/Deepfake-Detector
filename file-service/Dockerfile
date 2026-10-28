@@ -8,6 +8,8 @@ COPY src ./src
 RUN ./mvnw package -DskipTests
 
 FROM eclipse-temurin:25-jre-alpine
+# Takes Alpine security fixes released after the base image was built.
+RUN apk upgrade --no-cache
 # ffmpeg provides ffprobe, used by the upload validation subprocess. Without it the container
 # would throw IOException at runtime even though local tests (host ffprobe) pass.
 RUN apk add --no-cache ffmpeg

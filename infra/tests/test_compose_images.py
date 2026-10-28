@@ -143,6 +143,13 @@ class ComposeImagesTest(unittest.TestCase):
         keycloak = (ROOT / 'infra/tests/test_keycloak.py').read_text()
         self.assertIn("self.compose('up', '-d', '--build')", keycloak)
 
+    def test_real_model_e2e_runs_only_published_images(self):
+        # The opposite rule on purpose: it checks what a plain `docker compose up` deploys.
+        workflow = (ROOT / '.github/workflows/e2e-ml.yml').read_text()
+        self.assertNotIn('--build', workflow)
+        self.assertIn('$COMPOSE pull', workflow)
+        self.assertEqual(2, workflow.count('up -d --no-build --pull never'))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -35,17 +35,27 @@ public class AnalysisMetrics {
         // scrape — rate()/alerts need them present before the first failure ever happens.
         this.dlqFailures = registry.counter("analyses.dlq");
         this.stuckRecoveries = registry.counter("analyses.stuck.recovered");
+        // Same for every enum-valued series, so a fresh stack shows 0 instead of "No data".
+        for (AnalysisStatus status : AnalysisStatus.values()) {
+            if (status.isTerminal()) {
+                for (AnalysisType type : AnalysisType.values()) {
+                    terminalCounter(status, type);
+                }
+                deletedCounter(status);
+            }
+        }
+        cacheCounter(true);
+        cacheCounter(false);
     }
 
     /** One terminal transition (COMPLETED/FAILED/CANCELLED) of a given type. */
     public void terminal(AnalysisStatus status, AnalysisType type) {
-        registry.counter("analyses.total", "status", status.name().toLowerCase(),
-                "type", type.name().toLowerCase()).increment();
+        terminalCounter(status, type).increment();
     }
 
     /** One analysis permanently deleted by its owner, tagged by the terminal status it carried. */
     public void deleted(AnalysisStatus status) {
-        registry.counter("analyses.deleted", "status", status.name().toLowerCase()).increment();
+        deletedCounter(status).increment();
     }
 
     /** End-to-end latency (created -> completed); recorded for COMPLETED only — see the caller. */
@@ -64,7 +74,20 @@ public class AnalysisMetrics {
     }
 
     public void cache(boolean hit) {
-        registry.counter("cache.requests.total", "result", hit ? "hit" : "miss").increment();
+        cacheCounter(hit).increment();
+    }
+
+    private Counter terminalCounter(AnalysisStatus status, AnalysisType type) {
+        return registry.counter("analyses.total", "status", status.name().toLowerCase(),
+                "type", type.name().toLowerCase());
+    }
+
+    private Counter deletedCounter(AnalysisStatus status) {
+        return registry.counter("analyses.deleted", "status", status.name().toLowerCase());
+    }
+
+    private Counter cacheCounter(boolean hit) {
+        return registry.counter("cache.requests.total", "result", hit ? "hit" : "miss");
     }
 
     private double readInflight() {
