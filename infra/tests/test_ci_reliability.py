@@ -85,6 +85,17 @@ class CiReliabilityTest(unittest.TestCase):
         self.assertIn('apk info -v --installed su-exec', postgres)
         self.assertIn('0.3-r0', postgres)
 
+    def test_alpine_runtime_images_take_package_fixes_released_after_the_base(self):
+        # Trivy fails the build on CRITICAL Alpine fixes the base image does not ship yet.
+        for name in ('gateway', 'eureka-server', 'orchestrator', 'file-service', 'frontend',
+                     'infra/postgres', 'infra/keycloak-config-cli'):
+            runtime = (ROOT / name / 'Dockerfile').read_text().rsplit('\nFROM ', 1)[-1]
+            # A bare upgrade, not one limited to named packages, before dropping root.
+            upgrade = re.search(r'apk upgrade --no-cache(?= *(?:&&|\\?\n))', runtime)
+            with self.subTest(image=name):
+                self.assertIsNotNone(upgrade)
+                self.assertLess(upgrade.start(), runtime.rindex('\nUSER '))
+
     def test_checksum_adds_have_a_versioned_dockerfile_frontend(self):
         dockerfiles = [path for path in ROOT.rglob('Dockerfile')
                       if not any(part in ('.git', 'node_modules', '.venv', 'target')
