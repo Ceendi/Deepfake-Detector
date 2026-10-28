@@ -61,6 +61,10 @@ jobs:
           grep -qx 'KEYCLOAK_REALM_CONFIG=dev/realm-export.json' .env
           grep -qx "DEEPFAKE_IMAGE_TAG=$DEEPFAKE_IMAGE_TAG" .env
           grep -qx 'FILE_SERVICE_REPLICAS=1' .env
+          # Dev-only value from .env.example; without a secret the CLI waits for a browser sign-in.
+          secret=$(grep -m1 '^LOADTEST_CLIENT_SECRET=' .env | cut -d= -f2-)
+          test -n "$secret"
+          echo "LOADTEST_CLIENT_SECRET=$secret" >> "$GITHUB_ENV"
 
       - name: Pull the published images
         run: |
@@ -132,16 +136,16 @@ jobs:
 
       - name: Analyse the media with the batch CLI
         run: |
-          python3 tools/batch/batch_analyze.py media --labels-from-folders --timeout 900 \
-            --out results.csv --metrics-out metrics.json
+          python3 tools/batch/batch_analyze.py media --client-secret "$LOADTEST_CLIENT_SECRET" \
+            --labels-from-folders --timeout 900 --out results.csv --metrics-out metrics.json
           python3 infra/ci/e2e_ml_outcomes.py results.csv media
           { echo '### Results'; echo '```'; cat results.csv; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: A second run resumes with nothing to analyse
         run: |
           cp results.csv first-run.csv
-          python3 tools/batch/batch_analyze.py media --labels-from-folders --out results.csv 2>&1 |
-            tee resume.log
+          python3 tools/batch/batch_analyze.py media --client-secret "$LOADTEST_CLIENT_SECRET" \
+            --labels-from-folders --out results.csv 2>&1 | tee resume.log
           grep -F 'do analizy: 0' resume.log
           diff <(sort first-run.csv) <(sort results.csv)
 
