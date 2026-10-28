@@ -15,7 +15,7 @@ function renderQueue(props: Partial<Parameters<typeof BatchQueue>[0]> = {}) {
     <MemoryRouter>
       <BatchQueue
         items={[]}
-        skipped={0}
+        skipped={[]}
         started
         finished={false}
         cancelling={false}
@@ -62,13 +62,30 @@ describe('BatchQueue', () => {
   it('before start offers analysing the valid files and reports skipped ones', () => {
     const { onStart } = renderQueue({
       started: false,
-      skipped: 2,
+      skipped: ['notatka.txt', 'docs/opis.pdf'],
       items: [item('a.mp4'), item('b.txt', { status: 'failed', message: 'x' }), item('c.wav')],
     })
 
-    expect(screen.getByText(/Pominięto 2 pliki/)).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Pominięto 2 pliki spoza obsługiwanych formatów: notatka.txt, docs/opis.pdf',
+      ),
+    ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Analizuj wszystkie (2)' }))
     expect(onStart).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    [6, 'f1.txt, f2.txt, f3.txt, f4.txt, f5.txt i 1 inny'],
+    [7, 'f1.txt, f2.txt, f3.txt, f4.txt, f5.txt i 2 inne'],
+    [10, 'f1.txt, f2.txt, f3.txt, f4.txt, f5.txt i 5 innych'],
+  ])('names the first five of %i skipped files', (count, names) => {
+    const skipped = Array.from({ length: count }, (_, index) => `f${index + 1}.txt`)
+    renderQueue({ started: false, skipped, items: [item('a.mp4')] })
+
+    expect(
+      screen.getByText(`Pominięto ${count} plików spoza obsługiwanych formatów: ${names}`),
+    ).toBeInTheDocument()
   })
 
   it('while running offers cancelling everything, when finished picking new files', () => {

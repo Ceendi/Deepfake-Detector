@@ -142,12 +142,19 @@ class GatewayRateLimitIntegrationTest {
     }
 
     @Test
-    void defaultUploadBucketAllowsFiveThenRejectsSixth() {
-        for (int i = 0; i < 5; i++) assertThat(upload()).isEqualTo(200);
-        assertThat(upload()).isEqualTo(429);
+    void defaultUploadBucketAllowsTenThenRejectsEleventhWithRetryAfter() {
+        for (int i = 0; i < 10; i++) assertThat(upload()).isEqualTo(200);
+        var rejected = client.post().uri("/api/files/upload")
+                .header("Authorization", "Bearer test-token").header("Origin", "http://localhost:5173")
+                .exchange().expectStatus().isEqualTo(429)
+                .expectHeader().value("Access-Control-Expose-Headers", value -> assertThat(value).contains("Retry-After"))
+                .returnResult(Void.class).getResponseHeaders();
+        // One token per second refills while the test runs, so the wait is whatever the bucket still lacks.
+        long remaining = Long.parseLong(rejected.getFirst("X-RateLimit-Remaining"));
+        assertThat(rejected.getFirst("Retry-After")).isEqualTo(String.valueOf(6 - remaining));
         var config = limiter.getConfig().get("file-service-upload");
         assertThat(config.getReplenishRate()).isEqualTo(1);
-        assertThat(config.getRequestedTokens()).isEqualTo(12);
+        assertThat(config.getRequestedTokens()).isEqualTo(6);
         assertThat(config.getBurstCapacity()).isEqualTo(60);
     }
 
@@ -243,7 +250,7 @@ class GatewayRateLimitIntegrationTest {
     private void assertBucketsEnforced() {
         for (String path : List.of("/api/files/upload", "/api/files/probe/metadata", "/api/analysis/probe")) {
             int rateLimited = 0;
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 11; i++) {
                 var request = path.endsWith("upload") ? client.post().uri(path) : client.get().uri(path);
                 int status = request.header("Authorization", "Bearer test-token").exchange()
                         .returnResult(Void.class).getStatus().value();

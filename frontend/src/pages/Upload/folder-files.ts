@@ -2,13 +2,18 @@ import { hasSupportedExt } from './upload-utils'
 
 export interface PickedFiles {
   files: File[]
-  skipped: number
+  skipped: string[] // paths inside the picked folder, or names
 }
 
 // Folders hold anything (.DS_Store, documents), so only supported media are queued.
 export function keepMedia(files: File[]): PickedFiles {
-  const media = files.filter((file) => hasSupportedExt(file.name))
-  return { files: media, skipped: files.length - media.length }
+  const media: File[] = []
+  const skipped: string[] = []
+  for (const file of files) {
+    if (hasSupportedExt(file.name)) media.push(file)
+    else skipped.push(file.webkitRelativePath || file.name)
+  }
+  return { files: media, skipped }
 }
 
 function readBatch(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {

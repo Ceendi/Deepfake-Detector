@@ -90,7 +90,7 @@ export default function Upload() {
   function handleFiles(files: ArrayLike<File> | null, fromFolder = false) {
     const { files: all, skipped } = fromFolder
       ? keepMedia(Array.from(files ?? []))
-      : { files: Array.from(files ?? []), skipped: 0 }
+      : { files: Array.from(files ?? []), skipped: [] }
     if (fromFolder && all.length === 0) {
       return rejectFile('W wybranym folderze nie ma plików wideo ani audio.')
     }
