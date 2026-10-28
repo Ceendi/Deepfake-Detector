@@ -57,12 +57,22 @@ class ArtifactCleanupSeaweedIntegrationTest {
             "storage.endpoint", endpoint, "storage.region", "us-east-1", "storage.access-key", "orchestrator", "storage.secret-key", "orchestrator-secret")));
         context.getBeanFactory().setConversionService(ApplicationConversionService.getSharedInstance());
         context.register(ObjectStorageConfig.class); context.refresh(); s3 = context.getBean(S3Client.class);
-        admin = S3Client.builder().endpointOverride(URI.create(endpoint)).region(Region.US_EAST_1).forcePathStyle(true)
-            .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("admin", "admin-secret")))
-            .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofSeconds(5)).apiCallAttemptTimeout(Duration.ofSeconds(2))).build();
-        await().atMost(Duration.ofSeconds(90)).pollInterval(Duration.ofSeconds(1)).ignoreExceptions().untilAsserted(() -> {
-            admin.createBucket(CreateBucketRequest.builder().bucket("analysis-artifacts").build());
-        });
+        var adminBuilder = S3Client.builder().endpointOverride(URI.create(endpoint)).region(Region.US_EAST_1).forcePathStyle(true)
+            .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create("admin", "admin-secret")));
+        admin = adminBuilder.overrideConfiguration(config -> config.apiCallTimeout(Duration.ofSeconds(5)).apiCallAttemptTimeout(Duration.ofSeconds(2))).build();
+        // A timed-out startup write can finish after deletion and recreate the probe.
+        try (var readiness = adminBuilder.overrideConfiguration(config -> config.apiCallTimeout(Duration.ofSeconds(90))
+                .apiCallAttemptTimeout(Duration.ofSeconds(90))).build()) {
+            await().atMost(Duration.ofSeconds(90)).pollInterval(Duration.ofSeconds(1)).ignoreExceptions().untilAsserted(() -> {
+                try {
+                    readiness.createBucket(CreateBucketRequest.builder().bucket("analysis-artifacts").build());
+                } catch (BucketAlreadyOwnedByYouException alreadyCreated) {
+                    // A previous readiness attempt may already have created the bucket.
+                }
+                readiness.putObject(PutObjectRequest.builder().bucket("analysis-artifacts").key(".bootstrap/readiness").build(), RequestBody.fromString("ready"));
+                readiness.deleteObject(DeleteObjectRequest.builder().bucket("analysis-artifacts").key(".bootstrap/readiness").build());
+            });
+        }
         admin.createBucket(CreateBucketRequest.builder().bucket("deepfake-uploads").build());
         Flyway.configure().dataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword()).load().migrate();
         var ds = new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
