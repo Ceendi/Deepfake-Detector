@@ -94,6 +94,27 @@ class ProtectiveRedisRateLimiterTest {
         assertThat(meters.find("gateway.ratelimiter.degraded").counter()).isNull();
     }
 
+    @Test
+    void deniedRequestCarriesSecondsUntilOneRequestFitsTheBucket() {
+        closed.getConfig().put("upload", new RedisRateLimiter.Config()
+                .setReplenishRate(2).setBurstCapacity(60).setRequestedTokens(6));
+        when(template.execute(eq(script), anyList(), anyList()))
+                .thenReturn(Flux.just(List.of(0L, 1L)), Flux.just(List.of(0L, 5L)), Flux.just(List.of(1L, 0L)));
+
+        assertThat(closed.isAllowed("upload", "user").block().getHeaders())
+                .containsEntry("Retry-After", "3").containsEntry("X-RateLimit-Remaining", "1");
+        assertThat(closed.isAllowed("upload", "user").block().getHeaders()).containsEntry("Retry-After", "1");
+        var allowed = closed.isAllowed("upload", "user").block();
+        assertThat(allowed.isAllowed()).isTrue();
+        assertThat(allowed.getHeaders()).doesNotContainKey("Retry-After");
+    }
+
+    @Test
+    void deniedRequestWithEmptyBucketWaitsAtLeastOneSecond() {
+        when(template.execute(eq(script), anyList(), anyList())).thenReturn(Flux.just(List.of(0L, 0L)));
+        assertThat(open.isAllowed("route", "user").block().getHeaders()).containsEntry("Retry-After", "1");
+    }
+
     private ProtectiveRedisRateLimiter limiter(ProtectiveRedisRateLimiter.FailureMode mode) {
         var limiter = new ProtectiveRedisRateLimiter(template, script, null, Duration.ofMillis(750), degradation, mode, meters);
         limiter.getConfig().put("route", new RedisRateLimiter.Config().setReplenishRate(1).setBurstCapacity(2));

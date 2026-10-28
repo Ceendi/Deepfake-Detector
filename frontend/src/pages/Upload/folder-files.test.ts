@@ -53,11 +53,17 @@ describe('filesFromEntries', () => {
 })
 
 describe('keepMedia', () => {
-  it('keeps supported media and counts the rest as skipped', () => {
+  it('keeps supported media and names the skipped rest', () => {
     const names = ['a.mp4', '.DS_Store', 'opis.txt', 'b.WAV']
     const { files, skipped } = keepMedia(names.map((name) => new File(['x'], name)))
     expect(files.map((file) => file.name)).toEqual(['a.mp4', 'b.WAV'])
-    expect(skipped).toBe(2)
+    expect(skipped).toEqual(['.DS_Store', 'opis.txt'])
+  })
+
+  it('names a skipped file by its path inside the picked folder', () => {
+    const file = new File(['x'], 'opis.txt')
+    Object.defineProperty(file, 'webkitRelativePath', { value: 'nagrania/docs/opis.txt' })
+    expect(keepMedia([file]).skipped).toEqual(['nagrania/docs/opis.txt'])
   })
 })
 

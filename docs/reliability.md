@@ -822,8 +822,8 @@ checks real child-process timeout/non-zero exit, HTTP status, retry headers and 
 
 ## Upload admission and unused retention
 
-Upload admission has three bounds: the gateway token bucket (five/minute, burst five),
-a servlet filter before multipart parsing (four concurrent uploads per replica, at most
+Upload admission has three bounds: the gateway token bucket (ten/minute, burst ten; its `429`
+carries `Retry-After` = seconds until one upload fits), a servlet filter before multipart parsing (four concurrent uploads per replica, at most
 two per authenticated `jwt.sub` on that replica), and
 a PostgreSQL per-owner quota (5 GiB). Gateway Redis outages retain their existing
 fail-closed 503 policy; reads retain fail-open behavior. Replica saturation returns
@@ -879,7 +879,7 @@ protect existing analysis references; unused retention applies to new uploads.
 | `MEDIA_MAX_PIXELS` | `8294400` | Maximum width×height of each video stream (4K) |
 | `UPLOAD_RL_REPLENISH` | `1` | Upload tokens replenished per second |
 | `UPLOAD_RL_BURST` | `60` | Upload bucket token capacity |
-| `UPLOAD_RL_REQUESTED_TOKENS` | `12` | Tokens spent per upload (5/minute, burst 5) |
+| `UPLOAD_RL_REQUESTED_TOKENS` | `6` | Tokens spent per upload (10/minute, burst 10) |
 
 Tests: UploadLifecycleIntegrationTest (real PostgreSQL, concurrent quota admission,
 rollback, owner-scoped idempotent claim, expiry), UploadSpoolIntegrationTest (real
