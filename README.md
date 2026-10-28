@@ -72,6 +72,7 @@ The gateway listens on `http://localhost:8080` and routes to services found thro
   [monitoring](docs/observability.md), [CI/CD](docs/ci-cd.md)
 - [Architecture decisions](docs/adr/) and [measurement reports](docs/reports/)
 - [Keycloak configuration](infra/keycloak/README.md), [Infisical secrets](infra/INFISICAL.md)
+- [Batch analysis of a folder with quality metrics (CLI)](tools/batch/README.md)
 
 ## Stopping
 
