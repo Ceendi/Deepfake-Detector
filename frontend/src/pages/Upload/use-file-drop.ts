@@ -1,6 +1,10 @@
 import { useRef, useState } from 'react'
 
-export function useFileDrop(onFiles: (files: FileList | null) => void) {
+import { droppedFolderEntries, filesFromEntries } from './folder-files'
+
+export type FilesHandler = (files: ArrayLike<File> | null, fromFolder?: boolean) => void
+
+export function useFileDrop(onFiles: FilesHandler) {
   const [isDragging, setIsDragging] = useState(false)
   // Child elements also emit enter/leave, so track depth to avoid flickering.
   const depth = useRef(0)
@@ -27,7 +31,9 @@ export function useFileDrop(onFiles: (files: FileList | null) => void) {
       e.preventDefault()
       depth.current = 0
       setIsDragging(false)
-      onFiles(e.dataTransfer.files)
+      const folder = droppedFolderEntries(e.dataTransfer)
+      if (folder) void filesFromEntries(folder).then((files) => onFiles(files, true))
+      else onFiles(e.dataTransfer.files)
     },
   }
 

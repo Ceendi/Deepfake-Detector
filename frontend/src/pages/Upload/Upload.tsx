@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom'
 
 import { ACCEPT_ATTR, validateDuration, validateFile } from './upload-utils'
 import { useAnalysisFlow } from './use-analysis-flow'
+import { useBatchQueue } from './use-batch-queue'
+import { keepMedia } from './folder-files'
 import { Dropzone } from './components/Dropzone'
 import { ErrorState } from './components/ErrorState'
 import { MediaPreview } from './components/MediaPreview'
@@ -11,6 +13,7 @@ import { PreviewState } from './components/PreviewState'
 import { UploadingState } from './components/UploadingState'
 import { AnalyzingState } from './components/AnalyzingState'
 import { FailedState } from './components/FailedState'
+import { BatchQueue } from './components/BatchQueue'
 
 import styles from './Upload.module.css'
 
@@ -26,13 +29,14 @@ export default function Upload() {
   const flow = useAnalysisFlow((analysisId) => {
     navigate(`/analysis-result/${analysisId}`)
   })
+  const batch = useBatchQueue()
 
   useEffect(() => {
     if (!previewUrl) return
     return () => URL.revokeObjectURL(previewUrl)
   }, [previewUrl])
 
-  const uploading = flow.state.name === 'uploading'
+  const uploading = flow.state.name === 'uploading' || batch.sending
   useEffect(() => {
     if (!uploading) return
     function warn(event: BeforeUnloadEvent) {
@@ -55,8 +59,11 @@ export default function Upload() {
     }
   }, [])
 
-  function openPicker() {
-    inputRef.current?.click()
+  function openPicker(folder = false) {
+    const input = inputRef.current
+    if (!input) return
+    input.webkitdirectory = folder
+    input.click()
   }
 
   function reset() {
@@ -64,6 +71,7 @@ export default function Upload() {
     setError(null)
     setPreviewUrl(null)
     flow.reset()
+    batch.reset()
     if (inputRef.current) inputRef.current.value = ''
   }
 
@@ -79,8 +87,22 @@ export default function Upload() {
     if (message && flow.state.name === 'idle') rejectFile(message)
   }
 
-  function handleFiles(files: FileList | null) {
-    const picked = files?.[0]
+  function handleFiles(files: ArrayLike<File> | null, fromFolder = false) {
+    const { files: all, skipped } = fromFolder
+      ? keepMedia(Array.from(files ?? []))
+      : { files: Array.from(files ?? []), skipped: 0 }
+    if (fromFolder && all.length === 0) {
+      return rejectFile('W wybranym folderze nie ma plików wideo ani audio.')
+    }
+    if (all.length > 1) {
+      setError(null)
+      setFile(null)
+      setPreviewUrl(null)
+      batch.add(all, skipped)
+      return
+    }
+
+    const picked = all[0]
     if (!picked) return
 
     const message = validateFile(picked)
@@ -104,16 +126,32 @@ export default function Upload() {
         ref={inputRef}
         type="file"
         accept={ACCEPT_ATTR}
+        multiple
         hidden
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => handleFiles(e.target.files, e.target.webkitdirectory)}
       />
 
       {error ? (
-        <ErrorState message={error} onPick={openPicker} />
+        <ErrorState message={error} onPick={() => openPicker()} />
+      ) : batch.items.length > 0 ? (
+        <BatchQueue
+          items={batch.items}
+          skipped={batch.skipped}
+          started={batch.started}
+          finished={batch.finished}
+          cancelling={batch.cancelling}
+          onStart={batch.start}
+          onCancelAll={batch.cancelAll}
+          onReset={reset}
+        />
       ) : file && previewUrl ? (
         renderFlow(file, previewUrl)
       ) : (
-        <Dropzone onFiles={handleFiles} onPick={openPicker} />
+        <Dropzone
+          onFiles={handleFiles}
+          onPick={() => openPicker()}
+          onPickFolder={() => openPicker(true)}
+        />
       )}
     </div>
   )

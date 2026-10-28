@@ -42,7 +42,7 @@ export async function uploadFileWithProgress(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(body as UploadResponse)
       } else {
-        reject(apiErrorFrom(xhr.status, body, corr))
+        reject(apiErrorFrom(xhr.status, body, corr, xhr.getResponseHeader('Retry-After')))
       }
     }
     xhr.onerror = () =>

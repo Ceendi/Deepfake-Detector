@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import type { DragEvent } from 'react'
 
 import { useFileDrop } from './use-file-drop'
@@ -57,5 +57,44 @@ describe('useFileDrop', () => {
     expect(onFiles).toHaveBeenCalledOnce()
     expect(onFiles.mock.calls[0][0]).toHaveLength(1)
     expect(result.current.isDragging).toBe(false)
+  })
+
+  it('onDrop z folderem przekazuje pliki z całego drzewa', async () => {
+    const onFiles = vi.fn()
+    const { result } = renderHook(() => useFileDrop(onFiles))
+    const folder = {
+      isFile: false,
+      isDirectory: true,
+      createReader: () => {
+        let read = false
+        return {
+          readEntries: (ok: (entries: unknown[]) => void) => {
+            ok(
+              read
+                ? []
+                : [
+                    {
+                      isFile: true,
+                      isDirectory: false,
+                      file: (cb: (f: File) => void) => cb(new File(['x'], 'a.mp4')),
+                    },
+                  ],
+            )
+            read = true
+          },
+        }
+      },
+    }
+    const e = {
+      preventDefault: vi.fn(),
+      dataTransfer: { files: [], items: [{ webkitGetAsEntry: () => folder }] },
+    } as unknown as DragEvent
+
+    act(() => result.current.dropHandlers.onDrop(e))
+
+    await waitFor(() => expect(onFiles).toHaveBeenCalledOnce())
+    const [files, fromFolder] = onFiles.mock.calls[0]
+    expect(files.map((f: File) => f.name)).toEqual(['a.mp4'])
+    expect(fromFolder).toBe(true)
   })
 })

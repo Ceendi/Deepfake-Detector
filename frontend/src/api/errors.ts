@@ -6,6 +6,7 @@ export interface ApiErrorParams {
   code?: string
   correlationId?: string
   backpressure?: BackpressureInfo
+  retryAfterSeconds?: number
 }
 
 export class ApiError extends Error {
@@ -14,14 +15,24 @@ export class ApiError extends Error {
   readonly correlationId?: string
 
   readonly backpressure?: BackpressureInfo
+  /** Delay-seconds form of the `Retry-After` header, when the response carried one. */
+  readonly retryAfterSeconds?: number
 
-  constructor({ status, message, code, correlationId, backpressure }: ApiErrorParams) {
+  constructor({
+    status,
+    message,
+    code,
+    correlationId,
+    backpressure,
+    retryAfterSeconds,
+  }: ApiErrorParams) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.correlationId = correlationId
     this.backpressure = backpressure
+    this.retryAfterSeconds = retryAfterSeconds
   }
 
   get isUnauthorized(): boolean {

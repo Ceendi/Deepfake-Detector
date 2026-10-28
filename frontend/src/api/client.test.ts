@@ -24,3 +24,13 @@ describe('apiErrorFrom backpressure', () => {
     ).toBeUndefined()
   })
 })
+
+describe('apiErrorFrom Retry-After', () => {
+  it('reads the delay-seconds header and ignores other forms', () => {
+    expect(apiErrorFrom(503, null, undefined, ' 5 ').retryAfterSeconds).toBe(5)
+    expect(apiErrorFrom(429, null).retryAfterSeconds).toBeUndefined()
+    expect(
+      apiErrorFrom(429, null, undefined, 'Wed, 21 Oct 2026 07:28:00 GMT').retryAfterSeconds,
+    ).toBeUndefined()
+  })
+})
