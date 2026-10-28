@@ -11,9 +11,12 @@ import { BATCH_LIMITS, formatMB, isVideoFile, pluralPl } from '../upload-utils'
 import type { BatchItem } from '../use-batch-queue'
 import styles from '../Upload.module.css'
 
+// More names would push the queue itself off screen.
+const SKIPPED_NAMES_SHOWN = 5
+
 interface BatchQueueProps {
   items: BatchItem[]
-  skipped: number
+  skipped: string[]
   started: boolean
   finished: boolean
   cancelling: boolean
@@ -41,6 +44,12 @@ function statusLabel(item: BatchItem): string {
     case 'detached':
       return 'Analiza nadal trwa'
   }
+}
+
+function skippedNames(names: string[]): string {
+  const shown = names.slice(0, SKIPPED_NAMES_SHOWN).join(', ')
+  const rest = names.length - SKIPPED_NAMES_SHOWN
+  return rest > 0 ? `${shown} i ${rest} ${pluralPl(rest, 'inny', 'inne', 'innych')}` : shown
 }
 
 function BatchRow({ item }: { item: BatchItem }) {
@@ -123,10 +132,10 @@ export function BatchQueue({
         </span>
       </div>
 
-      {skipped > 0 && (
+      {skipped.length > 0 && (
         <p className={styles.batchNote}>
-          Pominięto {skipped} {pluralPl(skipped, 'plik', 'pliki', 'plików')} spoza obsługiwanych
-          formatów.
+          Pominięto {skipped.length} {pluralPl(skipped.length, 'plik', 'pliki', 'plików')} spoza
+          obsługiwanych formatów: {skippedNames(skipped)}
         </p>
       )}
 

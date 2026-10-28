@@ -29,7 +29,8 @@ Orchestrator and file-service apply the same validation on direct requests;
 orchestrator forwards the request ID on its file-service metadata lookup.
 Gateway CORS accepts the comma-separated `GATEWAY_CORS_ORIGINS` (defaults
 `http://localhost:5173,http://localhost:4173`). Allowed preflights are answered
-before JWT authentication, with credentials and requested headers allowed.
+before JWT authentication, with credentials and requested headers allowed. Responses expose
+`Retry-After` to the allowed origins.
 
 Both servlet services return `400 VALIDATION_FAILED` for invalid parameter types
 (including UUID), missing required parameters/file parts, invalid multipart requests
@@ -109,8 +110,11 @@ The authoritative check is serialized across replicas per owner after the S3 wri
 object is deleted when admission is certainly rejected before commit. An uncertain
 commit outcome retains the object for reference-aware orphan cleanup; a committed
 metadata row must never point to an object deleted as compensation.
-The gateway permits 5 uploads/minute with burst 5 by default (429). Before multipart
-parsing, authenticated uploads first acquire a per-`jwt.sub` slot on this replica
+The gateway permits 10 uploads/minute with burst 10 by default. Over the limit it returns
+`429` with an empty body and `Retry-After: <s>`, the whole seconds until the bucket again holds
+one upload's tokens (at least 1). When its Redis is unavailable the gateway rejects uploads with
+`503` and no `Retry-After`. Before multipart parsing, authenticated uploads first acquire a
+per-`jwt.sub` slot on this replica
 (`UPLOAD_MAX_CONCURRENT_PER_USER`, default 2), then a global replica slot
 (`UPLOAD_MAX_CONCURRENT`, default 4). User saturation returns `429 UPLOAD_USER_LIMIT`;
 replica saturation returns `503 SERVICE_UNAVAILABLE`. Both return an `ErrorResponse`
@@ -252,7 +256,8 @@ Three distinct `429 Too Many Requests` can occur:
   rejected request, capped at the maximum signed integer.
 - **SSE connection admission**: empty body and `Retry-After: 5`; configurable global/owner/analysis connection caps apply after ownership checks.
 - **Gateway rate limit** (per-user token bucket): no JSON body; rate-limit state is
-  carried in `X-RateLimit-*` headers (Spring Cloud Gateway default).
+  carried in `X-RateLimit-*` headers (Spring Cloud Gateway default) and `Retry-After` gives
+  the whole seconds until the bucket again holds one request's tokens (at least 1).
 
 Gateway Redis failures affect only upload availability: `POST /api/files/upload`
 (`file-service-upload`) returns `503` before forwarding, without `X-RateLimit-*`

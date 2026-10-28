@@ -44,7 +44,7 @@ is metadata only.
 
 | Limit | Where | Default |
 |---|---|---|
-| Upload rate per user | gateway (Redis token bucket) | 5/min, burst 5 |
+| Upload rate per user | gateway (Redis token bucket) | 10/min, burst 10 |
 | Other API calls per user | gateway | 2/s, burst 100 |
 | Concurrent uploads | file-service | 2 per user, 4 total |
 | Storage quota | file-service | 5 GiB per user |

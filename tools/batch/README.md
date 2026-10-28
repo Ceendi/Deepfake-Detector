@@ -67,14 +67,14 @@ Każdy wiersz jest zapisywany i zrzucany na dysk zaraz po zakończeniu pliku, w 
 
 ## Limity i ponawianie
 
-Limity backendu zostają bez zmian (5 uploadów/min, 2 równoległe uploady, 3 aktywne analizy,
+Limity backendu zostają bez zmian (10 uploadów/min, 2 równoległe uploady, 3 aktywne analizy,
 5 GB na użytkownika); narzędzie czeka:
 
 - `--concurrency 3` analiz w toku naraz, najwyżej 2 uploady równocześnie, uploady co
-  `--upload-interval 12` s (przy podniesionym `UPLOAD_RL_*` można dać `0`);
-- `429` i `503` czekają `Retry-After`; `429` bez nagłówka (limiter gatewaya) i błędy sieci czekają
-  5 s, potem 10, 20, 40 i 60 s. `429` jest ponawiane bez limitu, `5xx` i błędy sieci 8 razy,
-  potem wiersz `ERROR`;
+  `--upload-interval 6` s (przy podniesionym `UPLOAD_RL_*` można dać `0`);
+- `429` i `503` czekają `Retry-After`; odpowiedzi bez nagłówka (np. `503` gatewaya przy awarii
+  Redis) i błędy sieci czekają 5 s, potem 10, 20, 40 i 60 s. `429` jest ponawiane bez limitu,
+  `5xx` i błędy sieci 8 razy, potem wiersz `ERROR`;
 - odpowiedź `4xx` (np. `422 INVALID_FILE`) to wiersz `REJECTED`, a `FAILED` z detektora to wiersz
   `FAILED`; przebieg idzie dalej;
 - na wynik jednej analizy czeka się `--timeout 1800` s, potem `ERROR [CLIENT_TIMEOUT]`;
@@ -82,7 +82,7 @@ Limity backendu zostają bez zmian (5 uploadów/min, 2 równoległe uploady, 3 a
   przebieg (kod 3) po dokończeniu plików w toku; bieżący plik nie dostaje wiersza.
 
 Przepustowość wyznacza czas detektorów, nie narzędzie: przy 3 analizach w toku to mniej więcej
-`3 / czas jednej analizy`, najwyżej 5 plików na minutę.
+`3 / czas jednej analizy`, najwyżej 10 plików na minutę.
 
 ## Wznawianie
 

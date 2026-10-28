@@ -17,7 +17,7 @@ import {
   validateFile,
 } from './upload-utils'
 
-// For 429/503 without Retry-After (the gateway rate limiter sends none).
+// For 429/503 without Retry-After (e.g. the gateway's 503 while its Redis is down).
 const BACKOFF_MS = [5000, 10000, 20000, 40000, 60000]
 
 export type BatchStatus =
@@ -72,7 +72,7 @@ function sourcesOf(type: AnalysisType | undefined): Source[] {
  */
 export function useBatchQueue() {
   const [items, setItems] = useState<BatchItem[]>([])
-  const [skipped, setSkipped] = useState(0)
+  const [skipped, setSkipped] = useState<string[]>([])
   const [started, setStarted] = useState(false)
   const [cancelling, setCancelling] = useState(0)
 
@@ -122,7 +122,7 @@ export function useBatchQueue() {
     timersRef.current.clear()
   }
 
-  function add(files: File[], skippedCount = 0) {
+  function add(files: File[], skippedNames: string[] = []) {
     stop()
     jobsRef.current.clear()
     commit(
@@ -133,7 +133,7 @@ export function useBatchQueue() {
           : { key: `${index}:${file.name}`, file, status: 'pending' }
       }),
     )
-    setSkipped(skippedCount)
+    setSkipped(skippedNames)
     setStarted(false)
   }
 

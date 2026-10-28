@@ -30,6 +30,8 @@ class SecurityConfig {
         cors.setAllowedOrigins(Arrays.stream(origins.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList());
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         cors.setAllowedHeaders(List.of("*"));
+        // Not CORS-safelisted; cross-origin clients need it to wait out 429/503.
+        cors.setExposedHeaders(List.of("Retry-After"));
         cors.setAllowCredentials(true);
         cors.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
