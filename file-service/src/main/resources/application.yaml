@@ -73,7 +73,7 @@ upload:
   max-concurrent-per-user: ${UPLOAD_MAX_CONCURRENT_PER_USER:2}
 security:
   jwt:
-    allowed-clients: ${JWT_ALLOWED_CLIENTS:deepfake-web,deepfake-loadtest}
+    allowed-clients: ${JWT_ALLOWED_CLIENTS:deepfake-web,deepfake-cli,deepfake-loadtest}
 management:
   metrics:
     distribution:
