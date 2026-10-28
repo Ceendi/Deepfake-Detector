@@ -160,11 +160,11 @@ class RetryTest(unittest.TestCase):
 
     def test_uploads_are_paced_to_the_gateway_bucket(self):
         delays = []
-        batch = ba.Batch(None, ba.Settings(upload_interval=12), wait=lambda s: delays.append(s))
+        batch = ba.Batch(None, ba.Settings(), wait=lambda s: delays.append(s))
         with patch.object(ba.time, 'monotonic', side_effect=[100.0, 100.0, 103.0]):
             for _ in range(3):
                 batch.pace_upload()
-        self.assertEqual([12.0, 21.0], delays)
+        self.assertEqual([6.0, 9.0], delays)
 
     def test_network_errors_become_a_file_error(self):
         class Down:
@@ -262,7 +262,7 @@ class FakeBackend:
                 with backend.lock:
                     backend.calls['create'] += 1
                     if backend.calls['create'] == 1:
-                        return self.send(429)  # gateway token bucket: no Retry-After, no body
+                        return self.send(429)  # no Retry-After and no body: the backoff path
                     analysis = backend.analyses.pop(request['fileId'])
                     analysis_id = str(uuid.uuid4())
                     backend.analyses[analysis_id] = {**analysis, 'type': request['type'], 'polls': 0}

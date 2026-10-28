@@ -45,7 +45,7 @@ LABELS = ('real', 'fake')
 RETRY_STATUSES = {429, 502, 503, 504}
 MAX_UPLOAD_BYTES = 524_288_000  # docs/contracts/rest-api.md: 500 MiB per file
 UPLOAD_SLOTS = 2  # UPLOAD_MAX_CONCURRENT_PER_USER default
-UPLOAD_INTERVAL = 12.0  # gateway upload bucket default: 5 per minute
+UPLOAD_INTERVAL = 6.0  # gateway upload bucket default: 10 per minute
 BACKOFF_START, BACKOFF_CAP = 5.0, 60.0
 RETRY_AFTER_CAP = 300.0
 MAX_TRANSIENT_RETRIES = 8
@@ -195,7 +195,7 @@ def backoff(attempt):
 
 
 def retry_delay(headers, attempt):
-    # The gateway rate limiter answers 429 without Retry-After; the backend limits send it.
+    # Every limit sends Retry-After; the backoff covers proxies and a gateway Redis outage (503).
     seconds = retry_after(headers)
     return backoff(attempt) if seconds is None else seconds
 
@@ -624,7 +624,7 @@ def parse_args(argv=None):
     parser.add_argument('--poll-interval', type=float, default=3.0,
                         help='odstęp odpytywania GET /api/analysis/{id} w s (domyślnie %(default).0f)')
     parser.add_argument('--upload-interval', type=float, default=UPLOAD_INTERVAL,
-                        help='min. odstęp między uploadami w s (domyślnie %(default).0f = 5 na minutę, '
+                        help='min. odstęp między uploadami w s (domyślnie %(default).0f = 10 na minutę, '
                              'limit gatewaya; 0 przy podniesionym UPLOAD_RL_*)')
     for name, (env, default) in DEFAULTS.items():
         shown = '***' if name == 'client_secret' else default

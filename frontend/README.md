@@ -53,7 +53,7 @@ kontekst `frontend/`); po zmianie motywu: `docker compose up -d --build keycloak
   [SSE delivery](../docs/reliability.md#sse-delivery). Frontend nie ustawia sam statusu FAILED.
 - **Wiele plików lub folder** na stronie uploadu trafia do kolejki (`use-batch-queue.ts`): najwyżej
   2 wysyłki i 3 aktywne analizy naraz (`BATCH_LIMITS`), 429/503 czekają `Retry-After` (bez nagłówka
-  5 → 60 s) i ponawiają ten sam krok; pozostałe limity (5 wysyłek/min, 5 GB) egzekwuje serwer.
+  5 → 60 s) i ponawiają ten sam krok; pozostałe limity (10 wysyłek/min, 5 GB) egzekwuje serwer.
   Z folderu brane są tylko obsługiwane formaty; jeden plik działa jak dotąd.
 - **Błędy API:** `UPLOAD_USER_LIMIT` (429) ma osobny komunikat, `MEDIA_TOO_LONG`
   i `UNSUPPORTED_MEDIA` są rozpoznawane w polu `code` i w prefiksie `[KOD]` komunikatu 422,
