@@ -4,6 +4,10 @@ import type { AnalysisType } from '@/api/types'
 
 const MAX_SIZE_BYTES = 500 * 1024 * 1024 // 500 MB
 
+// Per-user server defaults (docs/contracts/rest-api.md). The server stays authoritative: these only
+// avoid needless 429s. Each active analysis holds one SSE stream, below the 4 allowed per user.
+export const BATCH_LIMITS = { uploads: 2, analyses: 3 } as const
+
 export const VIDEO_EXTS = ['mp4', 'mov', 'avi'] as const
 export const AUDIO_EXTS = ['wav', 'mp3', 'flac'] as const
 const ALL_EXTS = [...VIDEO_EXTS, ...AUDIO_EXTS]
@@ -35,9 +39,13 @@ export function formatDuration(seconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
+export function hasSupportedExt(name: string): boolean {
+  return ALL_EXTS.includes(getExt(name) as (typeof ALL_EXTS)[number])
+}
+
 export function validateFile(file: File): string | null {
   const ext = getExt(file.name)
-  if (!ALL_EXTS.includes(ext as (typeof ALL_EXTS)[number])) {
+  if (!hasSupportedExt(file.name)) {
     return `Nieobsługiwany format pliku${ext ? ` (.${ext})` : ''}. Dozwolone: ${ALL_FORMATS_LABEL}.`
   }
   if (file.size > MAX_SIZE_BYTES) {

@@ -97,6 +97,13 @@ describe('uploadFileWithProgress', () => {
     expect(error).toMatchObject({ status: 413, correlationId: 'server-corr' })
   })
 
+  it('keeps Retry-After from a rejected upload', async () => {
+    const pending = uploadFileWithProgress(file)
+    await vi.waitFor(() => expect(FakeXhr.last?.url).toBe('/api/files/upload'))
+    FakeXhr.last.respond(429, JSON.stringify({ code: 'UPLOAD_USER_LIMIT' }), { 'Retry-After': '5' })
+    await expect(pending).rejects.toMatchObject({ status: 429, retryAfterSeconds: 5 })
+  })
+
   it('treats a non-JSON error body as empty', async () => {
     const pending = uploadFileWithProgress(file)
     await vi.waitFor(() => expect(FakeXhr.last?.url).toBe('/api/files/upload'))
