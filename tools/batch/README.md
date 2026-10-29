@@ -9,7 +9,7 @@ na plik. Przerwany przebieg wznawia się, uruchamiając tę samą komendę ponow
 ```bash
 python tools/batch/batch_analyze.py recordings/ --out results.csv
 python tools/batch/batch_analyze.py celeb-df-test/ --labels-from-folders --out celebdf.csv
-python tools/batch/batch_analyze.py --metrics-only --out celebdf.csv --metrics-out metrics.json
+python tools/batch/batch_analyze.py celeb-df-test/ --metrics-only --out celebdf.csv --metrics-out metrics.json
 ```
 
 Na Windows ustaw `PYTHONUTF8=1`.
@@ -142,8 +142,9 @@ są dla klasy pozytywnej FAKE, tylko z plików z etykietą i werdyktem (`COMPLET
 Metryki po przebiegu obejmują tylko pliki odkryte w katalogu źródłowym. Stare wiersze dla
 usuniętych plików pozostają w CSV, ale są pomijane w metrykach; liczba pominiętych jest
 drukowana i zapisywana w JSON jako `stale_rows_ignored`. `--metrics-only` przelicza wyniki bez
-serwera, odkrywając pliki w katalogu zapisanym w metadanych (lub podanym jako `folder`).
-Katalog musi być dostępny. Tylko dla starszego CSV bez metadanych i bez podanego katalogu
+serwera, odkrywając pliki w katalogu jawnie podanym jako `folder`; metadane jedynie potwierdzają
+zgodność katalogu. Przy CSV z metadanymi brak `folder` daje kod 2. Katalog musi być dostępny.
+Tylko dla starszego CSV bez metadanych i bez podanego katalogu
 metryki obejmują cały CSV.
 
 ## Testy

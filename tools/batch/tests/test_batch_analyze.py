@@ -139,6 +139,12 @@ class ResumeTest(unittest.TestCase):
                 self.assertEqual(2, ba.main([tmp, '--out', str(out)]))
             self.assertEqual(before, out.read_bytes())
 
+    def test_metrics_only_can_read_a_legacy_csv_without_a_folder(self):
+        with tempfile.TemporaryDirectory() as tmp, redirect_stdout(io.StringIO()):
+            out = Path(tmp, 'r.csv')
+            ba.write_results(out, self.rows)
+            self.assertEqual(0, ba.main(['--metrics-only', '--out', str(out)]))
+
     def test_rewrite_keeps_one_row_per_file_and_rejects_foreign_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp, 'r.csv')
@@ -609,7 +615,7 @@ class EndToEndTest(unittest.TestCase):
 
         stdout = io.StringIO()
         with redirect_stdout(stdout):
-            self.assertEqual(0, ba.main(['--metrics-only', '--out', str(self.out)]))
+            self.assertEqual(0, ba.main([str(self.root), '--metrics-only', '--out', str(self.out)]))
         self.assertIn('NO_FACE_DETECTED: 1', stdout.getvalue())
 
     def test_without_a_secret_the_user_signs_in_with_the_device_flow(self):
@@ -642,9 +648,14 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(1, metrics['stale_rows_ignored'])
         self.assertEqual(0, metrics['confusion_matrix']['TP'])
         with redirect_stdout(io.StringIO()):
-            self.assertEqual(0, ba.main(['--metrics-only', '--out', str(self.out),
+            self.assertEqual(0, ba.main([str(self.root), '--metrics-only', '--out', str(self.out),
                                          '--metrics-out', str(self.metrics)]))
         self.assertEqual(7, json.loads(self.metrics.read_text(encoding='utf-8'))['files'])
+
+    def test_metrics_only_requires_an_explicit_folder_for_bound_csv(self):
+        self.assertEqual(0, self.run_cli()[0])
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(2, ba.main(['--metrics-only', '--out', str(self.out)]))
 
     def test_lost_create_response_tracks_the_committed_analysis(self):
         self.backend.lost_create_response = True

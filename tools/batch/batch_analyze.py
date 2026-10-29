@@ -1000,13 +1000,15 @@ def main(argv=None, api=None, wait=None):
             return 2
         meta = Path(str(out) + '.meta.json')
         try:
-            folder = args.folder or (json.loads(meta.read_text(encoding='utf-8'))['root'] if meta.exists() else None)
+            folder = args.folder
+            if meta.exists() and not folder:
+                raise ValueError('Podaj folder źródłowy także z --metrics-only; metadane służą tylko do weryfikacji')
             if folder:
                 RunState(out, folder)
                 if not Path(folder).is_dir():
                     raise ValueError(f'{folder}: katalog źródłowy jest niedostępny')
             discovered = [item.rel for item in discover(folder)] if folder else None
-        except (ValueError, OSError, KeyError) as error:
+        except (ValueError, OSError) as error:
             log(f'BŁĄD: {error}')
             return 2
         report_metrics(existing, args.metrics_out, discovered)
