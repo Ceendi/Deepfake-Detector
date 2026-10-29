@@ -29,20 +29,26 @@ cd ../orchestrator; ./mvnw.cmd -B verify
 ## Service discovery boundary
 
 Eureka has no published host port. Its dashboard and registration API are available at
-`http://eureka-server:8761` on the trusted Compose network; services register at
-`http://eureka-server:8761/eureka/` and the gateway routes through `lb://SERVICE-NAME`. The gateway
-host port is bound to `127.0.0.1:8080`. There are no registry credentials, so do not attach
-untrusted containers to this network or publish the registry without adding authentication.
+`http://eureka-server:8761` on the Compose network; services register at
+`http://eureka-server:8761/eureka/` with HTTP Basic and the gateway routes through `lb://SERVICE-NAME`.
+Set `EUREKA_USER` and `EUREKA_PASSWORD` in `.env` (URL-safe characters), plus an independent random
+`EUREKA_CSRF_TOKEN`. Compose passes an authenticated `EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE` and
+the CSRF secret to gateway, orchestrator and file-service. Their dedicated Eureka transports add
+`X-CSRF-TOKEN` to requests, so the registry keeps CSRF enabled, including registration/heartbeat/delete.
+IDE runs need the CSRF secret and Basic credentials too, or an explicit authenticated registry URL
+plus the CSRF secret. Only `/actuator/health` is public.
+The gateway host port is bound to `127.0.0.1:8080`.
 
 Inspect the registry without opening a host port:
 
 ```bash
-docker compose exec gateway wget -qO- http://eureka-server:8761/eureka/apps
+docker compose exec gateway sh -c 'wget -qO- "${EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE}apps"'
 ```
 
 Port bindings change only when a container is recreated, not restarted
 (`docker compose up -d --force-recreate eureka-server gateway`). `python3 infra/tests/test_discovery.py`
-(Linux/macOS) checks that host-side registration is refused and that requests reach the services
+(Linux/macOS) checks that host-side registration is refused, internal anonymous/incorrect-password
+registration gets 401, and authenticated requests reach the services
 through the gateway, also after restarts.
 
 ## Authentication URLs
@@ -98,7 +104,8 @@ docker compose --profile core --profile auth --profile monitoring build \
 | `keycloak-config-cli` | `infra/keycloak-config-cli` | Upstream v6.5.1 built with patched dependencies; UID 65534 |
 | `alloy` | `infra/alloy` | Patched OpenSSL; image default UID 65534 |
 
-The dev Compose service still runs Alloy as root to read the Docker socket. What the security
+The dev Compose service still runs Alloy as root with full Docker API access: the socket's `:ro`
+mount does not prevent API writes or host takeover. What the security
 scans block is described in [security](security.md#security-in-the-delivery-pipeline).
 
 ## Infrastructure tests

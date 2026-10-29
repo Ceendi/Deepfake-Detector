@@ -88,16 +88,17 @@ class DiscoveryConfigurationTest(unittest.TestCase):
     def test_registry_is_internal_and_gateway_is_loopback_only(self):
         services = resolved_compose()['services']
         self.assertFalse(services['eureka-server'].get('ports'),
-                         'The unauthenticated registry must not publish any host port')
+                         'The registry must not publish any host port')
         self.assertEqual(1, len(services['gateway']['ports']))
         port = services['gateway']['ports'][0]
         self.assertEqual('127.0.0.1', port.get('host_ip'))
         self.assertEqual(8080, port['target'])
         for name in ('gateway', 'file-service', 'orchestrator'):
-            self.assertEqual('http://eureka-server:8761/eureka/',
-                             services[name]['environment'].get('EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE',
-                                 'http://eureka-server:8761/eureka/'))
+            self.assertEqual('http://discovery:changeme_dev_discovery@eureka-server:8761/eureka/',
+                             services[name]['environment']['EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE'])
             self.assertIn('deepfake', services[name]['networks'])
+            self.assertEqual(services['eureka-server']['environment']['EUREKA_CSRF_TOKEN'],
+                             services[name]['environment']['EUREKA_CSRF_TOKEN'])
 
 
 class DiscoveryIntegrationTest(unittest.TestCase):
@@ -274,11 +275,33 @@ class DiscoveryIntegrationTest(unittest.TestCase):
               f'outside-network TCP probes to {self.host_address} blocked (positive control passed)',
               flush=True)
 
+    def assert_internal_registration_requires_basic_auth(self):
+        payload = json.dumps({'instance': {
+            'instanceId': 'untrusted-probe', 'app': 'UNTRUSTED-PROBE',
+            'hostName': 'untrusted.invalid', 'ipAddr': '192.0.2.1', 'status': 'UP',
+            'port': {'$': 9999, '@enabled': 'true'},
+            'dataCenterInfo': {'@class': 'com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo',
+                               'name': 'MyOwn'},
+        }})
+        for auth in ('', 'Basic ' + base64.b64encode(b'discovery:wrong-password').decode()):
+            def rejected():
+                output = subprocess.run([
+                    'docker', 'compose', '--project-name', self.project, '-f', str(self.compose_file),
+                    'run', '--rm', '--no-deps', '--entrypoint', 'wget', 'seaweedfs-init',
+                    '-S', '-O', '/dev/null', '--header=Content-Type: application/json',
+                    '--header=Authorization: ' + auth, '--post-data=' + payload,
+                    '--header=X-CSRF-TOKEN: changeme_dev_registry_csrf',
+                    'http://eureka-server:8761/eureka/apps/UNTRUSTED-PROBE',
+                ], cwd=ROOT, text=True, capture_output=True, check=False)
+                self.assertNotEqual(0, output.returncode)
+                self.assertIn('401', output.stderr)
+            self.eventually(rejected)
     def assert_registration_and_routes(self):
         def registered():
             registry = json.loads(self.compose(
-                'exec', '-T', 'gateway', 'wget', '-qO-', '--header=Accept: application/json',
-                'http://eureka-server:8761/eureka/apps',
+                'exec', '-T', 'gateway', 'sh', '-c',
+                'wget -qO- --header="Accept: application/json" '
+                '"${EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE}apps"',
             ))
             apps = {app['name']: app for app in registry['applications']['application']}
             for name in ('GATEWAY', 'FILE-SERVICE', 'ORCHESTRATOR'):
@@ -313,10 +336,12 @@ class DiscoveryIntegrationTest(unittest.TestCase):
 
     def test_registry_isolation_and_discovery_survive_restart(self):
         self.assert_boundary()
+        self.assert_internal_registration_requires_basic_auth()
         self.assert_registration_and_routes()
         self.compose('restart', 'eureka-server', 'gateway', 'file-service', 'orchestrator')
         self.refresh_ports()
         self.assert_boundary()
+        self.assert_internal_registration_requires_basic_auth()
         self.assert_registration_and_routes()
         print('LIMITATION: probes ran on one Docker host; no second physical LAN host was tested', flush=True)
 

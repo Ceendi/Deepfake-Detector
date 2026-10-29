@@ -17,6 +17,8 @@ SUITES = (
     'test_orchestrator_operator_overrides_reach_the_container',
     'test_dashboard_percentiles_and_detector_outcomes_are_provisioned',
     'test_panels_without_observations_explain_the_empty_value',
+    'test_idle_percentiles_filter_zero_observation_series',
+    'test_file_lifecycle_counters_are_visible_across_replicas',
 ))
 
 

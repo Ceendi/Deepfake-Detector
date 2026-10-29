@@ -1,12 +1,18 @@
 """Guard the deployment defaults and privileged image publishing boundary."""
 
 import json
+import os
 import re
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from test_discovery import ROOT, resolved_compose
 
 JAVA_SERVICES = ('gateway', 'eureka-server', 'orchestrator', 'file-service')
+REQUIRED_CREDENTIALS = ('ORCHESTRATOR_DB_USER', 'ORCHESTRATOR_DB_PASSWORD',
+                        'EUREKA_USER', 'EUREKA_PASSWORD', 'EUREKA_CSRF_TOKEN')
 
 
 class SecurityConfigurationTest(unittest.TestCase):
@@ -39,7 +45,6 @@ class SecurityConfigurationTest(unittest.TestCase):
 
     def test_cli_client_is_accepted_by_the_api(self):
         defaults = {
-            '.env.example': r'(?m)^JWT_ALLOWED_CLIENTS=(.+)$',
             'docker-compose.yml': r'JWT_ALLOWED_CLIENTS: \$\{JWT_ALLOWED_CLIENTS:-([^}]+)\}',
             'orchestrator/src/main/resources/application.yaml': r'allowed-clients: \$\{JWT_ALLOWED_CLIENTS:([^}]+)\}',
             'file-service/src/main/resources/application.yaml': r'allowed-clients: \$\{JWT_ALLOWED_CLIENTS:([^}]+)\}',
@@ -52,6 +57,31 @@ class SecurityConfigurationTest(unittest.TestCase):
             with self.subTest(path=path):
                 [clients] = re.findall(pattern, (ROOT / path).read_text())
                 self.assertEqual({'deepfake-web', 'deepfake-cli', 'deepfake-loadtest'}, set(clients.split(',')))
+
+    def test_example_environment_uses_compose_jwt_defaults(self):
+        example = (ROOT / '.env.example').read_text()
+        self.assertNotRegex(example, r'(?m)^JWT_ALLOWED_CLIENTS=')
+        self.assertNotRegex(example, r'(?m)^JWT_ISSUER_URI=')
+
+    def test_missing_discovery_and_database_credentials_stop_compose(self):
+        # Empty values would start a registry client without Basic auth or a role without a password.
+        compose = (ROOT / 'docker-compose.yml').read_text()
+        example = (ROOT / '.env.example').read_text()
+        # Shell variables take precedence over the --env-file values in Compose interpolation.
+        environment = {key: value for key, value in os.environ.items() if key not in REQUIRED_CREDENTIALS}
+        for name in REQUIRED_CREDENTIALS:
+            with self.subTest(variable=name):
+                references = re.findall(r'\$\{' + name + r'(\W[^}]*)?\}', compose)
+                self.assertTrue(references)
+                self.assertTrue(all(reference.startswith(':?') for reference in references), references)
+                with tempfile.TemporaryDirectory() as directory:
+                    env_file = Path(directory) / 'missing.env'
+                    env_file.write_text(re.sub(rf'(?m)^{name}=.*\n', '', example))
+                    result = subprocess.run(
+                        ['docker', 'compose', '--env-file', str(env_file), '--profile', '*', 'config', '--quiet'],
+                        cwd=ROOT, env=environment, text=True, capture_output=True)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(f'set {name} in .env', result.stderr)
 
     def test_default_import_selects_only_the_production_realm(self):
         service = resolved_compose()['services']['keycloak-config-cli']

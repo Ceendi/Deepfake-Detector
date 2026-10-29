@@ -74,7 +74,7 @@ gateway:
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka-server:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE:http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/}
 management:
   server:
     port: 9090
