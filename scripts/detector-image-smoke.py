@@ -23,4 +23,5 @@ with patch.object(inference, "VideoInference" if source == "video" else "AudioIn
     from src import consumer, main
 
 consumer.run_consumer = connected
-uvicorn.run(main.app, host="0.0.0.0", port=8000)
+# The health probe runs inside the same container, so loopback is enough.
+uvicorn.run(main.app, host="127.0.0.1", port=8000)

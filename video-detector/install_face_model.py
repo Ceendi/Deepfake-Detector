@@ -2,12 +2,15 @@
 
 import hashlib
 import shutil
-import sys
 import tempfile
 import tomllib
 import urllib.request
 import zipfile
 from pathlib import Path
+
+# Fixed paths: the image build has no operator input; INSIGHTFACE_ROOT in the Dockerfile matches.
+MANIFEST = Path(__file__).with_name("face-model.toml")
+ROOT = Path("/app/.insightface")
 
 
 def install(model, root, fetch=urllib.request.urlopen):
@@ -25,6 +28,10 @@ def install(model, root, fetch=urllib.request.urlopen):
                 shutil.copyfileobj(source, destination)
 
 
+def main(manifest=MANIFEST, root=ROOT, fetch=urllib.request.urlopen):
+    with Path(manifest).open("rb") as stream:
+        install(tomllib.load(stream), root, fetch)
+
+
 if __name__ == "__main__":
-    with open(sys.argv[1], "rb") as manifest:
-        install(tomllib.load(manifest), sys.argv[2])
+    main()

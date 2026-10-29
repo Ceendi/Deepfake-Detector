@@ -84,7 +84,7 @@ docker run --detach --name "$smoke_container" --platform "$platform" --network n
   --entrypoint python "$image" /tmp/smoke.py >/dev/null
 for attempt in {1..60}; do
   if docker exec "$smoke_container" curl --silent --output /tmp/health.json \
-      --write-out '%{http_code}' http://localhost:8000/health > "$context/health-status"; then
+      --write-out '%{http_code}' http://127.0.0.1:8000/health > "$context/health-status"; then
     status=$(cat "$context/health-status")
     case "$status" in
       200)

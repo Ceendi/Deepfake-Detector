@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import io
+import tomllib
 import zipfile
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -40,3 +41,37 @@ def test_mismatch_never_installs_weights(tmp_path):
     with pytest.raises(ValueError, match="checksum"):
         installer().install(model, tmp_path, lambda *args, **kwargs: io.BytesIO(archive()))
     assert not list(tmp_path.rglob("*.onnx"))
+
+
+def test_archive_without_detection_model_installs_nothing(tmp_path):
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w") as zipped:
+        zipped.writestr("unused_recognition.onnx", b"unused")
+    data = stream.getvalue()
+    model = {"url": "https://example.test/buffalo_l.zip",
+             "sha256": hashlib.sha256(data).hexdigest()}
+    with pytest.raises(KeyError, match="det_10g.onnx"):
+        installer().install(model, tmp_path, lambda *args, **kwargs: io.BytesIO(data))
+    assert not list(tmp_path.rglob("*.onnx"))
+
+
+def test_main_installs_from_manifest_into_root(tmp_path):
+    data = archive()
+    manifest = tmp_path / "face-model.toml"
+    manifest.write_text('url = "https://example.test/buffalo_l.zip"\n'
+                        f'sha256 = "{hashlib.sha256(data).hexdigest()}"\n')
+    fetch = MagicMock(return_value=io.BytesIO(data))
+    installer().main(manifest, tmp_path / "insightface", fetch)
+    fetch.assert_called_once_with("https://example.test/buffalo_l.zip", timeout=30)
+    installed = tmp_path / "insightface/models/buffalo_l/det_10g.onnx"
+    assert installed.read_bytes() == b"controlled detection model"
+
+
+def test_defaults_match_the_image_layout():
+    module = installer()
+    assert module.MANIFEST == Path(module.__file__).with_name("face-model.toml")
+    assert module.ROOT == Path("/app/.insightface")
+    with module.MANIFEST.open("rb") as stream:
+        manifest = tomllib.load(stream)
+    assert manifest["url"].startswith("https://github.com/deepinsight/insightface/releases/")
+    assert len(manifest["sha256"]) == 64

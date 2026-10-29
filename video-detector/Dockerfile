@@ -39,7 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 
 # Ship only the verified detector; runtime must not download a mutable model pack.
 COPY face-model.toml install_face_model.py ./
-RUN python install_face_model.py face-model.toml /app/.insightface
+RUN python install_face_model.py
 
 COPY --from=detector_runtime /detector_runtime /detector-runtime/detector_runtime
 RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
