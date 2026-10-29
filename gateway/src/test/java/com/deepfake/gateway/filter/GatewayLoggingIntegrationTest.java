@@ -5,7 +5,9 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestComponent;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.cloud.gateway.route.RouteLocator;
@@ -21,6 +23,7 @@ import reactor.core.publisher.Mono;
 import java.net.URI;
 import java.net.http.*;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.*;
@@ -35,7 +38,7 @@ class GatewayLoggingIntegrationTest {
 
     @Test void asynchronousGatewayLogContainsTraceAndCorrelation() throws Exception {
         when(decoder.decode("test-token")).thenReturn(Mono.just(Jwt.withTokenValue("test-token")
-                .header("alg", "none").subject("alice").claim("realm_access", Map.of("roles", java.util.List.of("USER"))).build()));
+                .header("alg", "none").subject("alice").claim("realm_access", Map.of("roles", List.of("USER"))).build()));
         var captured = new AtomicReference<Map<String, String>>();
         var logger = (Logger) LoggerFactory.getLogger(Probe.class);
         var appender = new AppenderBase<ILoggingEvent>() {
@@ -54,7 +57,7 @@ class GatewayLoggingIntegrationTest {
             assertThat(captured.get().get("traceId")).matches("[0-9a-f]{32}");
             assertThat(captured.get().get("spanId")).isNotBlank();
         } finally { logger.detachAppender(appender); appender.stop(); }
-        assertThat(org.slf4j.MDC.get("correlationId")).isNull();
+        assertThat(MDC.get("correlationId")).isNull();
     }
 
     @TestConfiguration(proxyBeanMethods = false)
@@ -65,7 +68,7 @@ class GatewayLoggingIntegrationTest {
         }
     }
     @RestController
-    @org.springframework.boot.test.context.TestComponent
+    @TestComponent
     static class Probe {
         @GetMapping("/logging-probe") Mono<String> log() {
             return Mono.delay(Duration.ofMillis(1)).map(value -> {

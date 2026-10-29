@@ -3,6 +3,8 @@ package com.deepfake.gateway.filter;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import io.micrometer.context.ContextRegistry;
+import org.slf4j.MDC;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -19,9 +21,9 @@ import reactor.core.publisher.Mono;
 class CorrelationIdGlobalFilter implements GlobalFilter, Ordered {
 
     CorrelationIdGlobalFilter() {
-        io.micrometer.context.ContextRegistry.getInstance().registerThreadLocalAccessor(
-                "correlationId", () -> org.slf4j.MDC.get("correlationId"),
-                value -> org.slf4j.MDC.put("correlationId", value), () -> org.slf4j.MDC.remove("correlationId"));
+        ContextRegistry.getInstance().registerThreadLocalAccessor(
+                "correlationId", () -> MDC.get("correlationId"),
+                value -> MDC.put("correlationId", value), () -> MDC.remove("correlationId"));
     }
 
     private static final Pattern VALID_ID = Pattern.compile("^[A-Za-z0-9-]{1,64}$");

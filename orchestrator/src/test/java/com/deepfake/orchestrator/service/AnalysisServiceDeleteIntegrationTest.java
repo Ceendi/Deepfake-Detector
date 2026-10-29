@@ -2,6 +2,7 @@ package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -84,7 +85,7 @@ class AnalysisServiceDeleteIntegrationTest {
     void twoAnalysesKeepSharedInputUntilLastDelete() {
         UUID first = persist("alice", AnalysisStatus.COMPLETED, "REAL", "0.6000", Instant.now());
         UUID second = persist("alice", AnalysisStatus.COMPLETED, "REAL", "0.6000", Instant.now());
-        var release = org.mockito.Mockito.mock(Runnable.class);
+        var release = mock(Runnable.class);
         service.deleteWithInput(first, "alice", release);
         verify(release, never()).run();
         service.deleteWithInput(second, "alice", release);

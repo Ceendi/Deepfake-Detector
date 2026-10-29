@@ -11,6 +11,7 @@ import com.deepfake.orchestrator.security.AuthenticatedUser;
 import com.deepfake.orchestrator.security.CurrentUser;
 import com.deepfake.orchestrator.service.AnalysisService;
 import com.deepfake.orchestrator.service.AnalysisCreationService;
+import com.deepfake.orchestrator.service.AnalysisDeletionService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import com.deepfake.orchestrator.service.ArtifactService;
@@ -47,7 +48,7 @@ import java.util.UUID;
 public class AnalysisController {
     private final AnalysisService service;
     private final AnalysisCreationService creationService;
-    private final com.deepfake.orchestrator.service.AnalysisDeletionService deletionService;
+    private final AnalysisDeletionService deletionService;
     private final ReportPdfService reportPdfService;
     private final ArtifactService artifactService;
 

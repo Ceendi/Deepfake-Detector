@@ -2,12 +2,18 @@ package com.deepfake.fileservice.exception;
 
 import com.deepfake.fileservice.controller.FileUploadController;
 import com.deepfake.fileservice.dto.ErrorResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.MDC;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.TransientDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -16,10 +22,10 @@ import java.util.UUID;
 @RestControllerAdvice(assignableTypes = FileUploadController.class)
 public class UploadExceptionHandler {
     @ExceptionHandler({MediaProbeUnavailableException.class,
-            software.amazon.awssdk.core.exception.SdkClientException.class,
-            org.springframework.dao.TransientDataAccessException.class,
-            org.springframework.dao.DataAccessResourceFailureException.class,
-            org.springframework.transaction.CannotCreateTransactionException.class})
+            SdkClientException.class,
+            TransientDataAccessException.class,
+            DataAccessResourceFailureException.class,
+            CannotCreateTransactionException.class})
     public ResponseEntity<ErrorResponse> probeUnavailable(RuntimeException error) {
         String correlationId = MDC.get("correlationId");
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header("Retry-After", "5")
@@ -28,9 +34,8 @@ public class UploadExceptionHandler {
                         correlationId == null ? UUID.randomUUID().toString() : correlationId, Instant.now()));
     }
 
-    @ExceptionHandler(software.amazon.awssdk.services.s3.model.S3Exception.class)
-    public ResponseEntity<ErrorResponse> storageFailure(software.amazon.awssdk.services.s3.model.S3Exception error,
-                                                       jakarta.servlet.http.HttpServletRequest request) {
+    @ExceptionHandler(S3Exception.class)
+    public ResponseEntity<ErrorResponse> storageFailure(S3Exception error, HttpServletRequest request) {
         if (error.statusCode() >= 500) return probeUnavailable(error);
         // Permission and request errors need operator attention, rather than retrying the upload.
         return new GlobalExceptionHandler().handleUnexpected(error, request);

@@ -1,6 +1,9 @@
 package com.deepfake.orchestrator.service;
 
 import com.deepfake.orchestrator.config.RabbitConfig;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.propagation.TextMapGetter;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -26,6 +29,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 @ConditionalOnProperty(name = "reliability.outbox.enabled", havingValue = "true", matchIfMissing = true)
 public class TaskOutboxPublisher {
+    private static final TextMapGetter<MessageProperties> HEADERS = new TextMapGetter<>() {
+        @Override
+        public Iterable<String> keys(MessageProperties carrier) { return carrier.getHeaders().keySet(); }
+
+        @Override
+        public String get(MessageProperties carrier, String key) { return carrier.getHeader(key); }
+    };
+
     private final JdbcTemplate jdbc;
     private final RabbitTemplate rabbit;
     private final TransactionTemplate transaction;
@@ -104,13 +115,8 @@ public class TaskOutboxPublisher {
             properties.setMessageId(task.id().toString());
             if (pending.traceparent() != null) properties.setHeader("traceparent", pending.traceparent());
             CorrelationData correlation = new CorrelationData(task.id() + ":" + attempts);
-            var parent = pending.traceparent() == null ? io.opentelemetry.context.Context.current()
-                    : io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator.getInstance().extract(
-                            io.opentelemetry.context.Context.root(), properties,
-                            new io.opentelemetry.context.propagation.TextMapGetter<MessageProperties>() {
-                                public Iterable<String> keys(MessageProperties carrier) { return carrier.getHeaders().keySet(); }
-                                public String get(MessageProperties carrier, String key) { return carrier.getHeader(key); }
-                            });
+            var parent = pending.traceparent() == null ? Context.current()
+                    : W3CTraceContextPropagator.getInstance().extract(Context.root(), properties, HEADERS);
             try (var scope = parent.makeCurrent()) {
                 rabbit.send(RabbitConfig.EXCHANGE, "analysis." + pending.source(),
                         new Message(pending.payload().getBytes(StandardCharsets.UTF_8), properties), correlation);

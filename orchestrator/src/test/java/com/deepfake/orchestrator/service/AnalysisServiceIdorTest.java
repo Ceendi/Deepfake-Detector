@@ -26,6 +26,7 @@ import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 
 /**
  * Service-layer IDOR guard (pure unit, no Spring): a resource owned by another user is
@@ -37,7 +38,7 @@ class AnalysisServiceIdorTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
+    AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock

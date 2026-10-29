@@ -10,6 +10,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -30,15 +31,15 @@ class UploadConcurrencyFilterTest {
     @AfterEach void logout() { SecurityContextHolder.clearContext(); }
 
     @Test void startupRemovesOnlyReplicaSpoolFilesWithoutFollowingLinks() throws Exception {
-        java.nio.file.Files.writeString(tmp.resolve("upload-crashed.media"), "media");
-        java.nio.file.Files.writeString(tmp.resolve("upload_tomcat.tmp"), "part");
-        java.nio.file.Files.writeString(tmp.resolve("keep.txt"), "unrelated");
-        java.nio.file.Files.createDirectory(tmp.resolve("upload-directory.tmp"));
+        Files.writeString(tmp.resolve("upload-crashed.media"), "media");
+        Files.writeString(tmp.resolve("upload_tomcat.tmp"), "part");
+        Files.writeString(tmp.resolve("keep.txt"), "unrelated");
+        Files.createDirectory(tmp.resolve("upload-directory.tmp"));
         new UploadConcurrencyFilter(4, tmp.toString());
-        assertThat(java.nio.file.Files.exists(tmp.resolve("upload-crashed.media"))).isFalse();
-        assertThat(java.nio.file.Files.exists(tmp.resolve("upload_tomcat.tmp"))).isFalse();
-        assertThat(java.nio.file.Files.exists(tmp.resolve("keep.txt"))).isTrue();
-        assertThat(java.nio.file.Files.isDirectory(tmp.resolve("upload-directory.tmp"))).isTrue();
+        assertThat(Files.exists(tmp.resolve("upload-crashed.media"))).isFalse();
+        assertThat(Files.exists(tmp.resolve("upload_tomcat.tmp"))).isFalse();
+        assertThat(Files.exists(tmp.resolve("keep.txt"))).isTrue();
+        assertThat(Files.isDirectory(tmp.resolve("upload-directory.tmp"))).isTrue();
     }
 
     @Test void anonymousMultipartTakesAGlobalSlotButNoUserSlot() throws Exception {

@@ -34,6 +34,7 @@ import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
@@ -47,7 +48,7 @@ class AnalysisServiceSsePushTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
+    AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock

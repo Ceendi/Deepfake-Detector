@@ -1,8 +1,11 @@
 package com.deepfake.orchestrator.service;
 
 import org.junit.jupiter.api.Test;
+import java.time.Duration;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.*;
+import static org.awaitility.Awaitility.await;
 
 class InputFileLocksTest {
     @Test void sameFileCannotBeClaimedDuringReleaseAndExceptionsReleaseTheLock() throws Exception {
@@ -10,7 +13,7 @@ class InputFileLocksTest {
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
         var waiting = new CountDownLatch(1);
-        var secondThread = new java.util.concurrent.atomic.AtomicReference<Thread>();
+        var secondThread = new AtomicReference<Thread>();
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var first = executor.submit(() -> locks.withFile("alice", "file", () -> {
                 entered.countDown();
@@ -24,7 +27,7 @@ class InputFileLocksTest {
                 return locks.withFile("alice", "file", () -> "claimed");
             });
             assertThat(waiting.await(10, TimeUnit.SECONDS)).isTrue();
-            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(10)).until(() ->
+            await().atMost(Duration.ofSeconds(10)).until(() ->
                     second.isDone() || secondThread.get().getState() == Thread.State.WAITING);
             assertThat(second.isDone()).isFalse();
             assertThat(locks.withFile("bob", "different", () -> "other")).isEqualTo("other");

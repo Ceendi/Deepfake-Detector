@@ -26,6 +26,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
@@ -37,7 +38,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceProcessingTransitionTest {
 
     @Mock AnalysisRepository repository;
-    @Mock com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
+    @Mock AnalysisTaskOutboxRepository outbox;
     @Mock StringRedisTemplate redis;
     @Mock AnalysisCache cache;
     @Mock AnalysisStreamRegistry streams;

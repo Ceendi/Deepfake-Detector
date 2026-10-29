@@ -7,6 +7,7 @@ import java.net.*;
 import java.net.http.*;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +20,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.test.context.*;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -27,6 +29,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.*;
 import com.deepfake.orchestrator.OrchestratorApplication;
 import com.deepfake.orchestrator.config.RabbitConfig;
+import com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent;
 import com.deepfake.orchestrator.entity.*;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.service.AnalysisService;
@@ -55,7 +58,7 @@ class SseBackendAcceptanceIntegrationTest {
         registry.add("spring.rabbitmq.password",()->"test");
     }
     @LocalServerPort int port;
-    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean AnalysisStreamRegistry streams;
+    @MockitoSpyBean AnalysisStreamRegistry streams;
     @Autowired AnalysisRepository repository;
     @Autowired AnalysisService service;
     @Autowired RabbitTemplate rabbit;
@@ -86,10 +89,10 @@ class SseBackendAcceptanceIntegrationTest {
         var healthy=open(id,"alice",true);peers.add(healthy);
         stalled.forEach(emitter -> emitter.blocked=true);
         streams.sendProgress(id,SseHttpIsolationTest.progress(id,1));
-        for(var emitter:stalled)assertThat(emitter.entered.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        for(var emitter:stalled)assertThat(emitter.entered.await(10,TimeUnit.SECONDS)).isTrue();
         var scheduled=new java.util.concurrent.CountDownLatch(1);
         scheduler.schedule(scheduled::countDown,java.time.Instant.now());
-        assertThat(scheduled.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(scheduled.await(10,TimeUnit.SECONDS)).isTrue();
         rabbit.convertAndSend(RabbitConfig.EXCHANGE,RabbitConfig.Q_PROGRESS,Map.of("analysis_id",id.toString(),"source","video","progress",60,"stage","INFERENCE"));
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.PROCESSING));
         rabbit.convertAndSend(RabbitConfig.EXCHANGE,RabbitConfig.Q_RESULTS,result(id));
@@ -115,7 +118,7 @@ class SseBackendAcceptanceIntegrationTest {
         var healthy=open(id,"alice",true);peers.add(healthy);
         new TransactionTemplate(transactions).executeWithoutResult(tx->{service.handleResult(result(id));tx.setRollbackOnly();});
         // A marker sent after rollback is a FIFO barrier for the same SSE writer.
-        streams.sendProgress(id,new com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent(id.toString(),"video",1,"rollback-barrier","PROCESSING"));
+        streams.sendProgress(id,new AnalysisProgressEvent(id.toString(),"video",1,"rollback-barrier","PROCESSING"));
         await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(healthy.lines).anyMatch(line -> line.contains("rollback-barrier")));
         assertThat(healthy.lines).noneMatch(line -> line.contains("event:result"));
         assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.PENDING);

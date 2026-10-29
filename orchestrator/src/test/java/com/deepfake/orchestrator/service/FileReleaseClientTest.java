@@ -2,6 +2,9 @@ package com.deepfake.orchestrator.service;
 
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import java.net.InetSocketAddress;
 import java.time.Duration;
 import java.util.UUID;
@@ -22,7 +25,7 @@ class FileReleaseClientTest {
         });
         server.start();
         try {
-            org.slf4j.MDC.put("correlationId", "release-test");
+            MDC.put("correlationId", "release-test");
             var client = new FileMetadataClient("http://127.0.0.1:" + server.getAddress().getPort(), Duration.ofSeconds(5));
             client.release(file.toString(), "jwt");
             status.set(404);
@@ -30,9 +33,9 @@ class FileReleaseClientTest {
             for (int code : new int[]{401, 403, 500, 503}) {
                 status.set(code);
                 assertThatThrownBy(() -> client.release(file.toString(), "jwt"))
-                        .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
-                        .hasFieldOrPropertyWithValue("statusCode", org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE);
+                        .isInstanceOf(ResponseStatusException.class)
+                        .hasFieldOrPropertyWithValue("statusCode", HttpStatus.SERVICE_UNAVAILABLE);
             }
-        } finally { server.stop(0); org.slf4j.MDC.remove("correlationId"); }
+        } finally { server.stop(0); MDC.remove("correlationId"); }
     }
 }

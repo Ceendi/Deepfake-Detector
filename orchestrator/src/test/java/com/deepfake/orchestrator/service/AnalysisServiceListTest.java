@@ -27,6 +27,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 
 @ExtendWith(MockitoExtension.class)
 class AnalysisServiceListTest {
@@ -34,7 +35,7 @@ class AnalysisServiceListTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
+    AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock

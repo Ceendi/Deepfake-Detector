@@ -27,6 +27,7 @@ import com.deepfake.orchestrator.config.WebConfig;
 import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
+import com.deepfake.orchestrator.service.AnalysisDeletionService;
 import com.deepfake.orchestrator.service.AnalysisService;
 import com.deepfake.orchestrator.service.AnalysisCreationService;
 import com.deepfake.orchestrator.service.ArtifactService;
@@ -51,7 +52,7 @@ class ArtifactControllerTest {
     AnalysisCreationService creationService;
 
     @MockitoBean
-    com.deepfake.orchestrator.service.AnalysisDeletionService deletionService;
+    AnalysisDeletionService deletionService;
 
     @MockitoBean
     ArtifactService artifactService;

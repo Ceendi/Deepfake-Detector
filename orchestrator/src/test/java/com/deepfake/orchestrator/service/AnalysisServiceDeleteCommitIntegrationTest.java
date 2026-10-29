@@ -1,6 +1,7 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -107,7 +108,7 @@ class AnalysisServiceDeleteCommitIntegrationTest {
     void releaseFailureRollsBackRecordAndCleanupSoDeleteCanBeRetried() {
         UUID id = persist(AnalysisType.VIDEO);
         jdbc.update("UPDATE analysis SET status='COMPLETED' WHERE id=?", id);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.deleteWithInput(id, "alice", () -> {
+        assertThatThrownBy(() -> service.deleteWithInput(id, "alice", () -> {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
         })).isInstanceOf(ResponseStatusException.class);
         assertThat(repository.existsById(id)).isTrue();

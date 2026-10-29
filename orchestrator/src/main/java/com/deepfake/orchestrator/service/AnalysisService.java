@@ -20,6 +20,8 @@ import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.Context;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
@@ -142,8 +144,7 @@ public class AnalysisService {
         Map<String, Object> durablePayload = new HashMap<>(payload);
         durablePayload.put("task_id", taskId.toString());
         Map<String, String> trace = new HashMap<>();
-        io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator.getInstance().inject(
-                io.opentelemetry.context.Context.current(), trace, Map::put);
+        W3CTraceContextPropagator.getInstance().inject(Context.current(), trace, Map::put);
         outbox.save(AnalysisTaskOutbox.builder().id(taskId).analysisId(analysisId)
                 .source(source).payload(durablePayload).traceparent(trace.get("traceparent")).build());
     }

@@ -9,12 +9,13 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 import reactor.core.publisher.Mono;
 
 @Component
 class UploadDeadlineFilter implements GlobalFilter, Ordered {
-    private static final org.springframework.web.util.pattern.PathPattern UPLOAD =
-            org.springframework.web.util.pattern.PathPatternParser.defaultInstance.parse("/api/files/upload");
+    private static final PathPattern UPLOAD = PathPatternParser.defaultInstance.parse("/api/files/upload");
     private final Duration deadline;
 
     UploadDeadlineFilter(@Value("${gateway.upload-deadline:15m}") Duration deadline) {

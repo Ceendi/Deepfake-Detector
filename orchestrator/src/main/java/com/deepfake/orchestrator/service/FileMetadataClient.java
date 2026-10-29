@@ -1,5 +1,7 @@
 package com.deepfake.orchestrator.service;
 
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.Context;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -75,8 +77,7 @@ public class FileMetadataClient {
                 .header("Authorization", "Bearer " + bearerToken);
         String correlationId = MDC.get("correlationId");
         if (correlationId != null) builder.header("X-Correlation-ID", correlationId);
-        io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator.getInstance()
-                .inject(io.opentelemetry.context.Context.current(), builder, HttpRequest.Builder::setHeader);
+        W3CTraceContextPropagator.getInstance().inject(Context.current(), builder, HttpRequest.Builder::setHeader);
         return builder;
     }
 

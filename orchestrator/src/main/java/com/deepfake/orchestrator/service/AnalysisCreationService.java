@@ -3,6 +3,7 @@ package com.deepfake.orchestrator.service;
 import com.deepfake.orchestrator.dto.request.CreateAnalysisRequest;
 import com.deepfake.orchestrator.dto.response.AnalysisResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -14,7 +15,7 @@ import java.util.UUID;
 /** Resolves the authorized input before the separate writer opens its admission transaction. */
 @Service
 @RequiredArgsConstructor
-@org.springframework.context.annotation.Import(InputFileLocks.class)
+@Import(InputFileLocks.class)
 public class AnalysisCreationService {
     private final FileMetadataClient files;
     private final AnalysisService writer;
