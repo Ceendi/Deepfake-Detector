@@ -116,9 +116,13 @@ fail on the next reconnect. Empty
 passwords, control characters, an administrator named like an application user, or a non-admin
 `RABBITMQ_USER` make the init fail, and the dependent services do not start.
 
-SeaweedFS runs master, volume, filer and S3 in one process. `seaweedfs-init` also writes
-`security.toml` with fresh random keys for `jwt.signing`, `jwt.signing.read`, `jwt.filer_signing`
-and `jwt.filer_signing.read` on every run, and every component in that process loads the same
+SeaweedFS runs master, volume, filer and S3 in one process. After S3 accepts signed requests,
+`seaweedfs-bucket-init` creates both buckets and writes then deletes a small readiness object
+in each. Listing alone can succeed before writable volumes recover after a restart, so
+dependent services wait for these writes too. The readiness objects must not remain in either bucket.
+
+`seaweedfs-init` writes `security.toml` with fresh random keys for `jwt.signing`,
+`jwt.signing.read`, `jwt.filer_signing` and `jwt.filer_signing.read` on every run, and every component in that process loads the same
 file at start. Tokens expire after 10 s, except volume write tokens (`jwt.signing`), which last
 60 s. When a chunk upload times out after 30 s, the S3 gateway deletes the partial chunk with
 that same token. A shorter lifetime rejects the delete with 401, and the orphaned chunk is

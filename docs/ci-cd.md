@@ -46,8 +46,8 @@ skipped, cancelled or failed, so a skipped required check never stands in for an
 | `ci.yml` (CI) | PR (jobs by changed paths), push | `java (*)` (Maven verify of 4 services), `python (*)` (ruff; unit tests of `tools/`), `Lightweight detector contract (*)`, `ML dependency compatibility (*)`, `Worker process redelivery`, `frontend` (lint, vitest, build, npm audit), `Application dependency vulnerabilities`, `Detector image security and compatibility (*)`, `Test report`, `SonarCloud Quality Gate` | a test or lint fails, the Quality Gate fails, a fixable HIGH/CRITICAL dependency or image vulnerability exists |
 | `e2e.yml` (E2E) | PR (app paths), push | `playwright`: `docker compose up --wait` of the core and auth profiles, then Playwright through Keycloak login, upload and analysis | a service is unhealthy or a browser test fails |
 | `infra-smoke.yml` | PR (infra paths), push | restart and persistence, Prometheus scraping of every replica, Tempo ingest, Keycloak import, discovery isolation, S3 and RabbitMQ permissions | a running stack does not behave as configured |
-| `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability |
-| `build-push.yml` | after CI on `main`, PR (image paths), manual | `image (*)` for 11 images: build, Trivy, push, provenance attestation | an image does not build or has a CRITICAL vulnerability |
+| `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability without an active owner-approved acceptance |
+| `build-push.yml` | after CI on `main`, PR (image paths), weekly rebuild without cache, manual (`main` only) | `image (*)` for 11 images: build, Trivy, push, provenance attestation | an image does not build or has a CRITICAL vulnerability |
 | `e2e-ml.yml` (E2E real models) | 1st and 15th of the month 03:00 UTC, manual | `Real-model batch analysis`: published images with the real models, batch CLI on generated media | an image or model does not start, or an analysis ends with an unexpected outcome |
 
 ## Tests and reports
@@ -99,7 +99,10 @@ selects the tag: `latest` by default, or `sha-<commit>` for a reproducible deplo
 frontend image reads its Keycloak address from the container environment at start (`/config.js`),
 so the same image works with any `KEYCLOAK_PORT`. Each image carries the OCI `revision` label of
 its commit. A failed CI run publishes nothing. Pull requests that change an image definition build
-and scan all images without pushing.
+and scan all images without pushing. Every Monday (and on a manual run with `no-cache`) the
+workflow rebuilds `main` without the layer cache, so the `apk upgrade` / `apt-get` layers take
+the distribution fixes released since the last build; the images go through the same Trivy gate
+and are published as `sha-<commit>` and `latest`.
 
 Each image is built and loaded locally first, scanned with Trivy (a CRITICAL vulnerability stops
 it, HIGH findings are listed in the job summary), and only then pushed from the same build cache.

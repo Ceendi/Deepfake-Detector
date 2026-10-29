@@ -17,6 +17,7 @@ import time
 import unittest
 import uuid
 from urllib.parse import quote
+from xml.etree import ElementTree
 
 ROOT = Path(__file__).resolve().parents[2]
 GRPCURL_IMAGE = ("fullstorydev/grpcurl:v1.9.3@sha256:"
@@ -181,6 +182,10 @@ class S3ConfigurationTest(unittest.TestCase):
             if bucket and bucket["State"] == "exited":
                 self.assertEqual(0, bucket["ExitCode"], "bucket-init failed against real signed S3")
                 self.port = self.compose("port", "seaweedfs", "8333").stdout.strip().rsplit(":", 1)[1]
+                for name in ("deepfake-uploads", "analysis-artifacts"):
+                    body = self.assert_status("admin", "GET", "/" + name, 200, query="prefix=.bootstrap")
+                    self.assertEqual([], ElementTree.fromstring(body).findall("{*}Contents"),
+                                     "bucket bootstrap left readiness objects behind")
                 return
             time.sleep(1)
         self.fail("bucket-init did not complete in the isolated project")
@@ -302,8 +307,8 @@ class S3ConfigurationTest(unittest.TestCase):
             if time.monotonic() >= deadline:
                 self.fail("previous S3 configuration was unusable after failed init and restart")
             time.sleep(1)
-        self.assert_permissions()
         self.compose("run", "--rm", "--no-deps", "seaweedfs-bucket-init")
+        self.assert_permissions()
         # Inspect only the public filesystem mode, never the credential file.
         result = self.compose("exec", "-T", "seaweedfs", "stat", "-c", "%a", "/etc/seaweedfs/s3.json")
         self.assertEqual("644", result.stdout.strip())

@@ -114,6 +114,22 @@ class SecurityConfigurationTest(unittest.TestCase):
         self.assertIn('subject-digest: ${{ steps.build.outputs.digest }}', workflow)
         self.assertIn('push-to-registry: true', workflow)
 
+    def test_weekly_rebuild_skips_the_layer_cache_and_publishes_only_from_main(self):
+        workflow = (ROOT / '.github/workflows/build-push.yml').read_text()
+        triggers = workflow[workflow.index('\non:'):workflow.index('\npermissions:')]
+        self.assertRegex(triggers, r'(?m)^  schedule:\n(?:    #.*\n)*    - cron: "\d+ \d+ \* \* 1"$')
+        self.assertIn("REBUILD: ${{ github.event_name == 'schedule' || inputs.no-cache == true }}", workflow)
+        # The scanned build starts from scratch; the push may reuse only that build's layers.
+        scanned = workflow[workflow.index('load: true'):workflow.index('aquasecurity/trivy-action@')]
+        self.assertIn("no-cache: ${{ steps.ns.outputs.rebuild == 'true' }}", scanned)
+        pushed = workflow[workflow.index('push: true'):workflow.index('actions/attest@')]
+        self.assertIn("steps.ns.outputs.rebuild != 'true' && format('type=gha", pushed)
+        # Scheduled runs are on the default branch; manual runs that publish must be on main too.
+        self.assertIn("(github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main')",
+                      workflow)
+        self.assertIn("github.event_name == 'schedule' ||", workflow[workflow.index('LATEST:'):])
+        self.assertEqual(3, workflow.count("if: github.event_name != 'pull_request'"))
+
     def test_detector_images_load_their_pinned_models_before_push(self):
         workflow = (ROOT / '.github/workflows/build-push.yml').read_text()
         smoke = workflow.index('infra/ci:/smoke:ro')

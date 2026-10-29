@@ -1,0 +1,20 @@
+[
+  {
+    "image": "grafana/grafana:13.2.5",
+    "digest": "grafana/grafana@sha256:9f7aa1e1e3246aade5792d35a738049f7f32f89cd51d1956cf426a4e86268a84",
+    "vulnerability": "CVE-2026-56857",
+    "package": "stdlib",
+    "installed_version": "v1.26.7",
+    "targets": [
+      "usr/share/grafana/data/plugins-bundled/grafana-postgresql-datasource/gpx_grafana_postgresql_datasource_linux_amd64",
+      "usr/share/grafana/data/plugins-bundled/influxdb/gpx_grafana_influxdb_datasource_linux_amd64",
+      "usr/share/grafana/data/plugins-bundled/jaeger/gpx_grafana-jaeger-datasource_linux_amd64",
+      "usr/share/grafana/data/plugins-bundled/loki/gpx_grafana-loki-datasource_linux_amd64",
+      "usr/share/grafana/data/plugins-bundled/mssql/gpx_grafana-mssql-datasource_linux_amd64",
+      "usr/share/grafana/data/plugins-bundled/mysql/gpx_grafana-mysql-datasource_linux_amd64"
+    ],
+    "expires_at": "2026-11-13T00:00:00+01:00",
+    "approved_by": "Repository owner, explicit approval on 2026-10-29 through 2026-11-12 Europe/Warsaw",
+    "reason": "Temporary acceptance for local/demo use pending official bundled-plugin fixes. Grafana HTTP binds loopback and anonymous access is disabled. The vulnerability remains present and reported."
+  }
+]

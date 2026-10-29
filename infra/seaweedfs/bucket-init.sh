@@ -24,6 +24,11 @@ until aws --endpoint-url "$ENDPOINT" s3 ls >/dev/null 2>&1; do
   sleep 1
 done
 
+probe_body=$(mktemp)
+trap 'rm -f "$probe_body"' EXIT
+printf 'ready' > "$probe_body"
+probe_key=".bootstrap/${HOSTNAME:-$$}"
+
 for bucket in deepfake-uploads analysis-artifacts; do
   if aws --endpoint-url "$ENDPOINT" s3 ls "s3://$bucket" >/dev/null 2>&1; then
     echo "Bucket s3://$bucket already exists"
@@ -31,6 +36,11 @@ for bucket in deepfake-uploads analysis-artifacts; do
     aws --endpoint-url "$ENDPOINT" s3 mb "s3://$bucket"
     echo "Created bucket s3://$bucket"
   fi
+  # Listing can succeed while the master is still recovering writable volumes.
+  aws --endpoint-url "$ENDPOINT" s3api put-object \
+    --bucket "$bucket" --key "$probe_key" --body "$probe_body" >/dev/null
+  aws --endpoint-url "$ENDPOINT" s3api delete-object \
+    --bucket "$bucket" --key "$probe_key" >/dev/null
 done
 
 echo "SeaweedFS bucket provisioning complete"
