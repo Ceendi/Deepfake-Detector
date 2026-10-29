@@ -8,7 +8,12 @@ import { BATCH_LIMITS } from './upload-utils'
 import { useBatchQueue } from './use-batch-queue'
 
 vi.mock('@/api/files', () => ({ uploadFileWithProgress: vi.fn() }))
-vi.mock('@/api/analysis', () => ({ startAnalysis: vi.fn(), cancelAnalysis: vi.fn() }))
+vi.mock('@/api/analysis', () => ({
+  startAnalysis: vi.fn(),
+  cancelAnalysis: vi.fn(),
+  listAnalyses: vi.fn(),
+  getAnalysis: vi.fn(),
+}))
 vi.mock('@/api/stream', () => ({ streamAnalysis: vi.fn() }))
 vi.mock('@/api/cancel-analysis', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/cancel-analysis')>()),
@@ -21,7 +26,7 @@ vi.mock('@/api/watch-analysis', async (importOriginal) => ({
 vi.mock('./media-duration', () => ({ probeDuration: vi.fn() }))
 
 import { uploadFileWithProgress } from '@/api/files'
-import { startAnalysis } from '@/api/analysis'
+import { startAnalysis, listAnalyses, getAnalysis } from '@/api/analysis'
 import { cancelAndSettle } from '@/api/cancel-analysis'
 import { watchAnalysis } from '@/api/watch-analysis'
 import { probeDuration } from './media-duration'
@@ -270,7 +275,9 @@ describe('useBatchQueue', () => {
     await flush()
 
     expect(statusOf(view)).toEqual(['failed', 'failed', 'analyzing'])
-    expect(view.result.current.items[1].message).toBe('Nie znaleziono analizy.')
+    expect(view.result.current.items[1].message).toBe(
+      'Nie znaleziono przesłanego pliku — wgraj go ponownie.',
+    )
   })
 
   it('rejects a file longer than the limit before uploading it', async () => {
@@ -341,4 +348,60 @@ describe('useBatchQueue', () => {
     expect(inFlight[0].signal?.aborted).toBe(true)
     expect(cancelAndSettle).not.toHaveBeenCalled()
   })
+})
+
+it('stops retrying a file after five upload 503s', async () => {
+  vi.useFakeTimers()
+  vi.mocked(uploadFileWithProgress).mockRejectedValue(
+    new ApiError({ status: 503, message: 'busy', retryAfterSeconds: 1 }),
+  )
+  const view = renderQueue(['slow.mp4'])
+  act(() => view.result.current.start())
+  await flush()
+  for (let i = 0; i < 4; i++) await advance(1000)
+  expect(uploadFileWithProgress).toHaveBeenCalledTimes(5)
+  expect(statusOf(view)).toEqual(['failed'])
+  expect(view.result.current.finished).toBe(true)
+  await advance(60000)
+  expect(uploadFileWithProgress).toHaveBeenCalledTimes(5)
+})
+it.each([429, 503])('keeps waiting for upload capacity (%s UPLOAD_USER_LIMIT)', async (status) => {
+  vi.useFakeTimers()
+  vi.mocked(uploadFileWithProgress).mockRejectedValue(
+    new ApiError({ status, code: 'UPLOAD_USER_LIMIT', message: 'busy', retryAfterSeconds: 1 }),
+  )
+  const view = renderQueue(['a.mp4'])
+  act(() => view.result.current.start())
+  await flush()
+  for (let i = 0; i < 7; i++) await advance(1000)
+  expect(uploadFileWithProgress).toHaveBeenCalledTimes(8)
+  expect(statusOf(view)).toEqual(['pending'])
+})
+it('ignores upload progress events within the same whole percent', async () => {
+  holdUploads()
+  const view = renderQueue(['a.mp4', 'b.mp4'])
+  act(() => view.result.current.start())
+  await flush()
+  const progress = vi.mocked(uploadFileWithProgress).mock.calls[0][1]!.onProgress!
+  act(() => progress(20.1))
+  const previous = view.result.current.items
+  act(() => progress(20.4))
+  expect(view.result.current.items).toBe(previous)
+  act(() => progress(21))
+  expect(view.result.current.items[0].progress).toBe(21)
+  expect(view.result.current.items[1]).toBe(previous[1])
+})
+it('recovers a batch start after an ambiguous POST by fileId', async () => {
+  vi.mocked(startAnalysis).mockRejectedValueOnce(new ApiError({ status: 504, message: 'timeout' }))
+  vi.mocked(listAnalyses).mockResolvedValue({
+    content: [analysis({ fileId: 'f-a.mp4' })],
+    page: { number: 0, size: 100, totalPages: 1, totalElements: 1 },
+  })
+  vi.mocked(getAnalysis).mockResolvedValue(analysis({ fileId: 'f-a.mp4' }))
+  const view = renderQueue(['a.mp4'])
+  act(() => view.result.current.start())
+  await flush()
+  expect(statusOf(view)).toEqual(['analyzing'])
+  expect(view.result.current.items[0].analysisId).toBe('an-1')
+  expect(startAnalysis).toHaveBeenCalledOnce()
 })

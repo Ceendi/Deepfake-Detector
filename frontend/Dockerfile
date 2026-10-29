@@ -15,7 +15,8 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_KEYCLOAK_REALM=$VITE_KEYCLOAK_REALM \
     VITE_KEYCLOAK_CLIENT_ID=$VITE_KEYCLOAK_CLIENT_ID
 # Type checking and tests stay in the frontend CI job.
-RUN ./node_modules/.bin/vite build
+RUN ./node_modules/.bin/vite build && \
+    node nginx/render-csp.mjs dist/index.html nginx/default.conf.template > /app/default.conf.template
 
 FROM nginxinc/nginx-unprivileged:1.30.6-alpine3.24@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
 # Takes Alpine security fixes released after the base image was built.
@@ -26,10 +27,11 @@ RUN apk upgrade --no-cache
 ENV GATEWAY_URL=http://gateway:8080 \
     NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1 \
     API_BASE_URL=/api \
+    MEDIA_URL=http://localhost:8333 \
     KEYCLOAK_URL=http://localhost:8180 \
     KEYCLOAK_REALM=deepfake \
     KEYCLOAK_CLIENT_ID=deepfake-web
-COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
+COPY --from=build /app/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 # Back to the base image's nginx user (101); stated explicitly so scanners can verify it.
 USER 101

@@ -19,7 +19,9 @@ vi.mock('./use-history', () => ({
 vi.mock('@/api/file-meta', () => ({
   useFileNames: () => ({ names: new Map(), loading: false, incomplete: true }),
 }))
-vi.mock('./components/HistoryList', () => ({ HistoryList: () => null }))
+vi.mock('./components/HistoryList', () => ({
+  HistoryList: ({ footer }: { footer: import('react').ReactNode }) => <div>{footer}</div>,
+}))
 it('warns about incomplete filename search, including zero matches', () => {
   render(
     <MemoryRouter>
@@ -29,4 +31,13 @@ it('warns about incomplete filename search, including zero matches', () => {
   expect(screen.queryByText(/Wyniki mogą być niepełne/)).not.toBeInTheDocument()
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'missing' } })
   expect(screen.getByRole('status')).toHaveTextContent('Wyniki mogą być niepełne')
+})
+
+it('uses the singular genitive in the history count', () => {
+  render(
+    <MemoryRouter>
+      <History />
+    </MemoryRouter>,
+  )
+  expect(screen.getByText(/Wyświetlasz/)).toHaveTextContent('z 1 analizy')
 })

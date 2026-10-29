@@ -20,23 +20,16 @@ const VIDEO_STEPS: StepDef[] = [
   { key: 'POSTPROCESSING', label: 'Generowanie map Grad-CAM' },
 ]
 const AUDIO_STEPS: StepDef[] = [
-  { key: 'EXTRACTING_AUDIO', label: 'Ekstrakcja ścieżki audio' },
-  { key: 'PREPROCESSING_AUDIO', label: 'Przetwarzanie wstępne' },
-  { key: 'ANALYZING_SEGMENTS', label: 'Analiza fragmentów' },
-  { key: 'GENERATING_HEATMAP', label: 'Generowanie mapy cieplnej' },
-  { key: 'ANALYSIS_COMPLETED', label: 'Finalizacja' },
+  { key: 'LOADING', label: 'Wczytywanie modelu' },
+  { key: 'PREPROCESSING', label: 'Przetwarzanie wstępne' },
+  { key: 'INFERENCE', label: 'Analiza fragmentów' },
+  { key: 'POSTPROCESSING', label: 'Finalizacja' },
 ]
 const STEPS: Record<Source, StepDef[]> = { video: VIDEO_STEPS, audio: AUDIO_STEPS }
 
 const STAGE_INDEX: Record<Source, Record<string, number>> = {
   video: { LOADING: 0, PREPROCESSING: 1, INFERENCE: 2, POSTPROCESSING: 3 },
   audio: {
-    EXTRACTING_AUDIO: 0,
-    PREPROCESSING_AUDIO: 1,
-    ANALYZING_SEGMENTS: 2,
-    GENERATING_HEATMAP: 3,
-    ANALYSIS_COMPLETED: 4,
-
     LOADING: 0,
     PREPROCESSING: 1,
     INFERENCE: 2,

@@ -1,5 +1,13 @@
 import type { BackpressureInfo } from './types'
 
+export class UncertainStartError extends Error {
+  constructor() {
+    super(
+      'Nie udało się potwierdzić rozpoczęcia analizy. Sprawdź historię przed ponownym wysłaniem pliku.',
+    )
+  }
+}
+
 export interface ApiErrorParams {
   status: number
   message: string

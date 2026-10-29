@@ -7,9 +7,14 @@ import styles from '../Upload.module.css'
 interface FailedStateProps {
   message: string
   onRetry: () => void
+  retryLabel?: string
 }
 
-export function FailedState({ message, onRetry }: FailedStateProps) {
+export function FailedState({
+  message,
+  onRetry,
+  retryLabel = 'Spróbuj ponownie',
+}: FailedStateProps) {
   return (
     <div className={styles.errorCard}>
       <div className={styles.errorIconTile}>
@@ -21,7 +26,7 @@ export function FailedState({ message, onRetry }: FailedStateProps) {
         <span>{message}</span>
       </p>
       <Button variant="primary" size="md" leftIcon={RotateCcw} onClick={onRetry}>
-        Spróbuj ponownie
+        {retryLabel}
       </Button>
     </div>
   )

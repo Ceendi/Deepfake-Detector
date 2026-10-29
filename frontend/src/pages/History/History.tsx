@@ -8,6 +8,7 @@ import { Alert } from '@/components/ui/Alert/Alert'
 
 import { useFileNames } from '@/api/file-meta'
 import { useHistory } from './use-history'
+import { pluralPl } from '../Upload/upload-utils'
 import { HistoryToolbar } from './components/HistoryToolbar'
 import { HistoryEmpty } from './components/HistoryEmpty'
 import { HistoryNoResults } from './components/HistoryNoResults'
@@ -146,7 +147,8 @@ export default function History() {
                     <strong>
                       {from}–{to}
                     </strong>{' '}
-                    z <strong>{filtered.length}</strong> analiz
+                    z <strong>{filtered.length}</strong>{' '}
+                    {pluralPl(filtered.length, 'analizy', 'analiz', 'analiz')}
                   </span>
                   <Pagination page={safePage} totalPages={totalPages} onChange={setPage} />
                 </>

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 
 import { ArrowRight, AudioLines, ExternalLink, Video, X } from 'lucide-react'
@@ -52,7 +53,7 @@ function skippedNames(names: string[]): string {
   return rest > 0 ? `${shown} i ${rest} ${pluralPl(rest, 'inny', 'inne', 'innych')}` : shown
 }
 
-function BatchRow({ item }: { item: BatchItem }) {
+const BatchRow = memo(function BatchRow({ item }: { item: BatchItem }) {
   const { file, status, progress } = item
   const Icon = isVideoFile(file) ? Video : AudioLines
   const active = status === 'uploading' || status === 'analyzing'
@@ -104,7 +105,7 @@ function BatchRow({ item }: { item: BatchItem }) {
       )}
     </li>
   )
-}
+})
 
 export function BatchQueue({
   items,

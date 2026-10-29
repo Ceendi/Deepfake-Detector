@@ -27,13 +27,13 @@ describe('buildSteps', () => {
   })
 
   it('100% na ostatnim kroku → wszystko done', () => {
-    const steps = buildSteps('audio', { progress: 100, stage: 'ANALYSIS_COMPLETED' })
+    const steps = buildSteps('audio', { progress: 100, stage: 'POSTPROCESSING' })
     expect(steps.every((s) => s.state === 'done')).toBe(true)
   })
 
   it('audio toleruje zamknięty zbiór z kontraktu (INFERENCE → krok 3)', () => {
     const steps = buildSteps('audio', { progress: 50, stage: 'INFERENCE' })
-    expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'active', 'pending', 'pending'])
+    expect(steps.map((s) => s.state)).toEqual(['done', 'done', 'active', 'pending'])
   })
 
   it('nieznany stage → pozycja szacowana z progresu (fail-safe)', () => {
@@ -74,4 +74,15 @@ describe('activeStageLabel', () => {
     const groups = [{ steps: buildSteps('video', undefined) }]
     expect(activeStageLabel(groups)).toBeNull()
   })
+})
+
+it('uses only the four contract stages for audio, with no heatmap step', () => {
+  const steps = buildSteps('audio', { stage: 'POSTPROCESSING', progress: 90 })
+  expect(steps.map((s) => s.key)).toEqual([
+    'LOADING',
+    'PREPROCESSING',
+    'INFERENCE',
+    'POSTPROCESSING',
+  ])
+  expect(steps[3]).toMatchObject({ label: 'Finalizacja', state: 'active' })
 })

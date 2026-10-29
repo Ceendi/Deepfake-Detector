@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react'
 
-import { listAnalyses } from '@/api/analysis'
+import { listAllAnalyses } from '@/api/analysis-pages'
 import type { AnalysisSummary } from '@/api/types'
 
 type LoadState = 'loading' | 'ready' | 'error'
-
-const FETCH_PAGE_SIZE = 100
 
 export function useHistory() {
   const [state, setState] = useState<LoadState>('loading')
@@ -14,8 +12,9 @@ export function useHistory() {
   useEffect(() => {
     const controller = new AbortController()
 
-    fetchAllAnalyses(controller.signal)
+    listAllAnalyses(controller.signal)
       .then((all) => {
+        if (controller.signal.aborted) return
         setItems(all)
         setState('ready')
       })
@@ -29,22 +28,4 @@ export function useHistory() {
   }, [])
 
   return { state, items }
-}
-
-async function fetchAllAnalyses(signal: AbortSignal): Promise<AnalysisSummary[]> {
-  const first = await listAnalyses(0, FETCH_PAGE_SIZE, signal)
-  const totalPages = first.page.totalPages
-  if (totalPages <= 1) return first.content
-
-  // Pages can shift during concurrent inserts; deduplication below keeps the first occurrence.
-  const rest = await Promise.all(
-    Array.from({ length: totalPages - 1 }, (_, i) => listAnalyses(i + 1, FETCH_PAGE_SIZE, signal)),
-  )
-
-  return dedupeById([first.content, ...rest.map((page) => page.content)].flat())
-}
-
-export function dedupeById(items: AnalysisSummary[]): AnalysisSummary[] {
-  const seen = new Set<string>()
-  return items.filter((it) => !seen.has(it.id) && seen.add(it.id))
 }

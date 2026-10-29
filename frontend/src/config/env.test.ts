@@ -21,7 +21,7 @@ const BUILD_TIME = {
 
 // Mirrors the image's envsubst step on the /config.js body nginx returns.
 function servedConfig(values: Record<string, string>): unknown {
-  const body = /location = \/config\.js \{[^}]*?return 200 '([^']*)'/s.exec(template)?.[1]
+  const body = /location = \/config\.js \{[\s\S]*?return 200 '([^']*)'/.exec(template)?.[1]
   const json = body && /^window\.__APP_CONFIG__ = (\{.*\});\\n$/.exec(body)?.[1]
   if (!json) throw new Error('nginx template does not serve window.__APP_CONFIG__')
   return JSON.parse(json.replace(/\$\{(\w+)\}/g, (_, name: string) => values[name] ?? ''))
