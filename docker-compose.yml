@@ -350,7 +350,7 @@ services:
   seaweedfs-bucket-init:
     # Phase 2 (post-healthy): creates the required buckets via S3 API using
     # the admin identity. Runs once after seaweedfs is healthy.
-    image: amazon/aws-cli:2.38.1
+    image: amazon/aws-cli:2.38.6
     profiles: ["core"]
     security_opt: *default-security
     cap_drop: [ALL]
