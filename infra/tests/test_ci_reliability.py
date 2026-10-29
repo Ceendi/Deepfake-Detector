@@ -1,8 +1,11 @@
 """Guard update coverage, immutable actions and infrastructure validation triggers."""
 
+import importlib.util
 import json
 import re
+import tempfile
 import unittest
+from pathlib import Path
 
 from test_discovery import ROOT
 
@@ -19,7 +22,6 @@ class CiReliabilityTest(unittest.TestCase):
         self.assertRegex(benchmark, r"'williamyeh/wrk@sha256:[0-9a-f]{64}'")
 
     def test_live_harness_regressions_run_when_the_harness_changes(self):
-        workflow = (ROOT / '.github/workflows/infra-smoke.yml').read_text()
         self.assertIn('tests/live/**', json.loads((ROOT / 'infra/ci/workflow_paths.json').read_text())['infra-smoke'])
         self.assertIn('test_live_acceptance', (ROOT / 'infra/tests/run_static.py').read_text())
 
@@ -65,6 +67,40 @@ class CiReliabilityTest(unittest.TestCase):
             self.assertIn(f'dependency-name: "{group}"', maven)
         self.assertIn('version-update:semver-major', maven)
         self.assertNotRegex(config, r'prefix: "infra"')
+
+    def test_ci_python_fixtures_install_only_hash_verified_wheels(self):
+        pins = (ROOT / 'infra/ci/requirements.txt').read_text()
+        self.assertIn('--generate-hashes', pins.splitlines()[1])
+        for requirement in re.split(r'\n(?=[a-z])', pins[pins.index('\n', pins.index('compile')) + 1:]):
+            with self.subTest(requirement=requirement.splitlines()[0]):
+                self.assertRegex(requirement, r'^[a-z0-9._-]+==\S+')
+                self.assertRegex(requirement, r'--hash=sha256:[0-9a-f]{64}')
+        light = (ROOT / 'audio-detector/tests/requirements-light.txt').read_text()
+        self.assertEqual(['-r ../../infra/ci/requirements.txt'],
+                         [line for line in light.splitlines() if not line.startswith('#')])
+        installs = 0
+        for path in (ROOT / '.github/workflows').glob('*.yml'):
+            for line in path.read_text().splitlines():
+                if 'requirements-light.txt' in line or 'infra/ci/requirements.txt' in line:
+                    installs += 1
+                    with self.subTest(workflow=path.name, line=line.strip()):
+                        self.assertIn('pip install', line)
+                        self.assertIn('--require-hashes', line)
+                        self.assertIn("--only-binary ':all:'", line)
+        self.assertEqual(4, installs)
+
+    def test_runtime_link_points_the_interpreter_at_the_repository_package(self):
+        spec = importlib.util.spec_from_file_location('link', ROOT / 'infra/ci/link_detector_runtime.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            target = module.link(directory)
+            self.assertEqual(Path(directory) / 'deepfake-detector-runtime.pth', target)
+            self.assertEqual(ROOT / 'detector-runtime', Path(target.read_text().strip()))
+        for path in (ROOT / '.github/workflows').glob('*.yml'):
+            workflow = path.read_text()
+            self.assertEqual(workflow.count('requirements-light.txt'),
+                             workflow.count('python infra/ci/link_detector_runtime.py'), path.name)
 
     def test_fixed_vulnerabilities_block_and_unfixed_findings_remain_reported(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()

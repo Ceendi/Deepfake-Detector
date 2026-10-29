@@ -89,7 +89,63 @@ class PublishingTest(unittest.TestCase):
             result = subprocess.CompletedProcess([], 1, '', message)
             with patch.object(publishing.subprocess, 'run', return_value=result), \
                     self.assertRaises(RuntimeError):
-                publishing.manifest('example:image')
+                publishing.manifest('ghcr.io/owner/repo/gateway:sha-aaaaaaa')
+
+    def test_malformed_values_never_reach_a_command_line(self):
+        for reference in ('--output=/tmp/x', 'example:image', 'ghcr.io/owner/repo/gateway',
+                          'ghcr.io/Owner/repo/gateway:sha-aaaaaaa', 'ghcr.io/o/r/g:tag;rm -rf /',
+                          'ghcr.io/o/r/g:tag\n--push', 'ghcr.io/o/r/g: -x'):
+            with self.subTest(reference=reference), \
+                    patch.object(publishing.subprocess, 'run') as run, \
+                    self.assertRaises(ValueError):
+                publishing.manifest(reference)
+            run.assert_not_called()
+        for sha in ('A' * 40, 'a' * 39, 'a' * 41, f"{'a' * 39}-", ' ' + 'a' * 40, None):
+            with self.subTest(sha=sha), self.assertRaises(ValueError):
+                publishing.commit(sha)
+        for number, attempt in (('0', '1'), ('42', '-1'), ('4 2', '1'), ('42', '1--push')):
+            with self.subTest(number=number, attempt=attempt), self.assertRaises(ValueError):
+                publishing.run_tag(SHA, number, attempt)
+        valid = ('Owner/Repo', 'gateway', 'sha-aaaaaaa')
+        self.assertEqual('ghcr.io/owner/repo/gateway:sha-aaaaaaa', publishing.image(*valid))
+        self.assertEqual('ghcr.io/owner/repo/gateway:latest', publishing.image(*valid, latest=True))
+        for position, bad in ((0, '--repo'), (0, 'owner/repo/extra'), (0, 'owner repo/x'),
+                              (1, 'unknown'), (1, '--push'), (1, 'gateway/../x'),
+                              (2, 'latest'), (2, '--tag'), (2, 'sha-AAAAAAA'), (2, 'sha-aaaaaaa ')):
+            args = list(valid)
+            args[position] = bad
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                publishing.image(*args)
+
+    def env_is_validated_before_any_command(self, function, env):
+        base = {'GITHUB_REPOSITORY': 'Owner/Repo', 'SERVICE': 'gateway', 'TAG': 'sha-aaaaaaa',
+                'SHA': SHA}
+        with patch.dict(os.environ, {**base, **env}), \
+                patch.object(publishing, 'command') as command, \
+                patch.object(publishing.subprocess, 'run') as run, \
+                self.assertRaises(ValueError):
+            function()
+        command.assert_not_called()
+        run.assert_not_called()
+
+    def test_push_and_promote_reject_injected_environment(self):
+        for env in ({'SERVICE': '--all-tags'}, {'TAG': '--all-tags'}, {'TAG': 'latest'},
+                    {'GITHUB_REPOSITORY': '-o/x'}):
+            with self.subTest(env=env):
+                self.env_is_validated_before_any_command(publishing.push_image, env)
+        for env in ({'SHA': '--jq'}, {'TAG': 'sha-aaaaaaa --push'}, {'GITHUB_REPOSITORY': 'a/b c'}):
+            with self.subTest(env=env):
+                self.env_is_validated_before_any_command(publishing.promote, env)
+
+    def test_event_payload_sha_must_be_a_full_commit(self):
+        for head_sha in ('--raw', 'a' * 7, 'A' * 40):
+            payload = {'workflow_run': {'head_repository': {'full_name': 'Owner/Repo'},
+                                        'head_sha': head_sha, 'head_branch': 'main',
+                                        'event': 'push', 'conclusion': 'success'}}
+            with self.subTest(head_sha=head_sha), self.assertRaises(ValueError):
+                self.select('workflow_run', payload=payload)
+        with self.assertRaises(ValueError), patch.dict(os.environ, {'GITHUB_SHA': '-x'}):
+            self.select('pull_request')
 
 
 if __name__ == '__main__':

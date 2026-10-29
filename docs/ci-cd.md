@@ -75,8 +75,10 @@ main for PRs and the last 30 days on main. Reviewed exceptions and their reasons
 
 CI-only Python dependencies, including transitive packages, are exact pins under `infra/ci/`
 and `infra/ci/test-requirements/`, managed by pip Dependabot. `requirements-light.txt` delegates
-to those pins and installs the local runtime from source. Regenerate with `uvx uv@0.12.23 pip compile`
-using the command recorded in each file. Detector production dependencies still use uv.lock.
+to the hashed pins in `infra/ci/requirements.txt`, which CI installs with `--require-hashes`; pip
+cannot hash a source directory, so `infra/ci/link_detector_runtime.py` then puts the local runtime
+on the interpreter's path. Regenerate with `uvx uv@0.12.23 pip compile` using the command recorded
+in each file. Detector production dependencies still use uv.lock.
 
 ## Images and versions
 

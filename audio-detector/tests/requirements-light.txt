@@ -1,3 +1,4 @@
-# Install from the repository root. Exact CI pins are managed by Dependabot.
+# Install from the repository root with --require-hashes. Hashed CI pins are managed by Dependabot.
+# pip cannot hash a source directory, so add the local runtime afterwards:
+# `python infra/ci/link_detector_runtime.py` (CI) or `pip install --no-deps -e ./detector-runtime`.
 -r ../../infra/ci/requirements.txt
--e ./detector-runtime
