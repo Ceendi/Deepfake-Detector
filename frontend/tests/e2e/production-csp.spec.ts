@@ -35,5 +35,28 @@ test('production CSP permits theme, Keycloak login, silent SSO and history', asy
   const assetResponse = await page.request.get(asset)
   expect(assetResponse.headers()['referrer-policy']).toBe('strict-origin-when-cross-origin')
   expect(assetResponse.headers()['content-security-policy']).toBe(policy)
+  const callback = await page.request.get('/silent-check-sso.html')
+  expect(callback.headers()['content-security-policy']).toContain("frame-ancestors 'self'")
+  const echoedUrl = await page.evaluate(
+    () =>
+      new Promise<string>((resolve, reject) => {
+        const frame = document.createElement('iframe')
+        const timer = setTimeout(
+          () => reject(new Error('Silent SSO callback did not post its URL')),
+          5000,
+        )
+        const receive = (event: MessageEvent) => {
+          if (event.source !== frame.contentWindow || event.origin !== location.origin) return
+          clearTimeout(timer)
+          window.removeEventListener('message', receive)
+          frame.remove()
+          resolve(event.data)
+        }
+        window.addEventListener('message', receive)
+        frame.src = '/silent-check-sso.html#csp-proof'
+        document.body.append(frame)
+      }),
+  )
+  expect(echoedUrl).toContain('/silent-check-sso.html#csp-proof')
   expect(violations).toEqual([])
 })

@@ -16,8 +16,13 @@ it('keeps CSP and Referrer-Policy on each location that declares headers', () =>
   for (const block of blocks.filter((b) => b.includes('add_header'))) {
     expect(block).toContain('add_header Referrer-Policy strict-origin-when-cross-origin always;')
     expect(block).toContain('add_header Content-Security-Policy')
-    expect(block).toContain("frame-ancestors 'none'")
-    expect(block).toContain("default-src 'self'")
+    if (block.includes("frame-ancestors 'self'")) {
+      expect(block).toContain("default-src 'none'")
+      expect(block).toContain("script-src 'self'")
+    } else {
+      expect(block).toContain("frame-ancestors 'none'")
+      expect(block).toContain("default-src 'self'")
+    }
   }
 })
 it('hashes the inline theme script exactly as served in the source HTML', () => {
@@ -38,4 +43,15 @@ it('hashes the inline theme script exactly as served in the source HTML', () => 
   )
   expect(rendered).toContain(`'sha256-${hash}'`)
   expect(template).not.toMatch(/script-src[^;]*unsafe-inline/)
+})
+
+it('allows same-origin framing only for the silent SSO callback, with an external script', () => {
+  expect(template).toContain('location = /silent-check-sso.html {')
+  expect(template).toContain("frame-src 'self' $keycloak_csp_source")
+  const callback = readFileSync(
+    new URL('../../public/silent-check-sso.html', import.meta.url),
+    'utf8',
+  )
+  expect(callback).toContain('<script src="/silent-check-sso.js"></script>')
+  expect(callback).not.toMatch(/<script>/)
 })
