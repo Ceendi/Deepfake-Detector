@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Published image tag (latest or sha-<7-character commit>)
+        description: Published image tag (latest, sha-<commit> or sha-<commit>-r<run>-a<attempt>)
         type: string
         default: latest
 
@@ -51,8 +51,8 @@ jobs:
 
       - name: Prepare the environment
         run: |
-          if [[ ! "$DEEPFAKE_IMAGE_TAG" =~ ^(latest|sha-[0-9a-f]{7})$ ]]; then
-            echo "::error::image tag must be latest or sha-<7-character commit>"
+          if [[ ! "$DEEPFAKE_IMAGE_TAG" =~ ^(latest|sha-[0-9a-f]{7}(-r[0-9]+-a[0-9]+)?)$ ]]; then
+            echo "::error::image tag must be latest, sha-<commit> or sha-<commit>-r<run>-a<attempt>"
             exit 1
           fi
           # Dev realm: the batch CLI logs in as its deepfake-loadtest service account.

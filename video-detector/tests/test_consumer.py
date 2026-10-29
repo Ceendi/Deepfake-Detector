@@ -3,7 +3,8 @@
 src.inference is stubbed before import so the suite needs no torch/onnx/insightface —
 these tests cover the AMQP/Redis/S3/OTel glue in consumer.py, not the model.
 Run without the ML stack:
-  python -m pip install -r audio-detector/tests/requirements-light.txt (from repository root)
+  python -m pip install --require-hashes -r audio-detector/tests/requirements-light.txt
+  python -m pip install --no-deps -e ./detector-runtime  (both from repository root)
 """
 import sys
 import types

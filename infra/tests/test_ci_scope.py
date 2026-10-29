@@ -16,6 +16,15 @@ def run(*paths):
 
 
 class CiScopeTest(unittest.TestCase):
+    def test_rename_out_of_a_tested_tree_includes_the_old_path(self):
+        files = [{'filename': 'docs/legacy.ts', 'previous_filename': 'frontend/src/legacy.ts'}]
+        paths = [item[key] for item in files for key in ('filename', 'previous_filename')
+                 if key in item]
+        self.assertEqual('true', run(*paths)['frontend'])
+        for name in ('ci', 'e2e'):
+            workflow = (ROOT / f'.github/workflows/{name}.yml').read_text()
+            self.assertIn("--jq '.[] | .filename, (.previous_filename // empty)'", workflow)
+
     def test_frontend_change_skips_java_tests_and_detectors(self):
         self.assertEqual({'java': '[]', 'frontend': 'true', 'detectors': 'false'},
                          run('frontend/src/pages/Playground/Playground.module.css'))
@@ -63,8 +72,7 @@ class CiScopeTest(unittest.TestCase):
     def test_required_checks_cannot_be_skipped_by_the_selection(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         java = workflow[workflow.index('\n  java:'):workflow.index('\n  python:')]
-        # Branch protection requires each java (<service>) check: the job always runs and only its
-        # test steps are gated, so unchanged services still compile classes for Sonar.
+        # Java always supplies compiled classes for Sonar; ci-ok aggregates every selected test.
         self.assertEqual(['${{ !cancelled() }}'], re.findall(r'\n    if: (.+)', java))
         self.assertIn('-DskipTests test-compile', java)
         self.assertIn("needs.changes.outputs.java || '[\"gateway\",\"eureka-server\",\"orchestrator\","

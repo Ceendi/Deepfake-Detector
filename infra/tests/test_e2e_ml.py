@@ -95,6 +95,13 @@ class RealModelWorkflowTest(unittest.TestCase):
         self.assertNotIn('--profile monitoring', self.workflow)
         self.assertIn("grep -qx 'FILE_SERVICE_REPLICAS=1' .env", self.workflow)
 
+    def test_rebuild_tags_are_accepted_without_accepting_shell_input(self):
+        pattern = re.search(r'"\$DEEPFAKE_IMAGE_TAG" =~ (.+) \]\]', self.workflow).group(1)
+        for tag in ('latest', 'sha-1234abc', 'sha-1234abc-r42-a2'):
+            self.assertRegex(tag, pattern)
+        for tag in ('sha-1234abc;echo', '$(id)', 'sha-1234abc-rx-a1', 'other'):
+            self.assertIsNone(re.fullmatch(pattern, tag))
+
     def test_downloaded_clip_is_pinned_and_media_is_generated(self):
         self.assertRegex(self.workflow, r'FACE_SHA256: [0-9a-f]{64}\n')
         self.assertIn('sha256sum -c -', self.workflow)
