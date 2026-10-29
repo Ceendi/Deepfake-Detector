@@ -17,7 +17,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -35,7 +34,7 @@ class AnalysisServiceListTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    RabbitTemplate rabbitTemplate;
+    com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock

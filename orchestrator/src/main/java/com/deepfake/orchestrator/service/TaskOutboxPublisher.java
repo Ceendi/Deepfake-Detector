@@ -86,15 +86,15 @@ public class TaskOutboxPublisher {
                 || analysis.createdAt().isBefore(Instant.now().minusSeconds(dispatchTimeoutSeconds))) return;
 
         var rows = jdbc.query("""
-                SELECT source, payload::text, attempts FROM analysis_task_outbox
+                SELECT source, payload::text, attempts, traceparent FROM analysis_task_outbox
                 WHERE id = ? AND sent_at IS NULL AND next_attempt_at <= CURRENT_TIMESTAMP FOR UPDATE
-                """, (rs, row) -> new Pending(rs.getString(1), rs.getString(2), rs.getInt(3)), task.id());
+                """, (rs, row) -> new Pending(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getString(4)), task.id());
         if (rows.isEmpty()) return;
         Pending pending = rows.getFirst();
         // Persist bounded exponential retry on normal failure. A killed transaction rolls back;
         // restart can retry once immediately, then continues at the configured polling cadence.
         int attempts = pending.attempts() + 1;
-        long delay = Math.min(60, retrySeconds * (1L << Math.min(pending.attempts(), 6)));
+        long delay = Math.min(20, retrySeconds * (1L << Math.min(pending.attempts(), 6)));
         jdbc.update("UPDATE analysis_task_outbox SET attempts = ?, next_attempt_at = ? WHERE id = ?",
                 attempts, Timestamp.from(Instant.now().plusSeconds(delay)), task.id());
         try {
@@ -102,9 +102,19 @@ public class TaskOutboxPublisher {
             properties.setContentType(MessageProperties.CONTENT_TYPE_JSON);
             properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
             properties.setMessageId(task.id().toString());
+            if (pending.traceparent() != null) properties.setHeader("traceparent", pending.traceparent());
             CorrelationData correlation = new CorrelationData(task.id() + ":" + attempts);
-            rabbit.send(RabbitConfig.EXCHANGE, "analysis." + pending.source(),
-                    new Message(pending.payload().getBytes(StandardCharsets.UTF_8), properties), correlation);
+            var parent = pending.traceparent() == null ? io.opentelemetry.context.Context.current()
+                    : io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator.getInstance().extract(
+                            io.opentelemetry.context.Context.root(), properties,
+                            new io.opentelemetry.context.propagation.TextMapGetter<MessageProperties>() {
+                                public Iterable<String> keys(MessageProperties carrier) { return carrier.getHeaders().keySet(); }
+                                public String get(MessageProperties carrier, String key) { return carrier.getHeader(key); }
+                            });
+            try (var scope = parent.makeCurrent()) {
+                rabbit.send(RabbitConfig.EXCHANGE, "analysis." + pending.source(),
+                        new Message(pending.payload().getBytes(StandardCharsets.UTF_8), properties), correlation);
+            }
             var confirm = correlation.getFuture().get(confirmTimeoutMs, TimeUnit.MILLISECONDS);
             // Spring associates mandatory returns before completing the correlated confirm future.
             if (!confirm.ack() || correlation.getReturned() != null) {
@@ -119,11 +129,9 @@ public class TaskOutboxPublisher {
         // Deliberately outside the publish catch: a database failure must roll back, never turn a
         // confirmed message into a falsely committed sent marker. Crash here permits duplicates.
         jdbc.update("UPDATE analysis_task_outbox SET sent_at = CURRENT_TIMESTAMP WHERE id = ?", task.id());
-        jdbc.update("UPDATE analysis SET updated_at = GREATEST(updated_at, CURRENT_TIMESTAMP) WHERE id = ?",
-                task.analysisId());
     }
 
     private record Task(UUID id, UUID analysisId) {}
-    private record Pending(String source, String payload, int attempts) {}
+    private record Pending(String source, String payload, int attempts, String traceparent) {}
     private record AnalysisState(String status, Instant createdAt) {}
 }

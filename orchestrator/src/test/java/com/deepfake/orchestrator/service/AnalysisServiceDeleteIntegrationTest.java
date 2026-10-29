@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -52,7 +51,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceDeleteIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
@@ -77,11 +76,20 @@ class AnalysisServiceDeleteIntegrationTest {
     @MockitoBean
     AnalysisStreamRegistry streams;
     @MockitoBean
-    RabbitTemplate rabbitTemplate;
-    @MockitoBean
     StringRedisTemplate redis;
     @MockitoBean
     AnalysisMetrics metrics;
+
+    @Test
+    void twoAnalysesKeepSharedInputUntilLastDelete() {
+        UUID first = persist("alice", AnalysisStatus.COMPLETED, "REAL", "0.6000", Instant.now());
+        UUID second = persist("alice", AnalysisStatus.COMPLETED, "REAL", "0.6000", Instant.now());
+        var release = org.mockito.Mockito.mock(Runnable.class);
+        service.deleteWithInput(first, "alice", release);
+        verify(release, never()).run();
+        service.deleteWithInput(second, "alice", release);
+        verify(release).run();
+    }
 
     @Test
     void oversizedHistoryOffsetIsValidationFailureInsteadOfJpaError() {

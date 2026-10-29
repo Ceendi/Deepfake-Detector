@@ -29,6 +29,18 @@ class UploadConcurrencyFilterTest {
     @BeforeEach void login() { authenticate("alice"); }
     @AfterEach void logout() { SecurityContextHolder.clearContext(); }
 
+    @Test void startupRemovesOnlyReplicaSpoolFilesWithoutFollowingLinks() throws Exception {
+        java.nio.file.Files.writeString(tmp.resolve("upload-crashed.media"), "media");
+        java.nio.file.Files.writeString(tmp.resolve("upload_tomcat.tmp"), "part");
+        java.nio.file.Files.writeString(tmp.resolve("keep.txt"), "unrelated");
+        java.nio.file.Files.createDirectory(tmp.resolve("upload-directory.tmp"));
+        new UploadConcurrencyFilter(4, tmp.toString());
+        assertThat(java.nio.file.Files.exists(tmp.resolve("upload-crashed.media"))).isFalse();
+        assertThat(java.nio.file.Files.exists(tmp.resolve("upload_tomcat.tmp"))).isFalse();
+        assertThat(java.nio.file.Files.exists(tmp.resolve("keep.txt"))).isTrue();
+        assertThat(java.nio.file.Files.isDirectory(tmp.resolve("upload-directory.tmp"))).isTrue();
+    }
+
     @Test void anonymousMultipartTakesAGlobalSlotButNoUserSlot() throws Exception {
         var filter = new UploadConcurrencyFilter(1, 1, tmp.toString());
         SecurityContextHolder.clearContext();

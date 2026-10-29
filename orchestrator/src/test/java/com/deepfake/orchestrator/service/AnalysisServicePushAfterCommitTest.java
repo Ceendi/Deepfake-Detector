@@ -23,7 +23,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -42,7 +41,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServicePushAfterCommitTest {
 
     @Mock AnalysisRepository repository;
-    @Mock RabbitTemplate rabbitTemplate;
+    @Mock com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
     @Mock StringRedisTemplate redis;
     @Mock AnalysisCache cache;
     @Mock AnalysisStreamRegistry streams;

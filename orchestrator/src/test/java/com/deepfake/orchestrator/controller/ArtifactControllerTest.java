@@ -51,6 +51,9 @@ class ArtifactControllerTest {
     AnalysisCreationService creationService;
 
     @MockitoBean
+    com.deepfake.orchestrator.service.AnalysisDeletionService deletionService;
+
+    @MockitoBean
     ArtifactService artifactService;
 
     @MockitoBean

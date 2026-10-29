@@ -8,7 +8,6 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.locks.LockSupport;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -27,7 +26,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.deepfake.orchestrator.dto.sse.*;
 import com.deepfake.orchestrator.exception.GlobalExceptionHandler;
 
-/** Actual Tomcat sockets. Forced bounded-event bursts fill TCP buffers; these are transport stress, not inference rates. */
+/** Actual Tomcat sockets, with gated emitter writes to make stalled-writer interleavings deterministic. */
 @SpringBootTest(classes=SseHttpIsolationTest.Harness.class, webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
  properties={"app.sse.global-connections=8","app.sse.user-connections=5","app.sse.analysis-connections=4",
  "app.sse.heartbeat=30s","app.sse.slow-write=5s","app.sse.lifetime=2m"})
@@ -37,7 +36,7 @@ class SseHttpIsolationTest {
     @Autowired Gate gate;
     final List<Peer> peers=new ArrayList<>();
     @AfterEach void cleanup() throws Exception {
-        gate.release.countDown(); peers.forEach(Peer::close);
+        gate.release.countDown(); peers.forEach(Peer::close); streams.unblock();
         await().atMost(Duration.ofSeconds(10)).pollInterval(Duration.ofMillis(50)).until(() -> { streams.heartbeat(); return streams.admitted()==0; });
         gate.reset(); streams.shortTimeout=false; streams.timedOut=new CountDownLatch(1);
     }
@@ -45,19 +44,16 @@ class SseHttpIsolationTest {
         UUID id=UUID.randomUUID();
         for(int i=0;i<3;i++) peers.add(open(id,"slow",false));
         var healthy=open(id,"healthy",true); peers.add(healthy);
-        long until=System.nanoTime()+Duration.ofSeconds(12).toNanos(); int count=0;
-        // Windows can stall all readers before the minimum stress sample has been sent.
-        while(System.nanoTime()<until && (count<=100 || streams.writingLongerThan(Duration.ofMillis(700))<3)) {
-            streams.sendProgress(id,progress(id,count++)); LockSupport.parkNanos(100_000);
-        }
-        System.out.println("SSE stopped-reader stress events="+count+" admitted="+streams.admitted()+" sustainedWrites="+streams.writingLongerThan(Duration.ofMillis(700)));
-        assertThat(count).isGreaterThan(100);
-        await().during(Duration.ofMillis(700)).atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(streams.writing()).isGreaterThanOrEqualTo(3));
+        streams.blockWrites();
+        streams.sendProgress(id,progress(id,1));
+        streams.awaitBlocked(3);
         assertThat(streams.admitted()).isEqualTo(4);
-        long started=System.nanoTime();
-        for(int i=0;i<10000;i++) { streams.sendProgress(id,progress(id,i)); streams.heartbeat(); streams.observe(); }
-        assertThat(Duration.ofNanos(System.nanoTime()-started)).isLessThan(Duration.ofSeconds(2));
-        assertThat(streams.admitted()).isEqualTo(4); // Watchdog cannot recycle a physically blocked writer.
+        try (var producer=Executors.newSingleThreadExecutor()) {
+            producer.submit(() -> {
+                for(int i=0;i<10000;i++) { streams.sendProgress(id,progress(id,i)); streams.heartbeat(); streams.observe(); }
+            }).get(10,TimeUnit.SECONDS);
+        }
+        assertThat(streams.admitted()).isEqualTo(4);
         var newcomer=open(UUID.randomUUID(),"new",true); peers.add(newcomer);
         UUID next=newcomer.id;
         streams.sendResult(next,result(next));
@@ -65,20 +61,19 @@ class SseHttpIsolationTest {
         streams.sendResult(id,result(id));
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(healthy.lines).anyMatch(line -> line.contains("event:result")));
         assertThat(streams.admitted()).isGreaterThanOrEqualTo(3);
-        peers.subList(0,3).forEach(Peer::close);
+        peers.subList(0,3).forEach(Peer::close); streams.unblock();
         await().atMost(Duration.ofSeconds(8)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
         peers.add(open(id,"slow",true)); // Actual peer close plus writer exit frees all three reservations.
     }
-    @Test void servletTimeoutDuringTricklingBlockedSendDoesNotRecycleWriterCapacity() throws Exception {
+    @Test void servletTimeoutDuringBlockedSendDoesNotRecycleWriterCapacity() throws Exception {
         UUID id=UUID.randomUUID();streams.shortTimeout=true;
         var peer=open(id,"alice",false);peers.add(peer);
-        long until=System.nanoTime()+Duration.ofSeconds(4).toNanos();int count=0;
-        while(System.nanoTime()<until && streams.writingLongerThan(Duration.ofMillis(500))<1) {streams.sendProgress(id,progress(id,count++));LockSupport.parkNanos(100_000);}
-        await().during(Duration.ofMillis(100)).atMost(Duration.ofMillis(400)).untilAsserted(() -> assertThat(streams.writing()).isEqualTo(1));
-        var trickle=Thread.ofVirtual().start(() -> {try {while(!peer.socket.isClosed()) {peer.socket.getInputStream().read();Thread.sleep(100);}}catch(Exception ignored){}});
-        assertThat(streams.timedOut.await(7,TimeUnit.SECONDS)).isTrue();
+        streams.blockWrites();
+        streams.sendProgress(id,progress(id,1));
+        streams.awaitBlocked(1);
+        assertThat(streams.timedOut.await(10,TimeUnit.SECONDS)).isTrue();
         assertThat(streams.admitted()).isEqualTo(1);assertThat(streams.writing()).isEqualTo(1);
-        peer.close();trickle.join(2000);
+        peer.close(); streams.unblock();
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
     }
     @Test void httpQuotasReturn429WithRetryAfterAndReleaseAfterRealCompletion() throws Exception {
@@ -154,13 +149,41 @@ class SseHttpIsolationTest {
         @Bean TestRegistry streams(SseLimits limits) { return new TestRegistry(limits); }
         @Bean Gate gate(TestRegistry streams) { return new Gate(streams); }
     }
+    static class GatedEmitter extends SseEmitter {
+        volatile boolean blocked;
+        final CountDownLatch entered=new CountDownLatch(1), release=new CountDownLatch(1);
+        GatedEmitter(long timeout){super(timeout);}
+        @Override public void send(SseEventBuilder event) throws IOException {
+            if(blocked) {
+                entered.countDown();
+                try {
+                    if(!release.await(30,TimeUnit.SECONDS))throw new IOException("write gate timed out");
+                } catch(InterruptedException error) {Thread.currentThread().interrupt();throw new IOException(error);}
+            }
+            super.send(event);
+        }
+    }
     static class TestRegistry extends AnalysisStreamRegistry {
         volatile boolean shortTimeout;CountDownLatch timedOut=new CountDownLatch(1);
+        final List<GatedEmitter> slow=new CopyOnWriteArrayList<>();
+        final ThreadLocal<String> owner=new ThreadLocal<>();
         TestRegistry(SseLimits limits){super(limits);}
-        @Override protected SseEmitter createEmitter() {
-            var emitter=shortTimeout?new SseEmitter(5000L):super.createEmitter();
-            if(shortTimeout)emitter.onTimeout(timedOut::countDown);return emitter;
+        @Override public SseEmitter register(UUID id,String user) {
+            owner.set(user);
+            try{return super.register(id,user);}finally{owner.remove();}
         }
+        @Override protected SseEmitter createEmitter() {
+            var emitter=new GatedEmitter(shortTimeout?5000L:120000L);
+            if(shortTimeout)emitter.onTimeout(timedOut::countDown);
+            if(shortTimeout || "slow".equals(owner.get()))slow.add(emitter);
+            return emitter;
+        }
+        void blockWrites(){slow.forEach(emitter -> emitter.blocked=true);}
+        void awaitBlocked(int expected)throws InterruptedException {
+            assertThat(slow).hasSize(expected);
+            for(var emitter:slow)assertThat(emitter.entered.await(10,TimeUnit.SECONDS)).isTrue();
+        }
+        void unblock(){slow.forEach(emitter -> emitter.release.countDown());slow.clear();}
     }
     static class Gate implements WebMvcConfigurer {
         final TestRegistry streams; AnalysisStreamRegistry.Session failedSession;

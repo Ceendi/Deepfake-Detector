@@ -60,6 +60,9 @@ virtual-hosted style (`bucket.endpoint/key`). Set
   space are freed only after the purge removes the object and metadata (72 h retention by
   default, plus up to the hourly cleanup interval). See [REST upload limits](./rest-api.md).
 - Unclaimed uploads older than 7 days are soft-deleted, then follow the same purge path.
+  Deleting a finished analysis releases its input through file-service only when no other
+  analysis of that owner references the file. The orchestrator makes this decision; clients
+  must not unconditionally delete shared files after deleting an analysis record.
   `POST /api/files/{id}/claim` stores the first use timestamp atomically. Claimed files
   are excluded from unused retention. Historical rows are conservatively marked used
   by V3 because their analysis references belong to the orchestrator database.

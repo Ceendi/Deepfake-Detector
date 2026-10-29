@@ -26,7 +26,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -57,7 +56,7 @@ class AnalysisServiceDeleteTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    RabbitTemplate rabbitTemplate;
+    com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock
@@ -100,7 +99,7 @@ class AnalysisServiceDeleteTest {
         verify(idempotency).clear(id);
         verify(redis).delete(List.of("progress:" + id));
         verify(redis, never()).opsForValue();
-        verifyNoInteractions(rabbitTemplate, streams, backpressure);
+        verifyNoInteractions(outbox, streams, backpressure);
     }
 
     @Test

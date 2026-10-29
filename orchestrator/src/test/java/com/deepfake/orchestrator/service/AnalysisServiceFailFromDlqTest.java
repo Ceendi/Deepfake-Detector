@@ -22,7 +22,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.RedisConnectionFailureException;
@@ -40,7 +39,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceFailFromDlqTest {
 
     @Mock AnalysisRepository repository;
-    @Mock RabbitTemplate rabbitTemplate;
+    @Mock com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository outbox;
     @Mock StringRedisTemplate redis;
     @Mock ValueOperations<String, String> values;
     @Mock AnalysisCache cache;

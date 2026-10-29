@@ -18,6 +18,20 @@ class CorrelationIdGlobalFilterTest {
     private final CorrelationIdGlobalFilter filter = new CorrelationIdGlobalFilter();
 
     @Test
+    void reactorHopRestoresCorrelationMdcAndDoesNotLeakIt() {
+        reactor.core.publisher.Hooks.enableAutomaticContextPropagation();
+        try {
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/analysis")
+                    .header(CorrelationIdGlobalFilter.HEADER, "cid-hop"));
+            filter.filter(exchange, ignored -> Mono.delay(java.time.Duration.ofMillis(1))
+                    .doOnNext(value -> assertThat(org.slf4j.MDC.get("correlationId")).isEqualTo("cid-hop")).then()).block();
+            assertThat(org.slf4j.MDC.get("correlationId")).isNull();
+        } finally {
+            reactor.core.publisher.Hooks.disableAutomaticContextPropagation();
+        }
+    }
+
+    @Test
     void propagatesCallerHeaderDownstreamAndEchoesOnResponse() {
         MockServerWebExchange exchange = MockServerWebExchange.from(
                 MockServerHttpRequest.get("/api/analysis")

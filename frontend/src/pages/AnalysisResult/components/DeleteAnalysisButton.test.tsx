@@ -46,7 +46,7 @@ async function confirmDelete() {
 }
 
 describe('DeleteAnalysisButton', () => {
-  it('usuwa rekord, potem plik (zwolnienie kwoty) i wraca do historii', async () => {
+  it('usuwa rekord i wraca do historii; backend zwalnia współdzielony plik', async () => {
     vi.mocked(deleteAnalysisRecord).mockResolvedValue(undefined)
     vi.mocked(deleteFile).mockResolvedValue(undefined)
     renderButton()
@@ -55,41 +55,31 @@ describe('DeleteAnalysisButton', () => {
 
     await waitFor(() => expect(screen.getByText('Historia')).toBeInTheDocument())
     expect(deleteAnalysisRecord).toHaveBeenCalledWith('an-1')
-    expect(deleteFile).toHaveBeenCalledWith('f-1')
-    expect(vi.mocked(deleteAnalysisRecord).mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(deleteFile).mock.invocationCallOrder[0],
-    )
+    expect(deleteFile).not.toHaveBeenCalled()
   })
 
-  it('404 przy usuwaniu pliku jest ignorowane', async () => {
-    vi.mocked(deleteAnalysisRecord).mockResolvedValue(undefined)
-    vi.mocked(deleteFile).mockRejectedValue(new ApiError({ status: 404, message: 'x' }))
+  it('404 rekordu wraca do historii bez usuwania pliku', async () => {
+    vi.mocked(deleteAnalysisRecord).mockRejectedValue(new ApiError({ status: 404, message: 'x' }))
     renderButton()
-
     await confirmDelete()
-
     await waitFor(() => expect(screen.getByText('Historia')).toBeInTheDocument())
+    expect(deleteFile).not.toHaveBeenCalled()
   })
 
-  it('inny błąd usuwania pliku (np. 503) jest pokazany, a ponowienie zwalnia już tylko plik', async () => {
-    vi.mocked(deleteAnalysisRecord).mockResolvedValue(undefined)
-    vi.mocked(deleteFile)
+  it('503 backendu pozostawia możliwość bezpiecznego ponowienia', async () => {
+    vi.mocked(deleteAnalysisRecord)
       .mockRejectedValueOnce(new ApiError({ status: 503, message: 'x' }))
       .mockResolvedValueOnce(undefined)
     renderButton()
-
     await confirmDelete()
-
     expect(
-      await screen.findByText(/Analiza została usunięta, ale nie udało się zwolnić miejsca/),
+      await screen.findByText('Nie udało się usunąć analizy. Spróbuj ponownie.'),
     ).toBeInTheDocument()
-    expect(screen.queryByText('Historia')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Spróbuj ponownie', hidden: true }))
-
+    const buttons = screen.getAllByRole('button', { name: 'Usuń analizę', hidden: true })
+    fireEvent.click(buttons[buttons.length - 1])
     await waitFor(() => expect(screen.getByText('Historia')).toBeInTheDocument())
-    expect(deleteAnalysisRecord).toHaveBeenCalledTimes(1)
-    expect(deleteFile).toHaveBeenCalledTimes(2)
+    expect(deleteAnalysisRecord).toHaveBeenCalledTimes(2)
+    expect(deleteFile).not.toHaveBeenCalled()
   })
 
   it('409 rekordu (analiza w toku) nie usuwa pliku i pokazuje komunikat', async () => {

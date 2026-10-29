@@ -14,9 +14,11 @@ import java.util.UUID;
 /** Resolves the authorized input before the separate writer opens its admission transaction. */
 @Service
 @RequiredArgsConstructor
+@org.springframework.context.annotation.Import(InputFileLocks.class)
 public class AnalysisCreationService {
     private final FileMetadataClient files;
     private final AnalysisService writer;
+    private final InputFileLocks inputLocks;
 
     @Transactional(propagation = Propagation.NEVER)
     public AnalysisResponse create(CreateAnalysisRequest request, String userId, String bearerToken) {
@@ -32,9 +34,11 @@ public class AnalysisCreationService {
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid file identifier");
         }
-        String objectKey = files.resolve(fileId, bearerToken);
-        // The legacy key is deliberately ignored, including mismatches. Only metadata is authoritative.
-        var resolved = new CreateAnalysisRequest(fileId.toString(), objectKey, request.type(), request.mode());
-        return writer.createResolved(resolved, userId);
+        return inputLocks.withFile(userId, fileId.toString(), () -> {
+            String objectKey = files.resolve(fileId, bearerToken);
+            // The legacy key is ignored; metadata is authoritative.
+            var resolved = new CreateAnalysisRequest(fileId.toString(), objectKey, request.type(), request.mode());
+            return writer.createResolved(resolved, userId);
+        });
     }
 }

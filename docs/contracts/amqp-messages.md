@@ -103,6 +103,11 @@ the body and is the cross-language correlation id — detectors echo it on every
 progress/result. A message without `traceparent` roots a new trace; processing
 never depends on the header.
 
+The orchestrator persists the creating request's W3C `traceparent` in the transactional
+outbox (`analysis_task_outbox.traceparent`), then restores that parent around publication.
+Delayed dispatch and retries therefore retain the HTTP trace even after a process restart.
+Existing outbox rows without this optional column value start a dispatch trace as before.
+
 ### Task — Orchestrator → Detector
 
 Published to `analysis.video` or `analysis.audio`.

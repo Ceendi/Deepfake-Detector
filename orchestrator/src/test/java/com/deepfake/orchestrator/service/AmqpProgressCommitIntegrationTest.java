@@ -69,11 +69,11 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AmqpProgressCommitIntegrationTest {
     private static final int DATABASE_PORT = availablePort();
     // Docker can reassign ephemeral published ports on restart; the JDBC endpoint must stay stable.
-    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine")
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24")
             .withCreateContainerCmdModifier(cmd -> cmd.getHostConfig().withPortBindings(
                     new PortBinding(Ports.Binding.bindPort(DATABASE_PORT), new ExposedPort(5432))));
-    @Container static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine").withExposedPorts(6379);
-    @Container static final GenericContainer<?> broker = new GenericContainer<>("rabbitmq:4.3.1-alpine")
+    @Container static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.10.2-alpine").withExposedPorts(6379);
+    @Container static final GenericContainer<?> broker = new GenericContainer<>("rabbitmq:4.3.6-management-alpine")
             .withEnv("RABBITMQ_DEFAULT_USER", "test").withEnv("RABBITMQ_DEFAULT_PASS", "test")
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {

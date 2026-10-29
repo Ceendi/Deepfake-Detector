@@ -71,12 +71,12 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class TransactionalDispatchIntegrationTest {
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container
-    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
+    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.10.2-alpine")
             .withExposedPorts(6379);
     @Container
-    static final GenericContainer<?> rabbitContainer = new GenericContainer<>("rabbitmq:4.3.1-alpine")
+    static final GenericContainer<?> rabbitContainer = new GenericContainer<>("rabbitmq:4.3.6-management-alpine")
             .withEnv("RABBITMQ_DEFAULT_USER", "test").withEnv("RABBITMQ_DEFAULT_PASS", "test")
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
 
@@ -131,6 +131,43 @@ class TransactionalDispatchIntegrationTest {
     @AfterEach
     void stopWorkers() throws Exception {
         for (Process worker : workers) kill(worker);
+    }
+
+    @Test
+    void requestTraceSurvivesOutboxAndDispatchDoesNotChangeCachedTimestamp() {
+        String trace = "1234567890abcdef1234567890abcdef";
+        var parent = io.opentelemetry.api.trace.SpanContext.create(trace, "1234567890abcdef",
+                io.opentelemetry.api.trace.TraceFlags.getSampled(), io.opentelemetry.api.trace.TraceState.getDefault());
+        UUID id;
+        try (var scope = io.opentelemetry.api.trace.Span.wrap(parent).makeCurrent()) {
+            id = create(AnalysisType.VIDEO);
+        }
+        Object updated = stored(id).get("updated_at");
+        var scheduler = io.opentelemetry.api.trace.SpanContext.create("abcdef1234567890abcdef1234567890", "abcdef1234567890",
+                io.opentelemetry.api.trace.TraceFlags.getSampled(), io.opentelemetry.api.trace.TraceState.getDefault());
+        try (var scope = io.opentelemetry.api.trace.Span.wrap(scheduler).makeCurrent()) {
+            publisher.dispatchDue();
+            assertThat(io.opentelemetry.api.trace.Span.current().getSpanContext()).isEqualTo(scheduler);
+        }
+        var task = rabbit.receive("analysis.video", 5000);
+        assertThat(task).isNotNull();
+        assertThat(task.getMessageProperties().getHeader("traceparent").toString()).contains(trace);
+        assertThat(stored(id).get("updated_at")).isEqualTo(updated);
+    }
+
+    @Test
+    void lateBrokerRetryStaysInsideDispatchWindowAndTerminalRemovesUnsentRows() {
+        UUID id = create(AnalysisType.FULL);
+        jdbc.update("UPDATE analysis_task_outbox SET attempts=4 WHERE analysis_id=?", id);
+        doAnswer(call -> { throw new org.springframework.amqp.AmqpConnectException(new java.net.ConnectException()); })
+                .when(rabbit).send(anyString(), anyString(), any(), any());
+        publisher.dispatchDue();
+        var next = jdbc.queryForObject("SELECT MIN(next_attempt_at) FROM analysis_task_outbox WHERE analysis_id=?",
+                java.sql.Timestamp.class, id).toInstant();
+        assertThat(next).isBefore(java.time.Instant.now().plusSeconds(21));
+        service.cancel(id, "alice");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox WHERE analysis_id=? AND sent_at IS NULL",
+                Long.class, id)).isZero();
     }
 
     @Test
@@ -261,7 +298,7 @@ class TransactionalDispatchIntegrationTest {
         publisher.dispatchDue();
         assertThat(rabbit.receive("analysis.video")).isNull();
         assertThat(rabbit.receive("analysis.audio")).isNull();
-        assertThat(attempts(cancelled, "video")).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox WHERE analysis_id=?", Long.class, cancelled)).isZero();
         UUID failed = create(AnalysisType.VIDEO);
         service.failFromDlq(failed, "video", "test failure before dispatch");
         publisher.dispatchDue();

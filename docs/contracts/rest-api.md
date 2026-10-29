@@ -105,7 +105,7 @@ Owner quota: stored `size_bytes` (including soft-deleted files until their physi
 72 h by default) plus the upload may not exceed
 `STORAGE_QUOTA_BYTES` (5368709120 bytes, 5 GiB). Exact equality is accepted.
 Exhaustion returns `409` with code `STORAGE_QUOTA_EXCEEDED` and message
-`Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu.`
+`Przekroczono limit miejsca na pliki. Usuń stare analizy – miejsce zwalnia się po okresie retencji.`
 The authoritative check is serialized across replicas per owner after the S3 write; the
 object is deleted when admission is certainly rejected before commit. An uncertain
 commit outcome retains the object for reference-aware orphan cleanup; a committed
@@ -120,6 +120,15 @@ per-`jwt.sub` slot on this replica
 replica saturation returns `503 SERVICE_UNAVAILABLE`. Both return an `ErrorResponse`
 and `Retry-After: 5`. If both limits are reached, the user limit takes precedence.
 Slots are released on success, failure or disconnect; user entries disappear at zero.
+Temporary S3 client/5xx failures and database connection or transient failures during upload
+also return `503 SERVICE_UNAVAILABLE` with `Retry-After: 5`. Permanent storage request or
+permission errors remain `500 INTERNAL_ERROR`. At startup each replica removes leftover
+upload spool files from its private spool directory.
+
+The gateway bounds the entire upload request, including body transfer and processing, by
+`gateway.upload-deadline` (`UPLOAD_DEADLINE`, default `15m`). Expiry cancels the downstream
+connection and returns `408 Request Timeout`; progress bytes do not reset this deadline.
+At the 500 MiB file limit the default requires about 0.56 MiB/s including processing time.
 Security runs first: unauthenticated requests receive `401` without occupying a slot.
 This guard also covers multipart requests on other paths/methods before MVC routing.
 The frontend displays a Polish temporary-unavailability message for upload `503` and
@@ -382,10 +391,15 @@ recorded keys are enqueued in the same database transaction as the row delete.
 A background worker deletes from S3 after commit and retries failures with bounded
 exponential backoff and no attempt limit; missing objects count as deleted. An S3
 outage does not block the HTTP delete. Orphan discovery also durably queues eligible
-unreferenced objects; see [artifact cleanup](../reliability.md#grad-cam-artifacts). The uploaded file in
-`deepfake-uploads` is **not** removed: it lives in another service/bucket the Orchestrator cannot
-touch and may be shared by other analyses — its lifecycle is the file service's (see
-[`object-storage.md`](./object-storage.md)).
+unreferenced objects; see [artifact cleanup](../reliability.md#grad-cam-artifacts).
+The orchestrator also requests `DELETE /api/files/{fileId}` using the caller's JWT **only if
+no other remaining analysis owned by that user references the input file**. The frontend
+only deletes the analysis record. A shared file remains available until the last reference
+is deleted. Claim/create and last-reference deletion are serialized per owner/file in the
+single orchestrator. If file-service release fails, the record transaction rolls back and
+returns `503 SERVICE_UNAVAILABLE`; retrying the record delete is safe (file `404` means
+already released). A successful release is a soft-delete; physical purge and quota follow
+the file service's retention policy ([`object-storage.md`](./object-storage.md)).
 
 ## `Analysis` shape
 
@@ -560,4 +574,4 @@ These suites run in the existing CI Java and frontend jobs.
 | 422  | Unprocessable Entity (e.g. invalid file format)            |
 | 429  | Too Many Requests (rate limit / per-user concurrent uploads / queue backpressure) |
 | 500  | Internal Server Error                                      |
-| 503  | Service Unavailable (e.g. replica upload capacity or temporary probe failure) |
+| 503  | Service Unavailable (e.g. upload capacity, probe or temporary S3/database failure) |

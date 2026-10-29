@@ -20,4 +20,5 @@ public class AnalysisTaskOutbox {
     @Builder.Default @Column(name = "next_attempt_at", nullable = false) private Instant nextAttemptAt = Instant.now();
     @Column(nullable = false) private int attempts;
     @Column(name = "sent_at") private Instant sentAt;
+    @Column(length = 55) private String traceparent;
 }

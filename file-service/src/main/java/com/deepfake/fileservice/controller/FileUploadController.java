@@ -40,7 +40,8 @@ public class FileUploadController {
     @ApiResponse(responseCode = "413", description = "File exceeds 500 MiB or multipart request exceeds 501 MiB (PAYLOAD_TOO_LARGE)")
     @ApiResponse(responseCode = "409", description = "STORAGE_QUOTA_EXCEEDED: owner's storage quota exhausted (default 5 GB)")
     @ApiResponse(responseCode = "429", description = "UPLOAD_USER_LIMIT: per-user upload capacity exhausted on this replica; Retry-After: 5")
-    @ApiResponse(responseCode = "503", description = "SERVICE_UNAVAILABLE: replica full or ffprobe timeout, interruption or I/O failure; Retry-After: 5")
+    @ApiResponse(responseCode = "408", description = "Gateway upload deadline exceeded (default 15 minutes)")
+    @ApiResponse(responseCode = "503", description = "SERVICE_UNAVAILABLE: replica full, probe failure or temporary S3/database outage; Retry-After: 5")
     @ApiResponse(responseCode = "422", description = "INVALID_FILE with message prefix: UNSUPPORTED_MEDIA, INVALID_MEDIA_DURATION, MEDIA_TOO_LONG or MEDIA_RESOLUTION_TOO_HIGH")
     @PostMapping("/upload")
     public FileUploadResponse upload(@CurrentUser AuthenticatedUser user,

@@ -87,8 +87,8 @@ public class AnalysisService {
     private final ArtifactCleanupStore artifactCleanup;
     private final ResultDetailsExtractor detailsExtractor = new ResultDetailsExtractor();
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     /** Transactional writer: only the creation facade supplies a resolved canonical file key. */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public AnalysisResponse createResolved(CreateAnalysisRequest req, String userId) {
         validateCreate(req, userId);
         backpressure.acquire(userId); // 429 here -> nothing persisted or published
@@ -141,8 +141,11 @@ public class AnalysisService {
         UUID taskId = UUID.randomUUID();
         Map<String, Object> durablePayload = new HashMap<>(payload);
         durablePayload.put("task_id", taskId.toString());
+        Map<String, String> trace = new HashMap<>();
+        io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator.getInstance().inject(
+                io.opentelemetry.context.Context.current(), trace, Map::put);
         outbox.save(AnalysisTaskOutbox.builder().id(taskId).analysisId(analysisId)
-                .source(source).payload(durablePayload).build());
+                .source(source).payload(durablePayload).traceparent(trace.get("traceparent")).build());
     }
 
     private static void validateCreate(CreateAnalysisRequest req, String userId) {
@@ -265,8 +268,7 @@ public class AnalysisService {
      * here stays valid; the delete itself is conditional, so a concurrent duplicate request gets 404.
      *
      * <p>Artifact deletion work is persisted in this same transaction and survives parent deletion.
-     * The worker retries storage outside database transactions. Uploaded files have the file service's
-     * separate lifecycle and are never reclaimed here. Returns captured keys for internal callers.
+     * The worker retries artifact storage outside database transactions. Returns captured keys for internal callers.
      */
     public List<String> delete(UUID id, String currentUserId) {
         Analysis a = repository.findById(id)
@@ -291,6 +293,19 @@ public class AnalysisService {
             flagCancelAfterCommit(id);
         }
         return artifactKeys;
+    }
+
+    /** The lifecycle facade serializes this transaction with claims of the same input file. */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void deleteWithInput(UUID id, String userId, Runnable releaseInput) {
+        Analysis analysis = repository.findById(id).filter(a -> a.getUserId().equals(userId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        String fileId = analysis.getFileId();
+        delete(id, userId);
+        if (!repository.existsByUserIdAndFileId(userId, fileId)) {
+            // A failed release rolls back the record deletion so the caller can safely retry.
+            releaseInput.run();
+        }
     }
 
     // The raw analysis-artifacts object keys recorded across this analysis's per-source details
@@ -469,6 +484,7 @@ public class AnalysisService {
     // metrics need, so every terminal path (result, fail, DLQ, stuck, cancel) is counted here once.
     // Metrics record only committed transitions; a rolled-back (then retried) CAS counts nothing.
     private Analysis onTerminal(UUID id) {
+        outbox.deleteUnsent(id);
         evictCacheAfterCommit(id);
         Analysis a = repository.findById(id).orElseThrow();
         AnalysisStatus status = a.getStatus();

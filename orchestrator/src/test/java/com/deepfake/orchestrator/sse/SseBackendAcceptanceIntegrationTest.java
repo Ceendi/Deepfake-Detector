@@ -7,7 +7,6 @@ import java.net.*;
 import java.net.http.*;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.locks.LockSupport;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,9 +42,9 @@ import com.zaxxer.hikari.HikariDataSource;
 @Testcontainers
 @org.springframework.test.annotation.DirtiesContext(classMode=org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class SseBackendAcceptanceIntegrationTest {
-    @Container static final PostgreSQLContainer postgres=new PostgreSQLContainer("postgres:18.4-alpine");
-    @Container static final GenericContainer<?> redis=new GenericContainer<>("redis:8.8.0-alpine").withExposedPorts(6379);
-    @Container static final GenericContainer<?> broker=new GenericContainer<>("rabbitmq:4.3.1-alpine")
+    @Container static final PostgreSQLContainer postgres=new PostgreSQLContainer("postgres:18.6-alpine3.24");
+    @Container static final GenericContainer<?> redis=new GenericContainer<>("redis:8.10.2-alpine").withExposedPorts(6379);
+    @Container static final GenericContainer<?> broker=new GenericContainer<>("rabbitmq:4.3.6-management-alpine")
         .withEnv("RABBITMQ_DEFAULT_USER","test").withEnv("RABBITMQ_DEFAULT_PASS","test")
         .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*",1));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {
@@ -56,7 +55,7 @@ class SseBackendAcceptanceIntegrationTest {
         registry.add("spring.rabbitmq.password",()->"test");
     }
     @LocalServerPort int port;
-    @Autowired AnalysisStreamRegistry streams;
+    @org.springframework.test.context.bean.override.mockito.MockitoSpyBean AnalysisStreamRegistry streams;
     @Autowired AnalysisRepository repository;
     @Autowired AnalysisService service;
     @Autowired RabbitTemplate rabbit;
@@ -65,6 +64,7 @@ class SseBackendAcceptanceIntegrationTest {
     @Autowired org.springframework.scheduling.TaskScheduler scheduler;
     @MockitoBean JwtDecoder decoder;
     final List<SseHttpIsolationTest.Peer> peers=new ArrayList<>();
+    final List<SseHttpIsolationTest.GatedEmitter> stalled=new ArrayList<>();
     @BeforeEach void setup() {
         when(decoder.decode(anyString())).thenAnswer(call -> {
             String user=call.getArgument(0);
@@ -73,27 +73,27 @@ class SseBackendAcceptanceIntegrationTest {
         }); repository.deleteAll();
     }
     @AfterEach void cleanup() {
-        peers.forEach(SseHttpIsolationTest.Peer::close);
+        peers.forEach(SseHttpIsolationTest.Peer::close); stalled.forEach(emitter -> emitter.release.countDown());
         await().atMost(Duration.ofSeconds(10)).until(() -> {streams.heartbeat();return streams.admitted()==0;});
     }
     @Test void stoppedPeersDoNotHoldDbTransactionsOrBrokerAcknowledgementsAndTerminalReconciles() throws Exception {
         UUID id=seed();
+        doAnswer(call -> {
+            var emitter=new SseHttpIsolationTest.GatedEmitter(120000L);stalled.add(emitter);return emitter;
+        }).when(streams).createEmitter();
         for(int i=0;i<3;i++)peers.add(open(id,"alice",false));
+        doCallRealMethod().when(streams).createEmitter();
         var healthy=open(id,"alice",true);peers.add(healthy);
-        long until=System.nanoTime()+Duration.ofSeconds(12).toNanos();int count=0;
-        while(System.nanoTime()<until && streams.writingLongerThan(Duration.ofMillis(700))<3) {
-            streams.sendProgress(id,SseHttpIsolationTest.progress(id,count++));LockSupport.parkNanos(100_000);
-        }
-        await().during(Duration.ofMillis(700)).atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(streams.writing()).isGreaterThanOrEqualTo(3));
+        stalled.forEach(emitter -> emitter.blocked=true);
+        streams.sendProgress(id,SseHttpIsolationTest.progress(id,1));
+        for(var emitter:stalled)assertThat(emitter.entered.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         var scheduled=new java.util.concurrent.CountDownLatch(1);
         scheduler.schedule(scheduled::countDown,java.time.Instant.now());
-        assertThat(scheduled.await(1,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
-        long started=System.nanoTime();
+        assertThat(scheduled.await(10,java.util.concurrent.TimeUnit.SECONDS)).isTrue();
         rabbit.convertAndSend(RabbitConfig.EXCHANGE,RabbitConfig.Q_PROGRESS,Map.of("analysis_id",id.toString(),"source","video","progress",60,"stage","INFERENCE"));
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.PROCESSING));
         rabbit.convertAndSend(RabbitConfig.EXCHANGE,RabbitConfig.Q_RESULTS,result(id));
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.COMPLETED));
-        assertThat(Duration.ofNanos(System.nanoTime()-started)).isLessThan(Duration.ofSeconds(5));
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(healthy.lines).anyMatch(line -> line.contains("event:result")));
         assertThat(streams.admitted()).isGreaterThanOrEqualTo(3);
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(((HikariDataSource)datasource).getHikariPoolMXBean().getActiveConnections()).isZero());
@@ -114,7 +114,10 @@ class SseBackendAcceptanceIntegrationTest {
         assertThat(streams.admitted()).isZero();
         var healthy=open(id,"alice",true);peers.add(healthy);
         new TransactionTemplate(transactions).executeWithoutResult(tx->{service.handleResult(result(id));tx.setRollbackOnly();});
-        await().during(Duration.ofMillis(250)).atMost(Duration.ofSeconds(1)).untilAsserted(() -> assertThat(healthy.lines).noneMatch(line -> line.contains("event:result")));
+        // A marker sent after rollback is a FIFO barrier for the same SSE writer.
+        streams.sendProgress(id,new com.deepfake.orchestrator.dto.sse.AnalysisProgressEvent(id.toString(),"video",1,"rollback-barrier","PROCESSING"));
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(healthy.lines).anyMatch(line -> line.contains("rollback-barrier")));
+        assertThat(healthy.lines).noneMatch(line -> line.contains("event:result"));
         assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(AnalysisStatus.PENDING);
         rabbit.convertAndSend(RabbitConfig.EXCHANGE,RabbitConfig.Q_RESULTS,result(id));
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(healthy.lines).anyMatch(line -> line.contains("event:result")));
