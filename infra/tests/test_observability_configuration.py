@@ -90,6 +90,23 @@ class ObservabilityConfigurationTest(unittest.TestCase):
         # 0/0 would render NaN instead of the explanation.
         self.assertIn('/ (sum(rate(cache_requests_total[5m])) > 0)', panels[2]['targets'][0]['expr'])
 
+    def test_idle_percentiles_filter_zero_observation_series(self):
+        dashboard = json.loads((ROOT / 'infra/grafana/dashboards/deepfake-business.json').read_text())
+        for panel in dashboard['panels']:
+            for target in panel.get('targets', []):
+                if 'histogram_quantile' in target['expr']:
+                    with self.subTest(panel=panel['id'], target=target['refId']):
+                        self.assertIn(' and on(', target['expr'])
+                        self.assertIn('_count', target['expr'])
+                        self.assertTrue(target['expr'].endswith(' > 0)'))
+
+    def test_file_lifecycle_counters_are_visible_across_replicas(self):
+        dashboard = json.loads((ROOT / 'infra/grafana/dashboards/deepfake-business.json').read_text())
+        expressions = {target['expr'] for panel in dashboard['panels']
+                       for target in panel.get('targets', [])}
+        for metric in ('files_purged_total', 'files_orphans_reclaimed_total'):
+            self.assertIn('sum(increase(' + metric + '[1h]))', expressions)
+
     def test_native_prometheus_validation_and_alert_scenarios(self):
         service = resolved_compose()['services']['prometheus']
         mounts = [value for volume in service['volumes'] if volume['type'] == 'bind'
@@ -114,6 +131,51 @@ class ObservabilityConfigurationTest(unittest.TestCase):
                     '--volume', str(queries) + ':/tests/dashboard.json:ro',
                     '--entrypoint', '/bin/promtool', service['image'],
                     'check', 'rules', '/tests/dashboard.json')
+
+            percentile_tests = []
+            for panel in dashboard['panels']:
+                for target in panel.get('targets', []):
+                    expression = target['expr']
+                    if 'histogram_quantile' not in expression:
+                        continue
+                    # Every idle group must disappear, while a different active group still renders.
+                    metric = expression.split('rate(', 1)[1].split('_bucket', 1)[0]
+                    labels = {'job': 'orchestrator'} if panel['id'] == 5 else {}
+                    if panel['id'] == 4:
+                        labels = {'type': 'video'}
+                    elif panel['id'] == 12:
+                        labels = {'job': target['legendFormat'] + '-detector'}
+                    series = []
+                    for suffix, extra in (('_bucket', {'le': '1'}),
+                                          ('_bucket', {'le': '+Inf'}), ('_count', {})):
+                        label_text = ','.join(key + '=' + json.dumps(value)
+                                              for key, value in {**labels, **extra}.items())
+                        series.append({'series': metric + suffix + '{' + label_text + '}',
+                                       'values': '0+0x10'})
+                    percentile_tests.append({'interval': '1m', 'input_series': series,
+                        'promql_expr_test': [{'expr': expression, 'eval_time': '5m',
+                                              'exp_samples': []}]})
+                    for series_item in series:
+                        series_item['values'] = '0+1x10'
+                    # Copy before changing the inputs for the active case.
+                    idle_test = percentile_tests[-1]
+                    active_test = json.loads(json.dumps(idle_test))
+                    for series_item in idle_test['input_series']:
+                        series_item['values'] = '0+0x10'
+                    output_labels = {key: value for key, value in labels.items()
+                                     if (panel['id'] == 4 and key == 'type')
+                                     or (panel['id'] == 5 and key == 'job')}
+                    output = '{' + ','.join(key + '=' + json.dumps(value)
+                                           for key, value in output_labels.items()) + '}'
+                    active_test['promql_expr_test'][0]['exp_samples'] = [
+                        {'labels': output, 'value': 0.95}]
+                    percentile_tests.append(active_test)
+            scenarios = Path(directory) / 'percentiles.json'
+            scenarios.write_text(json.dumps({'tests': percentile_tests}))
+            command('docker', 'run', '--rm', '--network', 'none',
+                    '--volume', str(scenarios) + ':/tests/percentiles.json:ro',
+                    '--entrypoint', '/bin/promtool', service['image'],
+                    'test', 'rules', '/tests/percentiles.json')
 
 
 if __name__ == '__main__':

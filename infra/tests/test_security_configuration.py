@@ -39,7 +39,6 @@ class SecurityConfigurationTest(unittest.TestCase):
 
     def test_cli_client_is_accepted_by_the_api(self):
         defaults = {
-            '.env.example': r'(?m)^JWT_ALLOWED_CLIENTS=(.+)$',
             'docker-compose.yml': r'JWT_ALLOWED_CLIENTS: \$\{JWT_ALLOWED_CLIENTS:-([^}]+)\}',
             'orchestrator/src/main/resources/application.yaml': r'allowed-clients: \$\{JWT_ALLOWED_CLIENTS:([^}]+)\}',
             'file-service/src/main/resources/application.yaml': r'allowed-clients: \$\{JWT_ALLOWED_CLIENTS:([^}]+)\}',
@@ -52,6 +51,11 @@ class SecurityConfigurationTest(unittest.TestCase):
             with self.subTest(path=path):
                 [clients] = re.findall(pattern, (ROOT / path).read_text())
                 self.assertEqual({'deepfake-web', 'deepfake-cli', 'deepfake-loadtest'}, set(clients.split(',')))
+
+    def test_example_environment_uses_compose_jwt_defaults(self):
+        example = (ROOT / '.env.example').read_text()
+        self.assertNotRegex(example, r'(?m)^JWT_ALLOWED_CLIENTS=')
+        self.assertNotRegex(example, r'(?m)^JWT_ISSUER_URI=')
 
     def test_default_import_selects_only_the_production_realm(self):
         service = resolved_compose()['services']['keycloak-config-cli']

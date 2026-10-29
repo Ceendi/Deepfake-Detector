@@ -32,6 +32,10 @@ and the cache hit ratio have no value without observations; those panels say so 
 | `files_purged_total`            | counter | —      | Soft-deleted files purged from S3 + DB by the cleanup sweep after the retention window (`storage.cleanup.retention-hours`). Counts only the replica that won the row hard-delete CAS, so D4 replication doesn't double-count. |
 | `files_orphans_reclaimed_total` | counter | —      | Orphaned `deepfake-uploads` objects (no metadata row — the upload's S3 put succeeded but the row commit didn't) reclaimed once older than `storage.cleanup.orphan-min-age-hours`. |
 
+The business dashboard's **File lifecycle** panel sums `increase(...[1h])` across replicas
+for both counters. Zero means no objects were reclaimed in the last hour; the panel shows
+successful reclamations, not cleanup failures.
+
 ## Gateway (`/actuator/prometheus`)
 
 | Prometheus name | Type | Labels | Meaning |

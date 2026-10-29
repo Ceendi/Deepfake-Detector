@@ -43,7 +43,7 @@ eureka:
     prefer-ip-address: true
   client:
     service-url:
-      defaultZone: http://eureka-server:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE:http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/}
 storage:
   quota-bytes: ${STORAGE_QUOTA_BYTES:5368709120}
   endpoint: http://seaweedfs:8333

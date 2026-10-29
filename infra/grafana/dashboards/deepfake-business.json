@@ -4,7 +4,7 @@
   "tags": ["deepfake", "d3"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 5,
+  "version": 6,
   "refresh": "10s",
   "time": { "from": "now-1h", "to": "now" },
   "panels": [
@@ -65,7 +65,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le, type) (rate(analysis_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, type) (rate(analysis_duration_seconds_bucket[5m]))) and on(type) (sum by (type) (rate(analysis_duration_seconds_count[5m])) > 0)",
           "legendFormat": "{{type}}"
         }
       ]
@@ -81,7 +81,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le, job) (rate(http_server_requests_seconds_bucket{job=~\"orchestrator|file-service|gateway\",uri!~\"/actuator.*|.*/stream\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, job) (rate(http_server_requests_seconds_bucket{job=~\"orchestrator|file-service|gateway\",uri!~\"/actuator.*|.*/stream\"}[5m]))) and on(job) (sum by (job) (rate(http_server_requests_seconds_count{job=~\"orchestrator|file-service|gateway\",uri!~\"/actuator.*|.*/stream\"}[5m])) > 0)",
           "legendFormat": "{{job}}"
         }
       ]
@@ -197,7 +197,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_latency_seconds_bucket{job=\"video-detector\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(inference_latency_seconds_bucket{job=\"video-detector\"}[5m]))) and on() (sum(rate(inference_latency_seconds_count{job=\"video-detector\"}[5m])) > 0)",
           "legendFormat": "video"
         },
         {
@@ -206,7 +206,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(audio_inference_duration_seconds_bucket{job=\"audio-detector\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(audio_inference_duration_seconds_bucket{job=\"audio-detector\"}[5m]))) and on() (sum(rate(audio_inference_duration_seconds_count{job=\"audio-detector\"}[5m])) > 0)",
           "legendFormat": "audio"
         }
       ]
@@ -255,6 +255,52 @@
           },
           "expr": "sum by (status) (rate(audio_processed_total{job=\"audio-detector\"}[5m]))",
           "legendFormat": "audio {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "File lifecycle \u2014 purged and orphan objects (last hour)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(files_purged_total[1h]))",
+          "legendFormat": "purged uploads"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(files_orphans_reclaimed_total[1h]))",
+          "legendFormat": "reclaimed orphan objects"
         }
       ]
     }
