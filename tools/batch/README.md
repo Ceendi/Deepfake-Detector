@@ -9,7 +9,7 @@ na plik. Przerwany przebieg wznawia się, uruchamiając tę samą komendę ponow
 ```bash
 python tools/batch/batch_analyze.py recordings/ --out results.csv
 python tools/batch/batch_analyze.py celeb-df-test/ --labels-from-folders --out celebdf.csv
-python tools/batch/batch_analyze.py --metrics-only --out celebdf.csv --metrics-out metrics.json
+python tools/batch/batch_analyze.py celeb-df-test/ --metrics-only --out celebdf.csv --metrics-out metrics.json
 ```
 
 Na Windows ustaw `PYTHONUTF8=1`.
@@ -20,8 +20,8 @@ Domyślnie logujesz się jako zwykły użytkownik (klient `deepfake-cli`, device
 narzędzie wypisuje link i kod, otwierasz link w przeglądarce, logujesz się tym samym kontem co w
 UI i potwierdzasz dostęp („Tak”), a analizy trafiają do Twojej historii. Token odświeża się sam przed wygaśnięciem; gdy sesja
 Keycloak się skończy (30 min bezczynności, maks. 10 h), narzędzie poprosi o ponowne logowanie.
-Tokenów nigdy nie wypisuje. Nieudane logowanie (np. wygasły kod) kończy przebieg przed pierwszym
-uploadem (kod 3).
+Wszystkie wątki współdzielą jedną próbę logowania: jej odrzucenie lub wygaśnięcie kończy przebieg
+kodem 3, bez kolejnych kodów wyświetlanych przez pozostałe wątki. Tokenów nigdy nie wypisuje.
 
 Do przebiegów bez człowieka (CI, noc) podaj `--client-secret` / `BATCH_CLIENT_SECRET`: wtedy
 token jest pobierany przez `client_credentials` dla konta serwisowego `deepfake-loadtest` z realmu
@@ -64,22 +64,48 @@ Nagłówek: `plik,typ,status,werdykt,prob_wideo,prob_audio,blad,czas_s` (UTF-8, 
 | `czas_s` | czas od uploadu do wyniku, łącznie z czekaniem na limity |
 
 Każdy wiersz jest zapisywany i zrzucany na dysk zaraz po zakończeniu pliku, w kolejności kończenia.
+Plik `results.csv.meta.json` obok CSV (odpowiednio dla własnego `--out`) zapisuje pełną ścieżkę
+katalogu źródłowego i identyfikatory uploadów/analiz potrzebne do sprzątania oraz odzyskiwania
+prób. Przechowuj go razem z CSV; nie zawiera tokenów ani sekretów. Przepisywanie CSV i metadanych
+używa pliku tymczasowego, `flush` i `fsync` przed atomowym `os.replace`.
 
 ## Limity i ponawianie
 
 Limity backendu zostają bez zmian (10 uploadów/min, 2 równoległe uploady, 3 aktywne analizy,
-5 GB na użytkownika); narzędzie czeka:
+5 GiB na użytkownika); narzędzie czeka:
 
 - `--concurrency 3` analiz w toku naraz, najwyżej 2 uploady równocześnie, uploady co
   `--upload-interval 6` s (przy podniesionym `UPLOAD_RL_*` można dać `0`);
-- `429` i `503` czekają `Retry-After`; odpowiedzi bez nagłówka (np. `503` gatewaya przy awarii
+- `429` i `503` czekają `Retry-After` (co najmniej 1 s, najwyżej 300 s);
+  odpowiedzi bez nagłówka (np. `503` gatewaya przy awarii
   Redis) i błędy sieci czekają 5 s, potem 10, 20, 40 i 60 s. `429` jest ponawiane bez limitu,
-  `5xx` i błędy sieci 8 razy, potem wiersz `ERROR`;
+  przejściowe błędy 8 razy, potem wiersz `ERROR`, z wyjątkiem startu analizy opisanego poniżej;
 - odpowiedź `4xx` (np. `422 INVALID_FILE`) to wiersz `REJECTED`, a `FAILED` z detektora to wiersz
   `FAILED`; przebieg idzie dalej;
-- na wynik jednej analizy czeka się `--timeout 1800` s, potem `ERROR [CLIENT_TIMEOUT]`;
+- na wynik jednej analizy czeka się `--timeout 1800` s, potem narzędzie próbuje anulować ją przez
+  `DELETE /api/analysis/{id}` i zapisuje `ERROR [CLIENT_TIMEOUT]` z wynikiem anulowania;
 - przekroczenie limitu miejsca (`409 STORAGE_QUOTA_EXCEEDED`) albo odrzucony token kończy
   przebieg (kod 3) po dokończeniu plików w toku; bieżący plik nie dostaje wiersza.
+
+`POST /api/analysis` nie jest idempotentny. Automatycznie ponawiane są tylko odmowy `429`, `503`
+i odmowa połączenia. Po `502`, `504`, innym `5xx`, resecie lub timeout narzędzie przegląda strony
+historii (`GET /api/analysis?size=100&page=…`) i szuka analizy o tym samym `fileId`. Znalezioną
+analizę dalej odpytuje. Brak potwierdzenia daje `ERROR [START_UNCERTAIN]`, bez kolejnego POST;
+przy wznowieniu najpierw ponawia odszukanie tej samej analizy, bez nowego uploadu. Gdy analiza
+nadal nie jest widoczna, sprawdź historię i stan serwera przed rozpoczęciem nowego przebiegu
+z osobnym `--out`. Lista analiz może chwilowo nie pokazać jeszcze niezakończonego commitu.
+
+Po utrwaleniu wiersza `ERROR`, `REJECTED` lub `CANCELLED` CLI próbuje usunąć znany upload
+przez `DELETE /api/files/{id}` (z wyjątkiem nierozstrzygniętego startu i nieudanej próby sprzątania).
+Przed zastąpieniem poprzedniej próby, także przy `--retry-failed`, anuluje starą analizę,
+jeśli jeszcze trwa, i usuwa jej upload. Nieudane sprzątanie zostaje w metadanych; wznowienie
+ponawia je przed nowym uploadem, a błąd daje `ERROR [CLEANUP_PENDING]`. Bieżące wyniki
+`COMPLETED` i `FAILED` zachowują plik dla podglądu do czasu zastąpienia próby lub usunięcia w UI.
+
+Usunięcie uploadu jest soft-delete: plik znika z API od razu, ale nadal liczy się do limitu
+5 GiB do fizycznego purge po 72 h (plus do godziny na skan). Ponowienia mogą więc czasowo
+wyczerpać quota nawet przy automatycznym sprzątaniu; CLI nie obiecuje natychmiastowego
+zwolnienia miejsca. Podgląd starszej, zastąpionej analizy nie będzie już dostępny.
 
 Przepustowość wyznacza czas detektorów, nie narzędzie: przy 3 analizach w toku to mniej więcej
 `3 / czas jednej analizy`, najwyżej 10 plików na minutę.
@@ -87,13 +113,19 @@ Przepustowość wyznacza czas detektorów, nie narzędzie: przy 3 analizach w to
 ## Wznawianie
 
 `Ctrl+C` przerywa przebieg (kod 130); zapisane wiersze zostają. Analizy w toku są anulowane na
-serwerze (`DELETE /api/analysis/{id}`, do ok. 5 s, bez gwarancji), chyba że podasz `--no-cancel`
+serwerze (`DELETE /api/analysis/{id}`), a uploady potwierdzonych anulowań oraz prób,
+które jeszcze nie wystartowały, są usuwane
+(`DELETE /api/files/{id}`; dwa żądania po maks. 5 s, równolegle dla prób, bez gwarancji),
+chyba że podasz `--no-cancel`
 — wtedy kończą się na serwerze. Przerwane pliki nie dostają wiersza, więc wznowienie analizuje je
 od nowa. Ponowne uruchomienie z tym samym folderem i `--out` pomija pliki, które mają już wiersz,
 z wyjątkiem wierszy `ERROR` i uciętych wierszy, które są analizowane ponownie. `--retry-failed`
 analizuje ponownie także `FAILED`, `CANCELLED` i `REJECTED`; pomijane są wtedy tylko `COMPLETED`.
 Przed wznowieniem CSV jest przepisywany tak, by każdy plik miał co najwyżej jeden wiersz.
-Plik CSV z innym nagłówkiem nie jest nadpisywany (kod 2).
+Plik CSV z innym nagłówkiem, metadanymi innego katalogu lub bez metadanych nie jest
+nadpisywany (kod 2). Dla starszego CSV bez `.meta.json` użyj nowego `--out`; stare wyniki można
+nadal odczytać przez `--metrics-only`. Przeniesienie katalogu wymaga osobnego `--out`, ponieważ
+CLI nie potwierdzi tożsamości plików tylko po ścieżkach względnych.
 
 ## Metryki (`--labels-from-folders`)
 
@@ -107,8 +139,13 @@ są dla klasy pozytywnej FAKE, tylko z plików z etykietą i werdyktem (`COMPLET
   osobno według kodu z `blad` (np. `NO_FACE_DETECTED`), łącznie i per etykieta;
 - pliki bez etykiety są wypisywane i pomijane.
 
-Metryki są drukowane po przebiegu i zapisywane do `--metrics-out` (JSON). `--metrics-only`
-przelicza je z istniejącego CSV bez serwera.
+Metryki po przebiegu obejmują tylko pliki odkryte w katalogu źródłowym. Stare wiersze dla
+usuniętych plików pozostają w CSV, ale są pomijane w metrykach; liczba pominiętych jest
+drukowana i zapisywana w JSON jako `stale_rows_ignored`. `--metrics-only` przelicza wyniki bez
+serwera, odkrywając pliki w katalogu jawnie podanym jako `folder`; metadane jedynie potwierdzają
+zgodność katalogu. Przy CSV z metadanymi brak `folder` daje kod 2. Katalog musi być dostępny.
+Tylko dla starszego CSV bez metadanych i bez podanego katalogu
+metryki obejmują cały CSV.
 
 ## Testy
 

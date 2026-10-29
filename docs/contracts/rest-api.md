@@ -408,7 +408,7 @@ touch and may be shared by other analyses — its lifecycle is the file service'
       "verdict": "FAKE",
       "gradcamKeys": ["550e8400-e29b-41d4-a716-446655440000/video/frame1.png"],
       "gradcamUrls": ["/api/analysis/550e8400-e29b-41d4-a716-446655440000/artifacts/video/frame1.png"],
-      "metadata": { "frames_analyzed": 16 }
+      "metadata": { "frames_sampled": 16 }
     }
   },
   "errorMessage": null,
@@ -475,7 +475,7 @@ Authorization: Bearer <token>
 analysis does not exist OR `userId != jwt.sub` (IDOR guard — never `403`). This open
 check is repeated after registration; both reads are scoped to the owner, and events are then
 pushed by `analysisId`. Exhausted SSE connection admission returns `429` with
-`Retry-After: 5`. Defaults are128 global,4 per owner and4 per analysis; retained
+`Retry-After: 5`. Defaults are 128 global, 4 per owner and 4 per analysis; retained
 physical connections count until their writer and HTTP request both finish.
 Both open-time `404` and `429` have empty bodies even with `Accept: text/event-stream`;
 normal missing/foreign subscriptions do not log WARN. Async disconnect/timeout does

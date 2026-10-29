@@ -308,8 +308,9 @@ connection loop and a single inference thread per process.
   cancelled task without a result. Redis errors remain fail-open; the hard limit is the
   fallback when cancellation cannot be read.
 - **Credentials:** `RABBITMQ_PASSWORD`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` have no defaults.
-  Missing storage keys stop the import; a missing broker password keeps the API up with
-  `/health` DOWN and logs the reason on every reconnect attempt.
+  Missing or empty storage keys or broker password stop the process during startup
+  validation (exit code 1), before the API starts. Reconnect handles failures of a
+  running connection; it does not compensate for missing credentials.
 - **Isolation of duplicates:** each attempt works in a private temp directory, and Grad-CAM keys
   carry an attempt UUID (`{analysisId}/{source}/gradcam_..._{attempt}.png`), so a duplicate never
   overwrites artifacts referenced by the accepted result.
