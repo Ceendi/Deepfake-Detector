@@ -73,6 +73,10 @@ class CiGatesTest(unittest.TestCase):
 
 
 class PublishingTest(unittest.TestCase):
+    def test_scanned_archive_can_be_uploaded_again_in_a_rerun(self):
+        block = jobs('build-push')['image'].split('name: scanned-', 1)[1]
+        self.assertIn('overwrite: true', block)
+
     def test_publication_reuses_the_scanned_image_and_defers_privileges(self):
         blocks = jobs('build-push')
         self.assertNotIn('packages: write', blocks['image'])

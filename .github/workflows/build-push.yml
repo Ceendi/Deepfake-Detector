@@ -180,6 +180,7 @@ jobs:
         if: github.event_name != 'pull_request'
         with:
           name: scanned-${{ matrix.service }}
+          overwrite: true
           path: image.tar
           compression-level: 0
           retention-days: 1
