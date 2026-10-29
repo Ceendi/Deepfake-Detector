@@ -37,7 +37,8 @@ def compose_services(*profiles):
 def published_builds():
     """Build inputs of every image build-push.yml publishes, keyed by image name."""
     workflow = (ROOT / '.github/workflows/build-push.yml').read_text()
-    matrix = workflow[workflow.index('      matrix:'):workflow.index('    steps:')]
+    image = workflow.split('\n  image:\n', 1)[1].split('\n  publish:', 1)[0]
+    matrix = image[image.index('      matrix:'):image.index('    steps:')]
     names = re.search(r'service: \[([^\]]+)\]', matrix).group(1).split(',')
     entries = {name.strip(): {} for name in names}
     for block in re.split(r'\n          - ', matrix)[1:]:

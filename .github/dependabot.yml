@@ -33,7 +33,7 @@ updates:
       - dependency-name: "python"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       # Locally built images (bases are tracked in their Dockerfiles) do not exist on Docker Hub.
-      - dependency-name: "deepfake-*"
+      - dependency-name: "ghcr.io/ceendi/deepfake-detector/*"
 
   - package-ecosystem: docker
     directory: /gateway
@@ -55,7 +55,19 @@ updates:
     patterns: ["*"]
     multi-ecosystem-group: weekly
 
-  # Bases of the locally built infra images (deepfake-* tags in compose, ignored above).
+  - package-ecosystem: docker
+    directory: /frontend
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
+
+  - package-ecosystem: pip
+    directories:
+      - /infra/ci
+      - /infra/ci/test-requirements
+    patterns: ["*"]
+    multi-ecosystem-group: weekly
+
+  # Bases of the locally built infrastructure images (GHCR tags in Compose, ignored above).
   - package-ecosystem: docker
     directories:
       - /infra/postgres
@@ -93,11 +105,7 @@ updates:
       - /detector-runtime
     patterns: ["*"]
     multi-ecosystem-group: weekly
-    # CI-only pip file; its `-e ./detector-runtime` is relative to the repo root, not the file.
-    exclude-paths:
-      - "**/requirements-light.txt"
-    # Images install [project.dependencies] from pyproject, not the lock, so runtime pins are exact
-    # (==X.Y.Z); `increase` moves them. Wildcard pins (==X.*) would be widened into ranges instead.
+    # Images install the frozen uv.lock; increase updates exact project pins together with the lock.
     versioning-strategy: increase
     # Inference runtimes change scores and latency; bump them deliberately with accuracy and
     # latency measurements (AGENTS.md quality targets).

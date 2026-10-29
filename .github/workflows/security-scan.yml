@@ -6,13 +6,6 @@ name: Security scan (Trivy)
 
 on:
   pull_request:
-    paths:
-      - "docker-compose.yml"
-      - "**/Dockerfile"
-      - "detector-runtime/**"
-      - "infra/keycloak-config-cli/**"
-      - "infra/security/**"
-      - ".github/workflows/security-scan.yml"
   push:
     branches: [main]
   schedule:
@@ -28,7 +21,29 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=""
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') || files=""
+          fi
+          printf '%s\n' "$files" | python3 infra/ci/workflow_scope.py security-scan >> "$GITHUB_OUTPUT"
+
   list-images:
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
+    needs: changes
     # Services are stable scan identities even when image versions change.
     name: Enumerate compose images
     runs-on: ubuntu-latest
@@ -65,8 +80,9 @@ jobs:
           echo "$IMAGES" | jq -r '.[].image'
 
   scan-images:
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' && needs.list-images.result == 'success' }}
     name: Scan compose images
-    needs: list-images
+    needs: [changes, list-images]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -137,6 +153,8 @@ jobs:
           category: trivy-compose-${{ matrix.service }}
 
   scan-config:
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
+    needs: changes
     name: Scan compose / Dockerfile config
     runs-on: ubuntu-latest
     permissions:
@@ -183,8 +201,8 @@ jobs:
     # upload ever closes that category. Runs only after every scan of main succeeded, so a
     # partial run cannot look like a missing category.
     name: Close alerts from categories no longer scanned
-    needs: [list-images, scan-images, scan-config]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [changes, list-images, scan-images, scan-config]
+    if: ${{ success() && needs.changes.outputs.run != 'false' && (github.event_name != 'pull_request' && github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -211,6 +229,8 @@ jobs:
           done
 
   generate-sbom:
+    if: ${{ !cancelled() && needs.changes.outputs.run != 'false' }}
+    needs: changes
     name: Generate SBOM
     runs-on: ubuntu-latest
     permissions:
@@ -235,3 +255,16 @@ jobs:
           name: sbom
           path: sbom.cdx.json
           retention-days: 90
+
+  security-ok:
+    name: security-ok
+    if: always()
+    needs: [changes, list-images, scan-images, scan-config, dismiss-orphaned-alerts, generate-sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 infra/ci/check_jobs.py <<< "$NEEDS"

@@ -1,118 +1,124 @@
 # CI/CD pipeline
 
-GitHub Actions builds, tests, analyses, scans and publishes the system. This page explains the
-flow and where each result can be found. Workflow files are in `.github/workflows/`.
+GitHub Actions builds, tests, analyses, scans and publishes the system. Workflow sources are
+in `.github/workflows/`; security policies are described in [security](security.md).
 
-## Flow
+## Flow and scope
 
-```text
-pull request ─► CI ──────────────► tests, coverage, SonarCloud Quality Gate, dependency scans
-             ├► E2E ─────────────► full core + auth stack in Compose, Playwright in Chromium
-             ├► Infrastructure smoke ► restarts, discovery, Keycloak, S3/RabbitMQ least privilege
-             ├► Security scan ───► Trivy on every Compose image and on Dockerfile/Compose config
-             └► build-push ──────► images are built and scanned, not pushed (only when an image definition changes)
+CI, E2E, Infrastructure smoke, Security scan and build-push always emit a result for every PR.
+Path selection happens inside jobs, using both names of renamed files. Empty or unreadable
+selections run checks. Pushes to main run all CI, E2E, infrastructure and security checks.
+build-push publishes after successful main CI, on schedule and on demand. E2E real models runs
+only on schedule and on demand. Superseded PR runs are cancelled. Active publications finish,
+but GitHub may replace an older pending publication; concurrency is not a FIFO queue.
 
-push to main ─► the same workflows
-              └► CI passes ─► build-push ─► Trivy ─► GHCR: sha-<commit> + latest + provenance
-
-1st and 15th of the month, or manual ─► E2E real models: published images + real models
-```
-
-Every workflow runs on pull requests and on pushes to `main`. Pull request runs that are
-superseded by a new push are cancelled; runs on `main` always finish. Path filters skip
-workflows that a change cannot affect (for example E2E for a documentation-only change).
-
-Inside CI, a pull request runs only the test jobs its changed files can affect
-(`infra/ci/ci_scope.py`, guarded by `infra/tests/test_ci_scope.py`):
-
-| Pull request changes | Runs |
+| PR changes | CI test selection |
 |---|---|
-| only `frontend/` | `frontend`; Java services only compile (classes for Sonar) |
-| one Java service | that service's `mvn verify`; the other three only compile |
-| a detector, `detector-runtime/` or `tests/worker_redelivery/` | detector jobs and the orchestrator tests that start the real detector consumers |
-| shared wire fixtures (`orchestrator/src/test/resources/contracts/`) | orchestrator, detectors and frontend |
-| only `docs/` or root `*.md` | no test job |
-| only `tools/` | no gated job; the always-running `python (tools)` lints and tests it |
-| anything else (`docker-compose.yml`, `infra/`, `.github/`, configuration, a new directory) | everything |
+| `frontend/` | frontend; Java services compile classes for Sonar |
+| one Java service | that service's Maven verify; the others compile |
+| detectors, detector-runtime, worker fixtures | detector jobs and orchestrator worker tests |
+| shared wire fixtures | orchestrator, detectors and frontend |
+| docs, root Markdown, tools | guards, Python lint/tools tests, Java compilation, dependency scan, Sonar |
+| other/shared paths | everything |
 
-Pushes to `main` always run everything, and a failed selection runs everything. Ruff, the
-dependency scan and SonarCloud run on every pull request; SonarCloud also runs when a test job was
-skipped, cancelled or failed, so a skipped required check never stands in for an analysis.
+Selection is defined in `infra/ci/ci_scope.py`, `workflow_scope.py` and `workflow_paths.json`.
+Static guards, Python lint/tools tests and dependency scans run on every PR. The dependency scan
+also runs after Java failures. E2E runs if its selection job fails. Sonar runs for in-repository
+PRs even after test failures. Fork PRs lack SONAR_TOKEN: `ci-ok` explicitly records the omitted
+analysis. Maintainers must copy a fork PR to an in-repository branch and obtain a green Sonar run
+before merging; secrets are never exposed to fork code.
 
-## Workflows
+## Required branch protection checks
 
-| Workflow | Trigger | Jobs | Fails when |
-|---|---|---|---|
-| `ci.yml` (CI) | PR (jobs by changed paths), push | `java (*)` (Maven verify of 4 services), `python (*)` (ruff; unit tests of `tools/`), `Lightweight detector contract (*)`, `ML dependency compatibility (*)`, `Worker process redelivery`, `frontend` (lint, vitest, build, npm audit), `Application dependency vulnerabilities`, `Detector image security and compatibility (*)`, `Test report`, `SonarCloud Quality Gate` | a test or lint fails, the Quality Gate fails, a fixable HIGH/CRITICAL dependency or image vulnerability exists |
-| `e2e.yml` (E2E) | PR (app paths), push | `playwright`: `docker compose up --wait` of the core and auth profiles, then Playwright through Keycloak login, upload and analysis | a service is unhealthy or a browser test fails |
-| `infra-smoke.yml` | PR (infra paths), push | restart and persistence, Prometheus scraping of every replica, Tempo ingest, Keycloak import, discovery isolation, S3 and RabbitMQ permissions | a running stack does not behave as configured |
-| `security-scan.yml` | PR (image paths), push, weekly | Trivy per Compose image (SARIF to Code Scanning), Trivy config scan, SBOM, closing alerts of removed images | an image has a CRITICAL vulnerability without an active owner-approved acceptance |
-| `build-push.yml` | after CI on `main`, PR (image paths), weekly rebuild without cache, manual (`main` only) | `image (*)` for 11 images: build, Trivy, push, provenance attestation | an image does not build or has a CRITICAL vulnerability |
-| `e2e-ml.yml` (E2E real models) | 1st and 15th of the month 03:00 UTC, manual | `Real-model batch analysis`: published images with the real models, batch CLI on generated media | an image or model does not start, or an analysis ends with an unexpected outcome |
+After merging, the owner must replace the old required-check list with these exact GitHub Actions
+contexts and keep "Require branches to be up to date":
+
+- `ci-ok`
+- `e2e-ok`
+- `infra-ok`
+- `security-ok`
+- `images-ok`
+
+Each aggregator uses `if: always()`, waits for **every** job in its workflow and fails on any
+failed or cancelled prerequisite. Intentional path/event skips pass. These replace individual
+required entries `Test report`, `SonarCloud Quality Gate`, `java (...)`, `frontend`, `playwright`.
+Workflow files do not change repository settings: the owner must apply this list for enforcement.
+
+| Context | Covered work |
+|---|---|
+| `ci-ok` | all Java/Python/detector/tools tests and lint, dependencies, detector image security, static guards, commitlint, JUnit report, Sonar |
+| `e2e-ok` | selection and Playwright on the real core + auth stack |
+| `infra-ok` | selection, monitoring, restart/persistence, discovery, Keycloak, S3/RabbitMQ permissions, analysis input ownership, manual fault acceptance when selected |
+| `security-ok` | selection, every Compose image scan, configuration scan, SBOM and main-only orphan alert cleanup |
+| `images-ok` | selection, image builds/scans/model smoke and, outside PRs, publish, attest and promotion |
 
 ## Tests and reports
 
-| Layer | Tool | Report |
-|---|---|---|
-| Java services | JUnit 5, Testcontainers (real PostgreSQL, Redis, RabbitMQ, SeaweedFS) | Surefire XML, JaCoCo HTML/XML |
-| Detectors and shared runtime | pytest | JUnit XML, coverage XML |
-| Detector process redelivery | pytest against real RabbitMQ and Redis | job log |
-| Frontend | vitest + Testing Library | JUnit XML, lcov, HTML coverage |
-| End to end | Playwright | HTML report, JUnit XML |
+Java uses JUnit/Testcontainers and JaCoCo; Python uses pytest/coverage; frontend uses vitest and
+Playwright. Reports are uploaded as `test-results-*` and `e2e-report` artifacts for 14 days.
+`Test report` summarizes JUnit XML with `fail_on_failure: true`; originating test jobs fail
+independently. E2E's JUnit report also fails on failed tests.
 
-All results are uploaded as `test-results-*` and `e2e-report` artifacts (14 days). The `Test report`
-job adds a summary of every JUnit file to the run's **Summary** tab, with failed tests
-annotated in the pull request. A failing test fails its job; branch protection on `main` makes the
-CI, Quality Gate and E2E checks required, so a red pull request cannot be merged.
+Container-free `infra/tests` guards run unconditionally through `python3 infra/tests/run_static.py`.
+Compose guards use only `docker compose config`, without starting containers. Stack tests remain
+path selected in Infrastructure smoke. The PR-title job uses the repository's commitlint config
+in strict mode and reruns when the title is edited.
 
 ## Static analysis and Quality Gate
 
-SonarCloud analyses the whole repository as one project: Java, TypeScript, Python, Dockerfiles and
-these workflows (`sonar-project.properties`). The `SonarCloud Quality Gate` job runs after the test
-jobs, imports their coverage (JaCoCo, lcov, coverage.py) and waits for the Quality Gate result
-(`sonar.qualitygate.wait=true`).
+SonarCloud analyses Java, TypeScript, Python, Dockerfiles and workflows as one project. It imports
+JaCoCo, lcov and coverage.py reports and waits for the Quality Gate (`sonar.qualitygate.wait=true`).
+The configured "Sonar way" gate checks new code: rating A for bugs/vulnerabilities, reviewed
+security hotspots, at least 80% coverage and at most 3% duplication. New code is the diff against
+main for PRs and the last 30 days on main. Reviewed exceptions and their reasons are recorded in
+`sonar-project.properties`. ESLint, ruff and TypeScript checks run in CI as well.
 
-The gate is SonarCloud's "Sonar way" on new code: no new bugs or vulnerabilities (rating A), all
-new security hotspots reviewed, at least 80 % coverage and at most 3 % duplication on new code.
-On a pull request "new code" is the diff against `main`; on `main` it is the last 30 days.
-Reviewed exceptions are listed with their reason in `sonar-project.properties`.
-
-Linters run in the same pipeline: ESLint (frontend), ruff (Python), TypeScript type checking.
+CI-only Python dependencies, including transitive packages, are exact pins under `infra/ci/`
+and `infra/ci/test-requirements/`, managed by pip Dependabot. `requirements-light.txt` delegates
+to those pins and installs the local runtime from source. Regenerate with `uvx uv@0.12.23 pip compile`
+using the command recorded in each file. Detector production dependencies still use uv.lock.
 
 ## Images and versions
 
-After CI succeeds for a push to `main`, `build-push.yml` builds the exact commit that CI verified
-and publishes to the GitHub Container Registry:
+The eleven images are `gateway`, `eureka-server`, `orchestrator`, `file-service`, `video-detector`,
+`audio-detector`, `keycloak`, `frontend`, `postgres`, `keycloak-config-cli`, `alloy`.
+`infra/tests/test_compose_images.py` checks the inventory against Compose.
 
-```text
-ghcr.io/ceendi/deepfake-detector/<image>:sha-<7-character commit>
-ghcr.io/ceendi/deepfake-detector/<image>:latest
-```
+Schedule/manual publication resolves the latest successful **CI push run on main** via the API,
+rather than trusting current HEAD. No green run means publication fails. workflow_run validates
+a successful push from this repository and checks out that run's SHA.
 
-Images: `gateway`, `eureka-server`, `orchestrator`, `file-service`, `video-detector`,
-`audio-detector`, `keycloak` (with the login theme), `frontend` (static build served by
-unprivileged nginx) and the patched infrastructure images `postgres`, `keycloak-config-cli` and
-`alloy`. Together they are every image `docker-compose.yml` builds, so a plain
-`docker compose up` runs the published images without building anything
-(`infra/tests/test_compose_images.py` keeps the two lists in sync). `DEEPFAKE_IMAGE_TAG` in `.env`
-selects the tag: `latest` by default, or `sha-<commit>` for a reproducible deployment. The
-frontend image reads its Keycloak address from the container environment at start (`/config.js`),
-so the same image works with any `KEYCLOAK_PORT`. Each image carries the OCI `revision` label of
-its commit. A failed CI run publishes nothing. Pull requests that change an image definition build
-and scan all images without pushing. Every Monday (and on a manual run with `no-cache`) the
-workflow rebuilds `main` without the layer cache, so the `apk upgrade` / `apt-get` layers take
-the distribution fixes released since the last build; the images go through the same Trivy gate
-and are published as `sha-<commit>` and `latest`.
+Every image is built once, loaded locally, scanned with Trivy and, for detectors, smoke-tested
+with pinned model weights. Every pinned HF file receives a remote metadata request even on a
+verified model-cache hit. The exact scanned image is saved as a Docker archive (one-day artifact).
+Only after **all eleven** build/scan/smoke jobs pass do separate publish jobs load and push the
+archives. There is no second build. Registry writes exist only in non-PR publish/attest/promote
+jobs; OIDC and attestations write permissions are confined to non-PR attestation jobs.
 
-Each image is built and loaded locally first, scanned with Trivy (a CRITICAL vulnerability stops
-it, HIGH findings are listed in the job summary), and only then pushed from the same build cache.
-Every pushed image gets a signed SLSA build provenance attestation (`actions/attest`, Sigstore),
-stored next to the image in GHCR. It links the image digest to the commit and the workflow run that
-built it:
+The first ordinary publication uses `sha-<7-character commit>`. Once any image has that tag,
+subsequent runs use `sha-<commit>-r<run_number>-a<run_attempt>` for the entire set. Scheduled and
+manual no-cache rebuilds always use the suffixed tag. A partial job rerun refuses to replace an
+existing immutable tag with different content. The plain SHA tag is never refreshed by a rebuild.
+`DEEPFAKE_IMAGE_TAG=sha-1234abc-r42-a1` selects one rebuilt set; `latest` remains the default.
+Weekly/no-cache rebuilds refresh the base and every layer to pick up OS fixes.
+
+After **all pushes** succeed, every digest is attested. After **all attestations** succeed, a
+single `promote` job uses `docker buildx imagetools create --prefer-index=false` to move `latest`,
+preserving the scanned manifest. Before each retag it requires source SHA = current main tip.
+An older green CI rerun, or a schedule selecting earlier green CI while HEAD is red, can publish
+immutable tags but cannot roll latest backwards. Matrix failures never promote latest. A failed
+publication can leave a partial immutable tag set: do not deploy it. GHCR has no transaction
+spanning eleven tags, so a registry outage during promotion can still interrupt retagging.
+Deploy a complete immutable set (or digests) for reproducibility.
+
+Images are published under `ghcr.io/ceendi/deepfake-detector/<image>:<tag>` with an OCI revision
+label. Verify signed provenance with:
 
 ```bash
 gh attestation verify oci://ghcr.io/ceendi/deepfake-detector/frontend:latest --owner Ceendi
 ```
+
+The frontend reads Keycloak settings from `/config.js` at container start.
 
 ## Deployment verification
 
@@ -124,8 +130,8 @@ Tempo ([observability](observability.md)).
 
 ## Real models (E2E real models)
 
-Pull request checks never load the detector models: they are not in the repository, and images
-plus models need about 14 GB. `e2e-ml.yml` covers them on a schedule (1st and 15th of each month)
+The full application with real models needs about 14 GB. Image-definition PRs run synthetic model
+smoke tests; the complete real-media flow is covered separately. `e2e-ml.yml` covers them on a schedule (1st and 15th of each month)
 and on demand:
 
 ```bash

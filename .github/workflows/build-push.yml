@@ -1,29 +1,12 @@
 name: build-push
 
-# Publishes the deployable images to GHCR after CI (tests + SonarCloud Quality Gate) passes on
-# main. Every image is scanned with Trivy before it is pushed (a CRITICAL finding blocks it),
-# detector images must load the model weights pinned in their models.toml, and every pushed
-# image gets a signed SLSA build provenance attestation. Tags: sha-<short commit> for every build,
-# latest for main only. PRs that touch an image definition build and scan it without pushing.
-# Once a week main is rebuilt without the layer cache, so the apk/apt upgrade layers take the
-# distribution fixes released since the last build; manual runs can ask for the same.
+# Build once, scan and smoke, publish immutable tags, attest the complete set, then promote latest.
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
     branches: [main]
   pull_request:
-    paths:
-      - "*/Dockerfile"
-      - "frontend/nginx/**"
-      - "infra/keycloak/Dockerfile"
-      - "infra/postgres/**"
-      - "infra/keycloak-config-cli/**"
-      - "infra/alloy/Dockerfile"
-      - "*/models.toml"
-      - "detector-runtime/detector_runtime/model_files.py"
-      - "infra/ci/model_smoke.py"
-      - ".github/workflows/build-push.yml"
   schedule:
     # Monday, before the weekly security-scan run.
     - cron: "23 3 * * 1"
@@ -37,17 +20,37 @@ on:
 permissions:
   contents: read
 
-# Publishing is queued, never cancelled: a half-pushed set of tags is worse than a short wait.
+# Active publications finish; GitHub keeps at most one pending run and may replace it.
+# Promotion also checks the current main tip, so an old re-run cannot roll latest back.
 concurrency:
   group: build-push-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  image:
-    name: image (${{ matrix.service }})
-    # workflow_run fires for every CI conclusion; publish only what passed, and only from a push.
-    # Manual runs publish too, so they are limited to main (schedule always runs on main).
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          files=""
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') || files=""
+          fi
+          printf '%s\n' "$files" | python3 infra/ci/workflow_scope.py build-push >> "$GITHUB_OUTPUT"
+
+  select:
+    needs: changes
     if: >-
+      !cancelled() && needs.changes.outputs.run != 'false' &&
       (github.event_name != 'workflow_run' ||
        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
         github.event.workflow_run.head_repository.full_name == github.repository)) &&
@@ -55,10 +58,31 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
-      # Sigstore signing and the attestation API for build provenance.
-      id-token: write
-      attestations: write
+      actions: read
+      packages: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      tag: ${{ steps.source.outputs.tag }}
+      rebuild: ${{ steps.source.outputs.rebuild }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NO_CACHE: ${{ inputs.no-cache == true }}
+        run: python3 infra/ci/publishing.py select
+
+  image:
+    name: image (${{ matrix.service }})
+    needs: select
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -86,34 +110,14 @@ jobs:
       # workflow_run runs on the default branch head; build the commit CI actually verified.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ needs.select.outputs.sha }}
 
-      # GHCR image names must be lowercase; the repo owner has an uppercase letter.
-      - name: image name and tags
-        id: ns
+      - id: ns
         env:
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-          LATEST: ${{ github.event_name == 'workflow_run' || github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') }}
-          REBUILD: ${{ github.event_name == 'schedule' || inputs.no-cache == true }}
-        run: |
-          {
-            echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/${{ matrix.service }}"
-            echo "short=${SHA::7}"
-            echo "latest=$LATEST"
-            echo "rebuild=$REBUILD"
-          } >> "$GITHUB_OUTPUT"
+          SERVICE: ${{ matrix.service }}
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}/$SERVICE" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        id: meta
-        with:
-          images: ${{ steps.ns.outputs.image }}
-          tags: |
-            type=raw,value=sha-${{ steps.ns.outputs.short }}
-            type=raw,value=latest,enable=${{ steps.ns.outputs.latest }}
-          labels: |
-            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha || github.sha }}
 
       # Backend Dockerfiles are self-contained per service dir; keycloak and frontend build
       # from the frontend sources, the patched infrastructure images from infra/<image>. The image
@@ -124,18 +128,18 @@ jobs:
           file: ${{ matrix.file || '' }}
           build-contexts: ${{ matrix.build-contexts || '' }}
           load: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.ns.outputs.image }}:${{ needs.select.outputs.tag }}
+          labels: org.opencontainers.image.revision=${{ needs.select.outputs.sha }}
           # A rebuild still refreshes the cache, so later builds start from the new layers.
-          no-cache: ${{ steps.ns.outputs.rebuild == 'true' }}
-          pull: ${{ steps.ns.outputs.rebuild == 'true' }}
+          no-cache: ${{ needs.select.outputs.rebuild == 'true' }}
+          pull: ${{ needs.select.outputs.rebuild == 'true' }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.75.0
-          image-ref: ${{ steps.ns.outputs.image }}:sha-${{ steps.ns.outputs.short }}
+          image-ref: ${{ steps.ns.outputs.image }}:${{ needs.select.outputs.tag }}
           format: json
           output: trivy.json
           severity: HIGH,CRITICAL
@@ -158,7 +162,7 @@ jobs:
       - name: load the pinned models
         if: matrix.models
         env:
-          IMAGE: ${{ steps.ns.outputs.image }}:sha-${{ steps.ns.outputs.short }}
+          IMAGE: ${{ steps.ns.outputs.image }}:${{ needs.select.outputs.tag }}
           DETECTOR: ${{ matrix.models }}
         run: |
           # Hand the cache directory to the image's own non-root user rather than opening it to all.
@@ -167,33 +171,114 @@ jobs:
           docker run --rm -e PYTHONPATH=/app -v "$PWD/models:/models" \
             -v "$PWD/infra/ci:/smoke:ro" "$IMAGE" python /smoke/model_smoke.py "$DETECTOR"
 
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - name: Export the scanned image
         if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ steps.ns.outputs.image }}:${{ needs.select.outputs.tag }}
+        run: docker save --output image.tar "$IMAGE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name != 'pull_request'
+        with:
+          name: scanned-${{ matrix.service }}
+          path: image.tar
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: [select, image]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, eureka-server, orchestrator, file-service, video-detector, audio-detector, keycloak, frontend, postgres, keycloak-config-cli, alloy]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scanned-${{ matrix.service }}
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          SERVICE: ${{ matrix.service }}
+          TAG: ${{ needs.select.outputs.tag }}
+        run: |
+          docker load --input image.tar
+          python3 infra/ci/publishing.py push
 
-      # Every layer is in the builder cache from the scanned build, so this only pushes it.
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        id: build
-        if: github.event_name != 'pull_request'
+  attest:
+    needs: [select, image, publish]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, eureka-server, orchestrator, file-service, video-detector, audio-detector, keycloak, frontend, postgres, keycloak-config-cli, alloy]
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          context: ${{ matrix.context || format('./{0}', matrix.service) }}
-          file: ${{ matrix.file || '' }}
-          build-contexts: ${{ matrix.build-contexts || '' }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          # On a rebuild only the local layers of the scanned build may be reused, not older ones.
-          cache-from: ${{ steps.ns.outputs.rebuild != 'true' && format('type=gha,scope={0}', matrix.service) || '' }}
-
-      # Verify with: gh attestation verify oci://<image>:<tag> --owner <repo owner>
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: subject
+        env:
+          SERVICE: ${{ matrix.service }}
+          TAG: ${{ needs.select.outputs.tag }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}/$SERVICE"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          digest=$(docker buildx imagetools inspect "$image:$TAG" --format '{{.Manifest.Digest}}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        if: github.event_name != 'pull_request'
         with:
-          subject-name: ${{ steps.ns.outputs.image }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-name: ${{ steps.subject.outputs.image }}
+          subject-digest: ${{ steps.subject.outputs.digest }}
           push-to-registry: true
-          # Storage records are only available to organization-owned repositories.
           create-storage-record: false
+
+  promote:
+    needs: [select, image, publish, attest]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.select.outputs.sha }}
+          TAG: ${{ needs.select.outputs.tag }}
+        run: python3 infra/ci/publishing.py promote
+
+  images-ok:
+    name: images-ok
+    if: always()
+    needs: [changes, select, image, publish, attest, promote]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 infra/ci/check_jobs.py <<< "$NEEDS"

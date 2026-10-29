@@ -86,7 +86,15 @@ Supporting practices: Dependabot for every ecosystem (grouped, weekly) plus Depe
 updates for vulnerable transitive dependencies; all third-party actions
 pinned to full commit SHAs; `harden-runner` on the security jobs; least-privilege `permissions:`
 per job; npm installs in CI and images run without lifecycle scripts; images are published only
-after CI passes and carry a signed SLSA build provenance attestation (`gh attestation verify`).
+after a successful CI push run on main. Exact scanned archives are pushed with immutable tags;
+all images must pass before publication, all pushes before attestation, and all attestations
+before latest promotion. Rebuilds use a new run-suffixed tag. Older commits cannot move latest.
+PR image jobs have read-only permissions; writes, OIDC and attestation permissions exist only
+in non-PR jobs. See [required checks and publication](ci-cd.md).
+The owner must require `ci-ok`, `e2e-ok`, `infra-ok`, `security-ok` and `images-ok` in branch
+protection. Each fails on failed/cancelled prerequisites; intentional skips pass. Fork PRs lack
+Sonar credentials: the summary records this omission, and maintainers must obtain a green Sonar
+run on an in-repository branch before merging.
 Code Scanning closes alerts of image categories that are no longer scanned, so the
 list reflects the current deployment.
 

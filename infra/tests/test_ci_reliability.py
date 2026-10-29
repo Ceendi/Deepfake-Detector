@@ -1,5 +1,6 @@
 """Guard update coverage, immutable actions and infrastructure validation triggers."""
 
+import json
 import re
 import unittest
 
@@ -19,12 +20,13 @@ class CiReliabilityTest(unittest.TestCase):
 
     def test_live_harness_regressions_run_when_the_harness_changes(self):
         workflow = (ROOT / '.github/workflows/infra-smoke.yml').read_text()
-        self.assertEqual(2, workflow.count('- tests/live/**'))
-        self.assertIn('python3 infra/tests/test_live_acceptance.py', workflow)
+        self.assertIn('tests/live/**', json.loads((ROOT / 'infra/ci/workflow_paths.json').read_text())['infra-smoke'])
+        self.assertIn('test_live_acceptance', (ROOT / 'infra/tests/run_static.py').read_text())
 
     def test_actions_are_pinned_and_main_runs_are_not_cancelled(self):
-        for name in ('ci', 'infra-smoke', 'security-scan', 'e2e'):
-            workflow = (ROOT / f'.github/workflows/{name}.yml').read_text()
+        for path in (ROOT / '.github/workflows').glob('*.yml'):
+            name = path.stem
+            workflow = path.read_text()
             with self.subTest(workflow=name):
                 self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
                 for action in re.findall(r'(?m)^\s+(?:- )?uses: (\S+)', workflow):
@@ -37,9 +39,9 @@ class CiReliabilityTest(unittest.TestCase):
                      'frontend/vite.config.ts', 'frontend/src/styles/**', 'frontend/src/index.tsx',
                      '.github/workflows/ci.yml'):
             with self.subTest(path=path):
-                self.assertEqual(2, workflow.count('- ' + path))
+                self.assertIn(path, json.loads((ROOT / 'infra/ci/workflow_paths.json').read_text())['infra-smoke'])
         self.assertIn('python3 infra/tests/test_monitoring_configuration.py', workflow)
-        self.assertIn('python3 infra/tests/test_ci_reliability.py', workflow)
+        self.assertIn('test_ci_reliability', (ROOT / 'infra/tests/run_static.py').read_text())
 
     def test_dependabot_covers_runtime_and_application_manifests(self):
         config = (ROOT / '.github/dependabot.yml').read_text()
@@ -50,10 +52,11 @@ class CiReliabilityTest(unittest.TestCase):
             directories = re.findall(r'(?m)^    directory: (.+)$|^      - (/\S+)$', block)
             coverage.update((ecosystem, first or second) for first, second in directories)
         for ecosystem, directories in (
-            ('docker', ('video-detector', 'audio-detector')),
+            ('docker', ('video-detector', 'audio-detector', 'frontend')),
             ('uv', ('video-detector', 'audio-detector', 'detector-runtime')),
             ('maven', ('gateway', 'eureka-server', 'orchestrator', 'file-service')),
             ('npm', ('frontend',)),
+            ('pip', ('infra/ci', 'infra/ci/test-requirements')),
         ):
             for directory in directories:
                 self.assertIn((ecosystem, '/' + directory), coverage)

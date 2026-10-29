@@ -16,6 +16,15 @@ def run(*paths):
 
 
 class CiScopeTest(unittest.TestCase):
+    def test_rename_out_of_a_tested_tree_includes_the_old_path(self):
+        files = [{'filename': 'docs/legacy.ts', 'previous_filename': 'frontend/src/legacy.ts'}]
+        paths = [item[key] for item in files for key in ('filename', 'previous_filename')
+                 if key in item]
+        self.assertEqual('true', run(*paths)['frontend'])
+        for name in ('ci', 'e2e'):
+            workflow = (ROOT / f'.github/workflows/{name}.yml').read_text()
+            self.assertIn("--jq '.[] | .filename, (.previous_filename // empty)'", workflow)
+
     def test_frontend_change_skips_java_tests_and_detectors(self):
         self.assertEqual({'java': '[]', 'frontend': 'true', 'detectors': 'false'},
                          run('frontend/src/pages/Playground/Playground.module.css'))

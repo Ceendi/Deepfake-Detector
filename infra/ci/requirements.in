@@ -1,0 +1,11 @@
+boto3==1.43.114
+fastapi==0.143.3
+numpy==2.5.4
+opentelemetry-sdk==1.45.1
+pika==1.4.4
+prometheus-client==0.26.0
+pytest==9.1.1
+redis==8.1.0
+structlog==25.5.0
+pytest-cov==7.0.0
+huggingface-hub==2.1.1
