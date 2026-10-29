@@ -2,7 +2,6 @@ import json
 import os
 import re
 import sys
-import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -13,9 +12,11 @@ from threading import Event, Thread
 import pika
 import redis
 import structlog
+from boto3.s3.transfer import TransferConfig
 from opentelemetry.trace import SpanKind, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
+from .attempts import attempt_directory, cleanup_attempts
 from .config import number
 from .connection import ConnectionChannel
 from .errors import DetectorError, ModelUnavailableError, StorageUnavailableError
@@ -30,6 +31,8 @@ STORAGE_BACKOFF_MAX_SECONDS = 30
 # A failed cancel check costs a full socket timeout; skip Redis briefly instead of on every tick.
 REDIS_BACKOFF_SECONDS = 5
 WATCHDOG_INTERVAL_SECONDS = 1
+WATCHDOG_CANCEL_GRACE_SECONDS = 60
+WATCHDOG_CANCEL_INTERVAL_SECONDS = 10
 _FILE_ID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
@@ -76,6 +79,8 @@ class DetectorRuntime:
         self._redis_retry_at = 0.0
         self._storage_failures = 0
         self._watchdog = None
+        self._watchdog_cancel_at = 0.0
+        self._process_started_at = time.time()
 
     def is_cancelled(self, analysis_id):
         # Redis saves compute; the database terminal guard remains authoritative.
@@ -92,7 +97,7 @@ class DetectorRuntime:
     def process(self, msg, *, model, analyze, artifacts, progress_callback=None,
                 download_fields=None):
         # Attempts may run concurrently in processes sharing /tmp.
-        with tempfile.TemporaryDirectory(prefix=f"{self.source}-attempt-") as workdir:
+        with attempt_directory(self.source) as workdir:
             if model is None:
                 raise ModelUnavailableError()
             input_path = os.path.join(workdir, "input")
@@ -105,7 +110,10 @@ class DetectorRuntime:
                               file_id=file_id.group(0) if file_id else None,
                               **(download_fields or {}))
                 try:
-                    self.s3_client.download_file(msg["file_bucket"], msg["file_key"], input_path)
+                    self.s3_client.download_file(
+                        msg["file_bucket"], msg["file_key"], input_path,
+                        Config=TransferConfig(num_download_attempts=1),
+                    )
                 except Exception as e:
                     if is_transient_storage_error(e):
                         raise StorageUnavailableError("Input download failed") from e
@@ -235,6 +243,12 @@ class DetectorRuntime:
                                      error_type=type(e.__cause__).__name__)
                     raise
                 except Exception as e:  # noqa: BLE001
+                    if self.is_cancelled(analysis_id):
+                        self.record_outcome("cancelled", None)
+                        self.log.info("processing_cancelled")
+                        span.set_attribute("analysis.cancelled", True)
+                        ch.basic_ack(delivery_tag=method.delivery_tag)
+                        return
                     # SDK exception text and tracebacks can contain legacy S3 object names.
                     self.log.error("processing_failed", error_type=type(e).__name__)
                     span.set_attribute("error.type", type(e).__name__)
@@ -291,6 +305,7 @@ class DetectorRuntime:
         except (ValueError, TypeError, AttributeError, RecursionError):
             self._task_context = {}
         self._task_started = time.monotonic()
+        self._watchdog_cancel_at = self._task_started + WATCHDOG_CANCEL_GRACE_SECONDS
         try:
             return self.handle_message(ch, method, properties, body)
         finally:
@@ -299,15 +314,26 @@ class DetectorRuntime:
 
     def check_task_deadline(self, health_state=None):
         started = self._task_started
-        if started is None or time.monotonic() - started <= self.task_hard_limit_seconds:
+        context = self._task_context.copy()
+        now = time.monotonic()
+        if started is None:
+            return
+        hard_limit = now - started > self.task_hard_limit_seconds
+        cancelled = False
+        if (not hard_limit and now - started >= WATCHDOG_CANCEL_GRACE_SECONDS
+                and now >= self._watchdog_cancel_at and context.get("analysis_id")):
+            self._watchdog_cancel_at = now + WATCHDOG_CANCEL_INTERVAL_SECONDS
+            cancelled = self.is_cancelled(context["analysis_id"])
+        # A Redis lookup can overlap completion and pickup of the next task.
+        if self._task_started != started or not (hard_limit or cancelled):
             return
         # A hung native call (ffmpeg, ONNX) cannot be interrupted; restart the process so
         # RabbitMQ redelivers the task within its delivery limit.
         (health_state if health_state is not None else self.health_state)["ok"] = False
-        self.log.critical("task_hard_limit_exceeded",
+        self.log.critical("task_cancelled_watchdog" if cancelled else "task_hard_limit_exceeded",
                           limit_seconds=self.task_hard_limit_seconds,
                           elapsed_seconds=round(time.monotonic() - started),
-                          source=self.source, **self._task_context)
+                          source=self.source, **context)
         sys.stdout.flush()
         sys.stderr.flush()
         self.exit_process(1)
@@ -334,6 +360,7 @@ class DetectorRuntime:
     def run_consumer(self, health_state=None):
         if health_state is None:
             health_state = self.health_state
+        cleanup_attempts(self.source, self._process_started_at)
         self._start_watchdog(health_state)
         while True:
             conn = None

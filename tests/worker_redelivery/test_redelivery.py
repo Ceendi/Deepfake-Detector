@@ -4,6 +4,7 @@ import os
 import subprocess
 import time
 import uuid
+from pathlib import Path
 
 import pika
 import pytest
@@ -331,3 +332,22 @@ def test_hung_task_exits_the_worker_and_is_redelivered(source, broker, rds, work
     assert claimed["redelivered"] is True and claimed["delivery_count"] == 1
     replacement.wait("acked")
     assert result(broker)["status"] == "COMPLETED"
+
+
+def test_cancelled_hung_task_exits_and_releases_worker_for_next_user(source, broker, rds, workers):
+    analysis_id = str(uuid.uuid4())
+    hung = workers(source, BLOCK_AT="inference", TEST_CANCEL_GRACE_SECONDS="1")
+    publish(broker, source, analysis_id)
+    input_path = hung.wait("inference")["input_path"]
+    rds.set(f"cancel:{analysis_id}", "1", ex=120)
+    assert hung.process.wait(timeout=15) == 1
+    assert "task_cancelled_watchdog" in (hung.directory / "worker.log").read_text()
+    assert not (hung.directory / "confirmed").exists()
+    replacement = workers(source)
+    assert replacement.wait("claimed")["redelivered"] is True
+    replacement.wait("acked")
+    assert not Path(input_path).parent.exists()
+    assert broker.basic_get("analysis.results", auto_ack=True)[0] is None
+    healthy_id = str(uuid.uuid4())
+    publish(broker, source, healthy_id)
+    assert result(broker)["analysis_id"] == healthy_id

@@ -1,5 +1,6 @@
 """Invalid settings must stop startup before importing any model dependencies."""
 
+import json
 import os
 import subprocess
 import sys
@@ -52,5 +53,30 @@ print('STARTUP_COMPLETED')
     assert name in output
     assert "MODEL_WAS_LOADED" not in output
     assert "STARTUP_COMPLETED" not in output
+    assert all(isinstance(json.loads(line), dict) for line in result.stdout.splitlines())
     if value == "private-setting-value":
         assert value not in output
+
+
+
+def test_failed_model_startup_emits_only_json():
+    script = """import sys, types
+from unittest.mock import MagicMock
+module = types.ModuleType('src.inference')
+def fail():
+    import structlog
+    print('third party model output')
+    print('third party model warning', file=sys.stderr)
+    structlog.get_logger().error('model_file_download_failed')
+    raise RuntimeError('controlled failure')
+module.AudioInference = fail
+sys.modules['src.inference'] = module
+from src import consumer
+"""
+    result = subprocess.run([sys.executable, "-c", script], cwd=Path(__file__).parents[1],
+                            capture_output=True, text=True, timeout=20, check=False)
+    assert result.returncode == 0, result.stderr
+    lines = (result.stdout + result.stderr).splitlines()
+    assert lines
+    events = [json.loads(line) for line in lines]
+    assert any(event["event"] == "failed_to_load_audio_inference" for event in events)

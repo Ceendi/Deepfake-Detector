@@ -39,6 +39,27 @@ def analyzer(module):
     return module.VideoInference.__new__(module.VideoInference)
 
 
+def test_metadata_excludes_padding_and_counts_sampled_frames(module, monkeypatch):
+    model = analyzer(module)
+    frames = [np.zeros((4, 4, 3), dtype=np.uint8) for _ in range(7)]
+    model._read_frames = MagicMock(return_value=(frames, 1.0, 7.0))
+    model._crop_faces = MagicMock(return_value=(frames[:5], list(range(5))))
+    model.backbone_session = MagicMock()
+    model.temporal_session = MagicMock()
+    model.temporal_session.run.return_value = [np.array([0.0])]
+    model.net = MagicMock()
+    model.net.temporal.lstm.return_value = (MagicMock(), None)
+    attention = MagicMock()
+    attention.detach.return_value.__getitem__.return_value.numpy.return_value = np.arange(16) / 120
+    model.net.temporal.pool.return_value = (MagicMock(), attention)
+    model._gradcam_frames = MagicMock(return_value=[])
+    monkeypatch.setattr(module, "normalize_clip", MagicMock())
+    result = model.analyze("input")
+    assert result["metadata"]["frames_sampled"] == 7
+    assert result["metadata"]["faces_detected"] == 5
+    assert [frame["timestamp"] for frame in result["metadata"]["frame_predictions"]] == list(range(5))
+
+
 def test_long_metadata_rejected_before_grab_or_inference(module, monkeypatch):
     cap = capture(module, monkeypatch, total=1800 * 25 + 1, fps=25)
     model = analyzer(module)

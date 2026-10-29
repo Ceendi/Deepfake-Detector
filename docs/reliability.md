@@ -289,8 +289,12 @@ connection loop and a single inference thread per process.
   and botocore's retryable throttling/timeout codes (`SlowDown`, `RequestTimeout`, …) while downloading the input or uploading artifacts are treated as transport
   failures: no result is published, the connection is closed, and RabbitMQ redelivers the task
   within `x-delivery-limit=5`. Consecutive outages back off the reconnect 5 s → 10 s → 20 s →
-  30 s (reset after the next ACKed task), so roughly two minutes of S3 outage are absorbed before
-  the task dead-letters to FAILED. These warnings carry only the error type: botocore messages
+  30 s (reset after the next ACKed task). Immediate failures consume about 95 s of reconnect
+  backoff before the delivery limit. Each S3 request has a 5 s connect timeout and a 10 s read
+  timeout; SDK retries and streaming-download retries are disabled so they do not multiply
+  that budget. Stalled requests add their timeout to each delivery; these are socket timeouts,
+  not a total deadline for a multipart transfer. The task then dead-letters to FAILED.
+  These warnings carry only the error type: botocore messages
   include the object URL with the user's file name. Missing or forbidden input (`404`/`NoSuchKey`/`403`) stays
   `FAILED/PROCESSING_ERROR`; a forbidden artifact upload still only drops that heatmap.
 - **Task watchdog:** a separate thread checks the running attempt once a second. An attempt
@@ -299,9 +303,10 @@ connection loop and a single inference thread per process.
   (`unless-stopped`) and RabbitMQ redelivers the task, counted toward the delivery limit. Audio
   ffmpeg extraction additionally runs with `-nostdin` and a timeout of
   `60 + MEDIA_MAX_DURATION_SECONDS / 10` seconds, which fails the task with `PROCESSING_ERROR`.
-  The default limit is deliberately above the 600 s stuck-job idle threshold, so a legitimate
-  long analysis is never killed; a hung attempt may block the worker up to an hour after
-  stuck recovery has already failed the analysis, and its late result is rejected by the guard.
+  After the first 60 s the watchdog also checks `cancel:{id}` every 10 s and exits on a hit,
+  freeing a hung native call after cancellation or stuck recovery. Redelivery then ACKs the
+  cancelled task without a result. Redis errors remain fail-open; the hard limit is the
+  fallback when cancellation cannot be read.
 - **Credentials:** `RABBITMQ_PASSWORD`, `S3_ACCESS_KEY` and `S3_SECRET_KEY` have no defaults.
   Missing or empty storage keys or broker password stop the process during startup
   validation (exit code 1), before the API starts. Reconnect handles failures of a
@@ -379,7 +384,9 @@ after at most the limit plus one output sample, so even missing or misleading
 duration metadata cannot create an unbounded decoded WAV. The extra sample detects
 overflow instead of silently classifying a truncated prefix. Decoded WAVs are removed
 after success, extraction/read failures and cancellation; the runtime also removes
-the private attempt directory. SIGKILL cannot run cleanup and may leave local files.
+the private attempt directory. SIGKILL cannot run cleanup; startup reclaims abandoned attempt
+directories older than the process start. A file lease protects attempts still used by another
+worker sharing the same temporary directory; process exit releases it automatically.
 
 Audio keeps every inference/cancellation tick but publishes progress only on a stage
 change, one percentage point of progress, or one elapsed second. Final segment and

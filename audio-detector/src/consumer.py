@@ -3,12 +3,14 @@ import os
 import structlog
 from detector_runtime import Artifact, DetectorRuntime, create_redis_client, create_s3_client
 from detector_runtime.config import validate_startup
+from detector_runtime.logging import configure, model_output
 from opentelemetry import trace
 from prometheus_client import Counter
 
 from .config import load_config
 from .tracing import init_tracing
 
+configure()
 validate_startup(load_config)
 
 QUEUE = os.getenv("QUEUE_NAME", "analysis.audio")
@@ -27,10 +29,10 @@ for _status in ("success", "error", "cancelled"):
     PROCESSED_AUDIO_TOTAL.labels(status=_status)
 
 try:
-    # Import inside the guard: a broken ML stack yields MODEL_UNAVAILABLE, not a crash loop.
-    from .inference import AudioInference
+    with model_output():
+        from .inference import AudioInference
 
-    audio_inference = AudioInference()
+        audio_inference = AudioInference()
 except Exception as e:  # noqa: BLE001
     log.error("failed_to_load_audio_inference", error_type=type(e).__name__)
     audio_inference = None

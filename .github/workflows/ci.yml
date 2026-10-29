@@ -180,9 +180,11 @@ jobs:
         env:
           AWS_EC2_METADATA_DISABLED: 'true'
           COV_SOURCE: ${{ matrix.service == 'detector-runtime' && 'detector_runtime' || 'src' }}
+          # The image-build face model installer sits next to src/ and has its own unit tests.
+          COV_EXTRA: ${{ matrix.service == 'video-detector' && '--cov=install_face_model' || '' }}
         run: >-
           python -m pytest -q tests --junitxml=reports/junit.xml
-          --cov="$COV_SOURCE" --cov-report=xml:reports/coverage.xml --cov-report=term
+          --cov="$COV_SOURCE" $COV_EXTRA --cov-report=xml:reports/coverage.xml --cov-report=term
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

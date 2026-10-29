@@ -1,7 +1,8 @@
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS runtime-base
 WORKDIR /app
 
-ENV PYTHONUNBUFFERED=1 \
+ENV HF_HUB_DISABLE_PROGRESS_BARS=1 \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_NO_CACHE=1 \
     UV_PYTHON=/usr/bin/python3 \
@@ -36,10 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && apt-get purge -y build-essential python3-dev && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
-# Pack RetinaFace (buffalo_l) zapieczony w obrazie na etapie builda — kontener nie
-# moze zalezec od dostepu do sieci przy pierwszym zadaniu (demo offline).
-RUN python -c "from insightface.app import FaceAnalysis; \
-    FaceAnalysis(name='buffalo_l', root='/app/.insightface', allowed_modules=['detection'])"
+# Ship only the verified detector; runtime must not download a mutable model pack.
+COPY face-model.toml install_face_model.py ./
+RUN python install_face_model.py
 
 COPY --from=detector_runtime /detector_runtime /detector-runtime/detector_runtime
 RUN uv pip install --python /opt/venv/bin/python --no-deps /detector-runtime
@@ -58,4 +58,4 @@ USER app
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=30s --retries=5 \
   CMD curl -sf http://localhost:8000/health || exit 1
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-config", "/detector-runtime/detector_runtime/uvicorn-log.json"]

@@ -1,7 +1,8 @@
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac AS runtime-base
 WORKDIR /app
 
-ENV PYTHONUNBUFFERED=1 \
+ENV HF_HUB_DISABLE_PROGRESS_BARS=1 \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_NO_CACHE=1 \
     UV_PYTHON=/usr/bin/python3 \
@@ -46,4 +47,4 @@ USER app
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=5 \
   CMD curl -sf http://localhost:8000/health || exit 1
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-config", "/detector-runtime/detector_runtime/uvicorn-log.json"]

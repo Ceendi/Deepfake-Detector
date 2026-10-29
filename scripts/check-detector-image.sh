@@ -41,7 +41,7 @@ assert not leaked, leaked'
   # training/tests needs the training extra; CI's ML compatibility job runs it instead.
   suites=(tests runtime-tests)
 else
-  import_check='import os, torch, torchvision, lightning
+  import_check='import os, torch, torchvision, lightning, src.inference, insightface.app
 assert os.getuid() != 0 and torch.version.cuda is None'
   suites=(tests runtime-tests training/tests)
 fi
@@ -72,20 +72,24 @@ for suite in "${suites[@]}"; do
     --basetemp=/tmp/detector-check "$suite"
 done
 
-# Without network or weights the model fetch must fail at once, leaving /health to report DOWN.
+# Offline readiness uses the real inference import with controlled model/broker fixtures.
+# A model import failure must fail this smoke instead of passing with an unhealthy API.
 docker run --detach --name "$smoke_container" --platform "$platform" --network none \
+  --mount "type=bind,source=$repo_root/scripts/detector-image-smoke.py,target=/tmp/smoke.py,readonly" \
+  --env "SMOKE_SOURCE=${service%-detector}" --env PYTHONPATH=/app \
   --env HF_HUB_OFFLINE=1 \
   --env AWS_EC2_METADATA_DISABLED=true --env S3_ACCESS_KEY=test --env S3_SECRET_KEY=test \
   --env RABBITMQ_PASSWORD=test \
-  --env OMP_NUM_THREADS=2 --env MKL_NUM_THREADS=2 "$image" >/dev/null
+  --env OMP_NUM_THREADS=2 --env MKL_NUM_THREADS=2 \
+  --entrypoint python "$image" /tmp/smoke.py >/dev/null
 for attempt in {1..60}; do
   if docker exec "$smoke_container" curl --silent --output /tmp/health.json \
-      --write-out '%{http_code}' http://localhost:8000/health > "$context/health-status"; then
+      --write-out '%{http_code}' http://127.0.0.1:8000/health > "$context/health-status"; then
     status=$(cat "$context/health-status")
     case "$status" in
-      200|503)
+      200)
         docker exec "$smoke_container" python -c \
-          'import json; assert json.load(open("/tmp/health.json"))["status"] in {"UP", "DOWN"}'
+          'import json; assert json.load(open("/tmp/health.json"))["status"] == "UP"'
         exit 0
         ;;
     esac
