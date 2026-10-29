@@ -45,6 +45,16 @@ it('hashes the inline theme script exactly as served in the source HTML', () => 
   expect(template).not.toMatch(/script-src[^;]*unsafe-inline/)
 })
 
+it('allows only the origin of the public storage endpoint in media-src', () => {
+  expect(template).toContain('map "${MEDIA_URL}" $media_csp_source {')
+  const policies = template.match(/Content-Security-Policy "[^"]*media-src[^"]*"/g)!
+  expect(policies.length).toBeGreaterThanOrEqual(3)
+  for (const policy of policies) {
+    expect(policy).toContain("media-src 'self' blob: $media_csp_source;")
+    expect(policy).not.toContain('${MEDIA_URL}')
+  }
+})
+
 it('allows same-origin framing only for the silent SSO callback, with an external script', () => {
   expect(template).toContain('location = /silent-check-sso.html {')
   expect(template).toContain("frame-src 'self' $keycloak_csp_source")

@@ -65,6 +65,6 @@ kontekst `frontend/`); po zmianie motywu: `docker compose up -d --build keycloak
 The production nginx image rejects framing and limits scripts to the same origin and the hash of
 its built inline theme script. The image generates the hash from `dist/index.html` during the build.
 `API_BASE_URL` and `KEYCLOAK_URL` configure allowed connections; Frames are limited to this origin and Keycloak
-(for silent SSO). Only `/silent-check-sso.html` permits same-origin framing; the application rejects it. Set the frontend container's `MEDIA_URL` to the public storage origin when changing
-file-service's `STORAGE_PUBLIC_ENDPOINT` (default `http://localhost:8333`). Inline styles remain allowed
+(for silent SSO). Only `/silent-check-sso.html` permits same-origin framing; the application rejects it. `MEDIA_URL` contributes its origin to `media-src`;
+Compose sets it from file-service's `STORAGE_PUBLIC_ENDPOINT` (default `http://localhost:8333`). Inline styles remain allowed
 for dynamic progress and media controls. The Vite development server does not serve this policy.
