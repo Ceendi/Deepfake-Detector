@@ -10,7 +10,15 @@ import subprocess
 import sys
 import tempfile
 
-import numpy as np
+
+def check_remote_files(manifest, *, url=None, metadata=None):
+    if url is None or metadata is None:
+        from huggingface_hub import get_hf_file_metadata, hf_hub_url
+
+        url = url or hf_hub_url
+        metadata = metadata or get_hf_file_metadata
+    for filename in manifest['files']:
+        metadata(url(repo_id=manifest['repo'], revision=manifest['revision'], filename=filename))
 
 
 def audio():
@@ -28,6 +36,7 @@ def audio():
 
 
 def video():
+    import numpy as np
     from src.inference import VideoInference
 
     model = VideoInference()
@@ -41,4 +50,7 @@ def video():
 
 
 if __name__ == "__main__":
+    from detector_runtime.model_files import load_manifest
+
+    check_remote_files(load_manifest('/app/models.toml'))
     {"audio": audio, "video": video}[sys.argv[1]]()

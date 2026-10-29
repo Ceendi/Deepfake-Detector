@@ -1,11 +1,4 @@
-pytest>=8,<10
-pytest-cov>=7,<8
--e ./detector-runtime
-numpy>=2,<3
-pika==1.4.*
-structlog==25.*
-boto3==1.43.*
-redis>=5,<9
-prometheus-client==0.26.*
-opentelemetry-sdk>=1.30,<2
-fastapi==0.143.*
+# Install from the repository root with --require-hashes. Hashed CI pins are managed by Dependabot.
+# pip cannot hash a source directory, so add the local runtime afterwards:
+# `python infra/ci/link_detector_runtime.py` (CI) or `pip install --no-deps -e ./detector-runtime`.
+-r ../../infra/ci/requirements.txt

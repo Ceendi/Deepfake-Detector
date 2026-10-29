@@ -18,7 +18,8 @@ a growing reconnect backoff, and a watchdog restarts a process whose task exceed
 From the repository root, install the lightweight test environment:
 
 ```bash
-python -m pip install -r audio-detector/tests/requirements-light.txt
+python -m pip install --require-hashes -r audio-detector/tests/requirements-light.txt
+python -m pip install --no-deps -e ./detector-runtime
 python -m pytest -q detector-runtime/tests
 (cd audio-detector && python -m pytest -q tests)
 (cd video-detector && python -m pytest -q tests)

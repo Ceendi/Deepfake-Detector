@@ -3,9 +3,7 @@ name: E2E
 # Playwright against the real core + auth stack (Keycloak login, gateway, orchestrator,
 # file-service). Detectors need models that are not in the repository, so analyses stay active;
 # the per-user limits are raised for the throwaway stack instead of changing product defaults.
-# `playwright` is a required check, so the workflow always runs; a path filter on the trigger would
-# leave the check pending forever on PRs that do not touch the app. Unrelated PRs skip the job
-# instead, and a skipped required job counts as passed.
+# e2e-ok always reports; unchanged app paths skip Playwright within the workflow.
 on:
   pull_request:
   push:
@@ -39,16 +37,16 @@ jobs:
             exit 0
           fi
           # If the file list cannot be read, run E2E rather than silently skipping it.
-          if ! files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename'); then
+          if ! files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)'); then
             echo "app=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if grep -Eq "$APP_PATHS" <<<"$files"; then app=true; else app=false; fi
+          if [[ -z "$files" ]] || grep -Eq "$APP_PATHS" <<<"$files"; then app=true; else app=false; fi
           echo "app=$app" | tee -a "$GITHUB_OUTPUT"
 
   playwright:
     needs: changes
-    if: needs.changes.outputs.app == 'true'
+    if: ${{ !cancelled() && needs.changes.outputs.app != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -105,7 +103,21 @@ jobs:
           report_paths: frontend/reports/e2e-junit.xml
           check_name: E2E test report
           annotate_only: true
+          fail_on_failure: true
           detailed_summary: true
           include_passed: false
       - if: always()
         run: $COMPOSE down -v
+
+  e2e-ok:
+    name: e2e-ok
+    if: always()
+    needs: [changes, playwright]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 infra/ci/check_jobs.py <<< "$NEEDS"

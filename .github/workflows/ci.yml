@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 
@@ -38,15 +39,39 @@ jobs:
         run: |
           files=""
           if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
-            files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename') || files=""
+            files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') || files=""
           fi
           printf '%s\n' "$files" | python3 infra/ci/ci_scope.py | tee -a "$GITHUB_OUTPUT"
+
+  static-guards:
+    name: Static infrastructure guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 infra/tests/run_static.py
+
+  commitlint:
+    name: PR title (commitlint)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: frontend
+      - env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        working-directory: frontend
+        run: printf '%s\n' "$PR_TITLE" | npx --no-install commitlint --strict
 
   java:
     name: java (${{ matrix.service }})
     needs: changes
-    # Always runs: each java (<service>) check is required. Unselected services only compile,
-    # which Sonar needs for the Java analysis.
+    # Unselected services compile the classes Sonar needs for Java analysis.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     strategy:
@@ -71,7 +96,9 @@ jobs:
           python-version: '3.12'
       - name: Install lightweight worker process fixtures
         if: matrix.service == 'orchestrator' && env.FULL == 'true'
-        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
+        run: |
+          python -m pip install --only-binary ':all:' --require-hashes -r audio-detector/tests/requirements-light.txt
+          python infra/ci/link_detector_runtime.py
       - name: Install ffprobe for file validation tests
         if: matrix.service == 'file-service' && env.FULL == 'true'
         # The runner's Azure mirror has repeatedly stalled on ffmpeg's universe packages; use the
@@ -120,7 +147,7 @@ jobs:
         if: matrix.service == 'tools'
         working-directory: tools
         run: >-
-          uv run --no-project --no-build --python 3.12 --with 'pytest>=8,<10' --with 'pytest-cov>=7,<8'
+          uv run --no-project --no-build --python 3.12 --with-requirements "$GITHUB_WORKSPACE/infra/ci/test-requirements/requirements.txt"
           python -m pytest -q batch/tests --junitxml=reports/junit.xml
           --cov=batch --cov-report=xml:reports/coverage.xml --cov-report=term
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -145,7 +172,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install only the lightweight test dependencies
-        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
+        run: |
+          python -m pip install --only-binary ':all:' --require-hashes -r audio-detector/tests/requirements-light.txt
+          python infra/ci/link_detector_runtime.py
       - name: Verify inference wiring, publication and shared Java fixtures without checkpoints
         working-directory: ${{ matrix.service }}
         env:
@@ -173,7 +202,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install lightweight process test dependencies
-        run: python -m pip install --only-binary ':all:' -r audio-detector/tests/requirements-light.txt
+        run: |
+          python -m pip install --only-binary ':all:' --require-hashes -r audio-detector/tests/requirements-light.txt
+          python infra/ci/link_detector_runtime.py
       - name: Lint process fixtures
         run: pip install --only-binary ':all:' ruff==0.16.10 && ruff check tests/worker_redelivery
       - name: Kill, redeliver, confirm, cancel and degrade Redis for both detectors
@@ -181,7 +212,6 @@ jobs:
 
   frontend:
     needs: changes
-    # A skipped required check counts as passed.
     if: ${{ !cancelled() && needs.changes.outputs.frontend != 'false' }}
     runs-on: ubuntu-latest
     defaults:
@@ -213,6 +243,7 @@ jobs:
   dependencies:
     name: Application dependency vulnerabilities
     needs: java
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -289,12 +320,12 @@ jobs:
       # pytest-cov is a CI-only overlay; it is not part of the locked runtime graph.
       - name: Run consumer and extraction regressions
         run: >-
-          uv run --frozen --with 'pytest-cov>=7,<8' python -m pytest -q tests
+          uv run --frozen --with-requirements "$GITHUB_WORKSPACE/infra/ci/test-requirements/requirements.txt" python -m pytest -q tests
           --junitxml=reports/junit.xml --cov=src --cov-report=xml:reports/coverage.xml --cov-report=term
       # Appends to the coverage above: these tests load the real runtime models (src/models).
       - name: Exercise offline model checkpoints and gradients
         run: >-
-          uv run --frozen --with 'pytest-cov>=7,<8' python -m pytest -q training/tests
+          uv run --frozen --with-requirements "$GITHUB_WORKSPACE/infra/ci/test-requirements/requirements.txt" python -m pytest -q training/tests
           --junitxml=reports/junit-training.xml --cov=src --cov-append
           --cov-report=xml:reports/coverage.xml --cov-report=term
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -368,6 +399,7 @@ jobs:
             test-results/**/junit*.xml
           check_name: Test report
           annotate_only: true
+          fail_on_failure: true
           detailed_summary: true
           include_passed: false
           group_suite: true
@@ -432,3 +464,17 @@ jobs:
             -Dsonar.java.libraries=/home/runner/.m2/repository/**/*.jar
             -Dsonar.java.test.libraries=/home/runner/.m2/repository/**/*.jar
             -Dsonar.qualitygate.wait=true
+
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [changes, static-guards, commitlint, java, python, detector-contract, worker-redelivery, frontend, dependencies, ml-compatibility, detector-images, test-report, sonar]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: python3 infra/ci/check_jobs.py <<< "$NEEDS"
