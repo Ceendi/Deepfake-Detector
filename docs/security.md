@@ -77,7 +77,7 @@ upload throttling; other Redis uses fail open ([reliability](reliability.md)).
 | Trivy, application dependencies (Maven, npm, uv) | `ci.yml` | a HIGH/CRITICAL finding has a fix |
 | `npm audit --audit-level=high` | `ci.yml` | a high advisory exists |
 | Trivy, detector images | `ci.yml` | a HIGH/CRITICAL finding has a fix |
-| Trivy, every Compose image + SARIF to Code Scanning | `security-scan.yml` (also weekly) | any CRITICAL finding |
+| Trivy, every Compose image + SARIF to Code Scanning | `security-scan.yml` (also weekly) | a CRITICAL finding has no active, owner-approved acceptance |
 | Trivy, every published image (incl. `frontend` and `keycloak`) before push | `build-push.yml` | any CRITICAL finding (the image is not published) |
 | Trivy, Compose/Dockerfile configuration | `security-scan.yml` | report only |
 | SBOM (CycloneDX, Syft) | `security-scan.yml` | artifact only |
@@ -92,6 +92,23 @@ list reflects the current deployment.
 
 Reviewed SonarCloud exceptions (operator-supplied CLI paths, the contract upload limit, an
 immutable migration) are recorded with their reason in `sonar-project.properties`.
+
+### Temporary Grafana risk acceptance
+
+The repository owner approved accepting CVE-2026-56857 in Grafana 13.2.5 through
+**12 November 2026, Europe/Warsaw**. The machine-readable entry in
+[`infra/security/accepted-risks.json`](../infra/security/accepted-risks.json) expires at
+`2026-11-13T00:00:00+01:00` (exclusive). It matches the exact image digest, Go package version
+and six bundled-plugin binary paths, so a different image, target or new CRITICAL still blocks.
+
+This is a temporary acceptance for the local/demo deployment while upstream plugin packages
+are fixed. Grafana HTTP is bound to loopback and anonymous access is disabled; these controls
+limit exposure but do not remove the vulnerability. The Compose scan still reports every
+finding in raw JSON, SARIF, Code Scanning and the job summary. An active acceptance emits a
+GitHub warning and allows the job to pass. After expiry the finding blocks automatically.
+Publishing gates do not load this acceptance file and remain strict for every CRITICAL.
+Remove the entry once an updated official image passes the scan; extending it needs explicit
+owner approval. No application setting or plugin is changed by this acceptance.
 
 ## Known gaps
 

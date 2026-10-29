@@ -1,7 +1,7 @@
 name: Security scan (Trivy)
 
 # Scan every explicitly named Compose image, including locally built infrastructure.
-# CRITICAL findings block CI. HIGH findings remain visible in JSON, summaries and
+# Unaccepted CRITICAL findings block CI. HIGH findings remain visible in JSON, summaries and
 # Code Scanning, including advisories without a vendor fix.
 
 on:
@@ -113,7 +113,7 @@ jobs:
           if-no-files-found: error
 
       - name: Summarize findings and reject critical vulnerabilities
-        run: python3 infra/security/report.py trivy.json
+        run: python3 infra/security/report.py trivy.json --accepted-risks infra/security/accepted-risks.json
 
       - name: Run Trivy in SARIF mode (for Code Scanning)
         if: ${{ !cancelled() && hashFiles('trivy.json') != '' }}
