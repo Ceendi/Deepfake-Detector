@@ -113,6 +113,8 @@ developer application. It preserves the `pgdata` volume and all application rows
 migration is changed. The old cluster administrator remains available for rollback and backups.
 Commands below use **Bash (WSL/Linux/Git Bash)** from the repository root, with the existing `.env`.
 Do not use legacy PowerShell binary redirection for database dumps.
+Compose refuses to parse `docker-compose.yml` until `.env` sets the variables from step 3, so add
+them before step 1; running containers keep their old environment until recreated.
 
 1. Confirm the target before any changes:
 
@@ -148,7 +150,8 @@ Do not use legacy PowerShell binary redirection for database dumps.
    ```
 
    Require exit code 0 for every command, nonempty dumps and a successful restore rehearsal in
-   an isolated PostgreSQL instance before proceeding. Keep backups outside version control.
+   an isolated PostgreSQL instance before proceeding. Keep backups outside version control;
+   `backups/` is git-ignored.
 
 3. Add a distinct `ORCHESTRATOR_DB_USER=orchestrator` and a strong
    `ORCHESTRATOR_DB_PASSWORD` to `.env`; add URL-safe `EUREKA_USER/PASSWORD` and an independent

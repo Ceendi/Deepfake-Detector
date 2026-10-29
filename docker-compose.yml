@@ -89,8 +89,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       PGDATA: /var/lib/postgresql/data
-      ORCHESTRATOR_DB_USER: ${ORCHESTRATOR_DB_USER}
-      ORCHESTRATOR_DB_PASSWORD: ${ORCHESTRATOR_DB_PASSWORD}
+      ORCHESTRATOR_DB_USER: ${ORCHESTRATOR_DB_USER:?set ORCHESTRATOR_DB_USER in .env (see SETUP.md)}
+      ORCHESTRATOR_DB_PASSWORD: ${ORCHESTRATOR_DB_PASSWORD:?set ORCHESTRATOR_DB_PASSWORD in .env (see SETUP.md)}
       # Init scripts create separate least-privilege application roles.
       FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
       FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
@@ -544,9 +544,9 @@ services:
     # HTTP Basic protects registration; the registry still has no host port.
     environment:
       <<: *logging-env
-      EUREKA_USER: ${EUREKA_USER}
-      EUREKA_PASSWORD: ${EUREKA_PASSWORD}
-      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
+      EUREKA_USER: ${EUREKA_USER:?set EUREKA_USER in .env (see SETUP.md)}
+      EUREKA_PASSWORD: ${EUREKA_PASSWORD:?set EUREKA_PASSWORD in .env (see SETUP.md)}
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN:?set EUREKA_CSRF_TOKEN in .env (see SETUP.md)}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
       interval: 10s
@@ -570,8 +570,8 @@ services:
     ports: ["127.0.0.1:8080:8080"]
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
-      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/
-      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER:?set EUREKA_USER in .env (see SETUP.md)}:${EUREKA_PASSWORD:?set EUREKA_PASSWORD in .env (see SETUP.md)}@eureka-server:8761/eureka/
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN:?set EUREKA_CSRF_TOKEN in .env (see SETUP.md)}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-250ms}
       REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-250ms}
@@ -617,8 +617,8 @@ services:
       seaweedfs-bucket-init: { condition: service_completed_successfully }
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
-      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/
-      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER:?set EUREKA_USER in .env (see SETUP.md)}:${EUREKA_PASSWORD:?set EUREKA_PASSWORD in .env (see SETUP.md)}@eureka-server:8761/eureka/
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN:?set EUREKA_CSRF_TOKEN in .env (see SETUP.md)}
       FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
       FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
       FILE_SERVICE_DB_PASSWORD: ${FILE_SERVICE_DB_PASSWORD}
@@ -658,10 +658,10 @@ services:
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
       POSTGRES_DB: ${POSTGRES_DB}
-      ORCHESTRATOR_DB_USER: ${ORCHESTRATOR_DB_USER}
-      ORCHESTRATOR_DB_PASSWORD: ${ORCHESTRATOR_DB_PASSWORD}
-      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/
-      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
+      ORCHESTRATOR_DB_USER: ${ORCHESTRATOR_DB_USER:?set ORCHESTRATOR_DB_USER in .env (see SETUP.md)}
+      ORCHESTRATOR_DB_PASSWORD: ${ORCHESTRATOR_DB_PASSWORD:?set ORCHESTRATOR_DB_PASSWORD in .env (see SETUP.md)}
+      EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER:?set EUREKA_USER in .env (see SETUP.md)}:${EUREKA_PASSWORD:?set EUREKA_PASSWORD in .env (see SETUP.md)}@eureka-server:8761/eureka/
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN:?set EUREKA_CSRF_TOKEN in .env (see SETUP.md)}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-250ms}
       REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-250ms}
