@@ -22,7 +22,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import java.time.Duration;
 
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -62,10 +61,10 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 class RedisDownDegradationIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container
     static final GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:8.8.0-alpine")).withExposedPorts(6379);
+            new GenericContainer<>(DockerImageName.parse("redis:8.10.2-alpine")).withExposedPorts(6379);
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {
@@ -82,7 +81,6 @@ class RedisDownDegradationIntegrationTest {
     @Autowired StringRedisTemplate template;
     @Autowired AnalysisCache cache;
     @Autowired LettuceConnectionFactory connectionFactory;
-    @MockitoBean RabbitTemplate rabbitTemplate; // create() publishes the task — irrelevant here
 
     @Test
     void warmProductionClientHasBoundedFallbackAcceptanceAndRecoveryWhileRedisIsPaused() {

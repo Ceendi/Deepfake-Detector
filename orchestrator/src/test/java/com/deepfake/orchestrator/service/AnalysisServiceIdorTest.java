@@ -16,7 +16,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,6 +26,7 @@ import com.deepfake.orchestrator.entity.Analysis;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 
 /**
  * Service-layer IDOR guard (pure unit, no Spring): a resource owned by another user is
@@ -38,7 +38,7 @@ class AnalysisServiceIdorTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    RabbitTemplate rabbitTemplate;
+    AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock

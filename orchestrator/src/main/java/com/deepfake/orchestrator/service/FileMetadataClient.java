@@ -1,5 +1,7 @@
 package com.deepfake.orchestrator.service;
 
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
+import io.opentelemetry.context.Context;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -37,28 +39,9 @@ public class FileMetadataClient {
     }
 
     public String resolve(UUID fileId, String bearerToken) {
-        var builder = HttpRequest.newBuilder(baseUrl.resolve("/api/files/" + fileId + "/claim"))
-                .timeout(timeout).header("Authorization", "Bearer " + bearerToken)
-                .header("Accept", "application/json").POST(HttpRequest.BodyPublishers.noBody());
-        String correlationId = MDC.get("correlationId");
-        if (correlationId != null) builder.header("X-Correlation-ID", correlationId);
-        // Keep the active trace across the claim while retaining the full-response deadline.
-        io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator.getInstance()
-                .inject(io.opentelemetry.context.Context.current(), builder, HttpRequest.Builder::setHeader);
-        var request = builder.build();
-        var pending = http.sendAsync(request, HttpResponse.BodyHandlers.ofString());
-        HttpResponse<String> response;
-        try {
-            // Covers the complete response body as well as connection and headers; no retries.
-            response = pending.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ex) {
-            pending.cancel(true);
-            Thread.currentThread().interrupt();
-            throw unavailable();
-        } catch (ExecutionException | TimeoutException ex) {
-            pending.cancel(true);
-            throw unavailable();
-        }
+        var request = authorizedRequest("/api/files/" + fileId + "/claim", bearerToken)
+                .header("Accept", "application/json").POST(HttpRequest.BodyPublishers.noBody()).build();
+        var response = send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() == 404) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found");
         }
@@ -81,6 +64,36 @@ public class FileMetadataClient {
             throw unavailable();
         }
         return key;
+    }
+
+    public void release(String fileId, String bearerToken) {
+        var request = authorizedRequest("/api/files/" + UUID.fromString(fileId), bearerToken).DELETE().build();
+        int status = send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
+        if (status != 204 && status != 404) throw unavailable();
+    }
+
+    private HttpRequest.Builder authorizedRequest(String path, String bearerToken) {
+        var builder = HttpRequest.newBuilder(baseUrl.resolve(path)).timeout(timeout)
+                .header("Authorization", "Bearer " + bearerToken);
+        String correlationId = MDC.get("correlationId");
+        if (correlationId != null) builder.header("X-Correlation-ID", correlationId);
+        W3CTraceContextPropagator.getInstance().inject(Context.current(), builder, HttpRequest.Builder::setHeader);
+        return builder;
+    }
+
+    private <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> handler) {
+        var pending = http.sendAsync(request, handler);
+        try {
+            // Bound the complete body as well as connection and headers; no implicit retries.
+            return pending.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ex) {
+            pending.cancel(true);
+            Thread.currentThread().interrupt();
+            throw unavailable();
+        } catch (ExecutionException | TimeoutException ex) {
+            pending.cancel(true);
+            throw unavailable();
+        }
     }
 
     private static ResponseStatusException unavailable() {

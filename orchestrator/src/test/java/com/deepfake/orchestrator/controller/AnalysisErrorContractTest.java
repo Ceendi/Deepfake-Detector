@@ -40,6 +40,7 @@ import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
+import com.deepfake.orchestrator.service.AnalysisDeletionService;
 import com.deepfake.orchestrator.service.AnalysisService;
 import com.deepfake.orchestrator.service.AnalysisCreationService;
 import com.deepfake.orchestrator.service.ArtifactService;
@@ -63,6 +64,9 @@ class AnalysisErrorContractTest {
 
     @MockitoBean
     AnalysisCreationService creationService;
+
+    @MockitoBean
+    AnalysisDeletionService deletionService;
 
     @MockitoBean
     ArtifactService artifactService;

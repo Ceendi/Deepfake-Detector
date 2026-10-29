@@ -2,20 +2,37 @@ package com.deepfake.gateway.filter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.core.Ordered;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;
 import org.springframework.mock.web.server.MockServerWebExchange;
 import org.springframework.web.server.ServerWebExchange;
 
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 
 class CorrelationIdGlobalFilterTest {
 
     private final CorrelationIdGlobalFilter filter = new CorrelationIdGlobalFilter();
+
+    @Test
+    void reactorHopRestoresCorrelationMdcAndDoesNotLeakIt() {
+        Hooks.enableAutomaticContextPropagation();
+        try {
+            var exchange = MockServerWebExchange.from(MockServerHttpRequest.get("/api/analysis")
+                    .header(CorrelationIdGlobalFilter.HEADER, "cid-hop"));
+            filter.filter(exchange, ignored -> Mono.delay(Duration.ofMillis(1))
+                    .doOnNext(value -> assertThat(MDC.get("correlationId")).isEqualTo("cid-hop")).then()).block();
+            assertThat(MDC.get("correlationId")).isNull();
+        } finally {
+            Hooks.disableAutomaticContextPropagation();
+        }
+    }
 
     @Test
     void propagatesCallerHeaderDownstreamAndEchoesOnResponse() {

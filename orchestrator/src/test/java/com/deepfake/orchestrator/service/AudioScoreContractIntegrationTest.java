@@ -86,16 +86,16 @@ class AudioScoreContractIntegrationTest {
     private static final Network NETWORK = Network.newNetwork();
 
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine")
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24")
             .withNetwork(NETWORK);
     @Container
-    static final GenericContainer<?> rabbit = new GenericContainer<>("rabbitmq:4.3.1-alpine")
+    static final GenericContainer<?> rabbit = new GenericContainer<>("rabbitmq:4.3.6-management-alpine")
             .withNetwork(NETWORK).withEnv("RABBITMQ_DEFAULT_USER", "test")
             .withEnv("RABBITMQ_DEFAULT_PASS", "test").withExposedPorts(5672)
             .waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
 
     @Container
-    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
+    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.10.2-alpine")
             .withExposedPorts(6379);
 
     @DynamicPropertySource

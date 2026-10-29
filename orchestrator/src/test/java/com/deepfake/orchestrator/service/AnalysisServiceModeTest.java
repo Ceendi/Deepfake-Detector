@@ -19,7 +19,6 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
@@ -40,8 +39,6 @@ class AnalysisServiceModeTest {
 
     @Mock
     AnalysisRepository repository;
-    @Mock
-    RabbitTemplate rabbitTemplate;
     @Mock
     StringRedisTemplate redis;
     @Mock

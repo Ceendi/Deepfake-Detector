@@ -34,7 +34,7 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 class AnalysisStuckRecoveryIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {

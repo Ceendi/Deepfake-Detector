@@ -50,7 +50,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 @Testcontainers
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ArtifactCleanupIntegrationTest {
-    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     static final Set<String> objects = ConcurrentHashMap.newKeySet(), failedKeys = ConcurrentHashMap.newKeySet();
     static final AtomicInteger requests = new AtomicInteger();
     static volatile boolean unavailable;

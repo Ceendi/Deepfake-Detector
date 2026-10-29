@@ -227,9 +227,13 @@ The scheduled publisher reads committed, unsent, due rows. Per task it locks the
 (`FOR UPDATE SKIP LOCKED`), rechecks active status and the dispatch deadline, then publishes a
 persistent, mandatory message (`message_id` = `task_id`) and waits for a correlated confirm.
 `sent_at` commits only after a positive confirm without a return. Nack, return, timeout or
-connection failure leaves the row unsent with backoff 5, 10, 20, 40, then 60 s. Each task commits
+connection failure leaves the row unsent with backoff 5, 10, then at most 20 s, allowing
+further attempts inside the unchanged 120 s dispatch window. Each task commits
 independently. A crash between confirm and commit can send the task twice; result acceptance
-makes that safe. A confirmed dispatch bumps the analysis `updated_at`.
+makes that safe. A confirmed dispatch only updates the outbox's `sent_at`; it does not
+change the cached analysis representation. Terminal transitions remove unsent outbox rows
+in the same transaction. The creating HTTP `traceparent` is persisted with each task and
+restored around AMQP publication, including retries after restart.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -243,7 +247,7 @@ makes that safe. A confirmed dispatch bumps the analysis `updated_at`.
 | `RELIABILITY_OUTBOX_POLL_INTERVAL_MS` | `1000` | Publisher poll delay |
 | `RELIABILITY_OUTBOX_BATCH_SIZE` | `20` | Tasks per poll |
 | `RELIABILITY_OUTBOX_CONFIRM_TIMEOUT_MS` | `5000` | Confirm wait per publish |
-| `RELIABILITY_OUTBOX_RETRY_SECONDS` | `5` | Initial backoff (doubles, capped at 60 s) |
+| `RELIABILITY_OUTBOX_RETRY_SECONDS` | `5` | Initial backoff (doubles, capped at 20 s) |
 | `RELIABILITY_OUTBOX_DISPATCH_TIMEOUT_SECONDS` | `120` | Dispatch deadline from creation |
 
 Tests: `AnalysisFileResolutionIntegrationTest`, `AnalysisCapacityTransactionIntegrationTest`,
@@ -790,7 +794,9 @@ Orphan discovery lists only `analysis-artifacts`, one page per run, with the cur
 page) per 60 s scan. An object is queued only if it is older than
 `ARTIFACT_CLEANUP_ORPHAN_AGE`, matches the current attempt-key format exactly, and is neither
 under an active analysis nor referenced by any analysis (checked again before deletion). Uploads in
-`deepfake-uploads` belong to file-service and are never touched.
+`deepfake-uploads` remain owned by file-service. Separately from artifact cleanup, deleting
+the last analysis referencing an input asks file-service to soft-delete it with the caller's JWT;
+a failed release rolls back the record deletion for a safe retry.
 
 | Variable | Default | Meaning |
 |---|---|---|

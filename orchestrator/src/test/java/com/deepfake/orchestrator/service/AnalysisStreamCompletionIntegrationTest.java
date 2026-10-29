@@ -59,7 +59,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @Testcontainers
 class AnalysisStreamCompletionIntegrationTest {
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry registry) {

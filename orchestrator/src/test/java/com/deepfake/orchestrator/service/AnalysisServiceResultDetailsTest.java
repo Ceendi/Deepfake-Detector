@@ -24,7 +24,6 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
@@ -33,6 +32,7 @@ import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
@@ -43,7 +43,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceResultDetailsTest {
 
     @Mock AnalysisRepository repository;
-    @Mock RabbitTemplate rabbitTemplate;
+    @Mock AnalysisTaskOutboxRepository outbox;
     @Mock StringRedisTemplate redis;
     @Mock AnalysisCache cache;
     @Mock AnalysisStreamRegistry streams;

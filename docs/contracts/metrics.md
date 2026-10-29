@@ -120,6 +120,10 @@ OTLP trace export is gated by `OTEL_TRACING_EXPORT_ENABLED` (default `false`; ex
 the `monitoring` profile with Tempo). The tracer + Micrometer bridge are always on, so
 `trace_id`/`span_id` reach the logs (D2). Spans carry `analysis.id` (create + result handling) and
 `analysis.type` (create) so a trace is searchable by analysis in Tempo.
+The request's `traceparent` survives the transactional outbox and is restored for AMQP
+publication, preserving HTTP → dispatch → detector → result trace continuity on retries.
+Gateway uses automatic Reactor context propagation and a correlation MDC accessor so
+`correlation_id` and `trace_id` remain available on asynchronous routing/limiter log lines.
 
 ## Gateway scrape transport
 

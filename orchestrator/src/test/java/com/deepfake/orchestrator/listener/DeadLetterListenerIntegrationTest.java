@@ -51,7 +51,7 @@ class DeadLetterListenerIntegrationTest {
 
     @Container
     static final GenericContainer<?> rabbit =
-            new GenericContainer<>(DockerImageName.parse("rabbitmq:4.3.1-alpine"))
+            new GenericContainer<>(DockerImageName.parse("rabbitmq:4.3.6-management-alpine"))
                     .withEnv("RABBITMQ_DEFAULT_USER", "test")
                     .withEnv("RABBITMQ_DEFAULT_PASS", "test")
                     .withExposedPorts(5672)
