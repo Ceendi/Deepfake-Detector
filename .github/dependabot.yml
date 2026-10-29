@@ -1,5 +1,5 @@
 # Dependabot automatically opens PRs when pinned tags / actions have newer
-# versions. The compose tags are pinned to patch level (e.g. postgres:17.9-alpine);
+# versions. The Compose tags are pinned to patch level;
 # Dependabot bumps them, the security-scan workflow re-runs against the new
 # tag because it reads from compose dynamically, so dev and scan stay in lockstep.
 # https://docs.github.com/en/code-security/dependabot/dependabot-version-updates

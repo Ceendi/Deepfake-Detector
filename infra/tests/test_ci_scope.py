@@ -72,8 +72,7 @@ class CiScopeTest(unittest.TestCase):
     def test_required_checks_cannot_be_skipped_by_the_selection(self):
         workflow = (ROOT / '.github/workflows/ci.yml').read_text()
         java = workflow[workflow.index('\n  java:'):workflow.index('\n  python:')]
-        # Branch protection requires each java (<service>) check: the job always runs and only its
-        # test steps are gated, so unchanged services still compile classes for Sonar.
+        # Java always supplies compiled classes for Sonar; ci-ok aggregates every selected test.
         self.assertEqual(['${{ !cancelled() }}'], re.findall(r'\n    if: (.+)', java))
         self.assertIn('-DskipTests test-compile', java)
         self.assertIn("needs.changes.outputs.java || '[\"gateway\",\"eureka-server\",\"orchestrator\","
