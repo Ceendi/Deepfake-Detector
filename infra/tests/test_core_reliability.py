@@ -74,15 +74,29 @@ class CoreReliabilityConfigurationTest(unittest.TestCase):
 
     def test_java_containers_cannot_escalate_or_create_unbounded_processes(self):
         services = resolved_compose()['services']
-        for name in ('eureka-server', 'gateway', 'file-service'):
+        for name in JAVA_LIMITS:
             with self.subTest(service=name):
                 service = services[name]
                 self.assertIn('no-new-privileges:true', service.get('security_opt', []))
                 self.assertEqual(['ALL'], service.get('cap_drop'))
                 self.assertEqual(300, service.get('pids_limit'))
-        for name in ('eureka-server', 'gateway'):
+        for name in ('eureka-server', 'gateway', 'orchestrator'):
             self.assertTrue(services[name].get('read_only'))
             self.assertTrue(any(mount.startswith('/tmp:') for mount in services[name]['tmpfs']))
+
+    def test_postgres_health_requires_the_final_tcp_server(self):
+        for name in ('postgres', 'keycloak-db'):
+            self.assertIn('pg_isready -h 127.0.0.1 ',
+                          resolved_compose()['services'][name]['healthcheck']['test'][1])
+
+    def test_orchestrator_database_credentials_are_not_cluster_admin_credentials(self):
+        services = resolved_compose()['services']
+        environment = services['orchestrator']['environment']
+        self.assertNotIn('POSTGRES_USER', environment)
+        self.assertNotIn('POSTGRES_PASSWORD', environment)
+        self.assertEqual('orchestrator', environment['ORCHESTRATOR_DB_USER'])
+        for name in ('ORCHESTRATOR_DB_USER', 'ORCHESTRATOR_DB_PASSWORD'):
+            self.assertEqual(environment[name], services['postgres']['environment'][name])
 
     def test_gateway_does_not_load_netty_native_transport_from_noexec_tmp(self):
         gateway = resolved_compose()['services']['gateway']
@@ -101,12 +115,12 @@ class CoreReliabilityConfigurationTest(unittest.TestCase):
 
 class CoreReliabilityIntegrationTest(unittest.TestCase):
     @classmethod
-    def compose(cls, *args, check=True):
+    def compose(cls, *args, check=True, input_text=None):
         result = subprocess.run([
             'docker', 'compose', '--project-name', cls.project,
             '-f', str(cls.compose_file), '--profile', 'core', *args,
         ], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            check=check)
+            check=check, input=input_text)
         return result.stdout.strip()
 
     @classmethod
@@ -210,6 +224,51 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
         # Netty's noexec warning and the JDK warning about Netty calling System::loadLibrary.
         for marker in ('libnetty', 'NativeLibraryUtil'):
             self.assertNotIn(marker, logs)
+
+    def test_database_role_migration_preserves_existing_data_and_cluster_ownership(self):
+        def sql(database, query, user='deepfake'):
+            return self.compose('exec', '-T', 'postgres', 'psql', '-X', '-At',
+                                '-v', 'ON_ERROR_STOP=1', '-U', user, '-d', database, '-c', query)
+
+        self.assertEqual('f|f|f|f|f', sql('deepfake',
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls "
+            "FROM pg_roles WHERE rolname = 'orchestrator'"))
+        self.assertEqual('orchestrator', sql('deepfake',
+            "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()"))
+        denied = self.compose('exec', '-T', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+                              '-U', 'orchestrator', '-d', 'fileservice', '-c',
+                              'SELECT * FROM file_metadata', check=False)
+        self.assertIn('permission denied', denied)
+        sql('postgres', 'CREATE DATABASE migration_probe')
+        sql('migration_probe', "CREATE TABLE preserved (id integer PRIMARY KEY, value text); "
+            "INSERT INTO preserved VALUES (1, 'keep me'); CREATE SEQUENCE preserved_seq; "
+            "CREATE VIEW preserved_view AS SELECT * FROM preserved")
+        before = sql('postgres', "SELECT datname, pg_get_userbyid(datdba) FROM pg_database "
+                     "WHERE datname <> 'migration_probe' ORDER BY datname")
+        script = ROOT / 'infra/postgres/init/02-init-orchestrator-db.sh'
+        for _ in range(2):
+            self.compose('exec', '-T', '-e', 'POSTGRES_DB=migration_probe',
+                         '-e', 'ORCHESTRATOR_DB_USER=migration_probe_user',
+                         '-e', "ORCHESTRATOR_DB_PASSWORD=disposable'quoted-password",
+                         'postgres', 'bash', '-s', input_text=script.read_text())
+        authenticated = self.compose('exec', '-T',
+            '-e', "PGPASSWORD=disposable'quoted-password", 'postgres', 'psql', '-X', '-At',
+            '-h', '127.0.0.1', '-U', 'migration_probe_user', '-d', 'migration_probe',
+            '-c', 'SELECT current_user')
+        self.assertEqual('migration_probe_user', authenticated)
+        rejected = self.compose('exec', '-T', '-e', 'ORCHESTRATOR_DB_USER=deepfake',
+                                'postgres', 'bash', '-s', check=False, input_text=script.read_text())
+        self.assertIn('Refusing overlapping', rejected)
+        self.assertEqual('1|keep me', sql('migration_probe', 'SELECT * FROM preserved',
+                                        'migration_probe_user'))
+        self.assertEqual('1|keep me', sql('migration_probe', 'SELECT * FROM preserved_view',
+                                        'migration_probe_user'))
+        sql('migration_probe', "ALTER TABLE preserved ADD COLUMN migrated boolean; "
+            "SELECT nextval('preserved_seq'); CREATE TABLE flyway_probe (id int)",
+            'migration_probe_user')
+        self.assertEqual(before, sql('postgres',
+            "SELECT datname, pg_get_userbyid(datdba) FROM pg_database "
+            "WHERE datname <> 'migration_probe' ORDER BY datname"))
 
     def test_fresh_stack_dashboard_counters_have_data_before_any_analysis(self):
         # Percentiles and ratios have no value without observations; detectors are not in core.

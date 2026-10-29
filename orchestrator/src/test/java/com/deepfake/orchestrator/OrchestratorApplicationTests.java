@@ -40,13 +40,13 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 class OrchestratorApplicationTests {
 
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container
     static final GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:8.8.0-alpine")).withExposedPorts(6379);
+            new GenericContainer<>(DockerImageName.parse("redis:8.10.2-alpine")).withExposedPorts(6379);
     @Container
     static final GenericContainer<?> rabbit =
-            new GenericContainer<>(DockerImageName.parse("rabbitmq:4.3.1-alpine"))
+            new GenericContainer<>(DockerImageName.parse("rabbitmq:4.3.6-management-alpine"))
                     .withEnv("RABBITMQ_DEFAULT_USER", "test")
                     .withEnv("RABBITMQ_DEFAULT_PASS", "test")
                     .withExposedPorts(5672)

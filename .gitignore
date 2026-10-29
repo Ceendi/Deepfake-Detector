@@ -64,3 +64,6 @@ mlruns/
 # Data
 data/
 datasets/
+
+# Database dumps (private data, see SETUP.md)
+backups/

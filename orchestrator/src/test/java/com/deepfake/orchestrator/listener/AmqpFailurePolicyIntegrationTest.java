@@ -46,7 +46,7 @@ import com.deepfake.orchestrator.service.AnalysisService;
         "spring.rabbitmq.listener.simple.retry.max-interval=200ms"})
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class AmqpFailurePolicyIntegrationTest {
-    @Container static final GenericContainer<?> broker = new GenericContainer<>("rabbitmq:4.3.1-alpine")
+    @Container static final GenericContainer<?> broker = new GenericContainer<>("rabbitmq:4.3.6-management-alpine")
             .withEnv("RABBITMQ_DEFAULT_USER", "test").withEnv("RABBITMQ_DEFAULT_PASS", "test")
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {

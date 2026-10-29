@@ -114,7 +114,7 @@ class FileUploadControllerSecurityTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("STORAGE_QUOTA_EXCEEDED"))
                 .andExpect(jsonPath("$.message").value(
-                        "Przekroczono limit miejsca na pliki (5 GB). Usuń stare analizy – miejsce zwalnia się do 72 h po usunięciu."));
+                        "Przekroczono limit miejsca na pliki. Usuń stare analizy – miejsce zwalnia się po okresie retencji."));
         verifyNoInteractions(s3Client);
     }
 

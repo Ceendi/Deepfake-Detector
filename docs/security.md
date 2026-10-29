@@ -56,6 +56,22 @@ upload throttling; other Redis uses fail open ([reliability](reliability.md)).
 
 ## Least privilege between components
 
+- **PostgreSQL:** the cluster administrator is used only for provisioning and manual operations.
+  The orchestrator uses `ORCHESTRATOR_DB_USER/PASSWORD`, owns its application database and tables,
+  and has no superuser, database/role creation, replication or RLS-bypass privileges. file-service
+  has its own role and database. Existing data needs the [role migration](../SETUP.md#existing-postgresql-volume-role-migration).
+- **Discovery:** Eureka requires HTTP Basic for its dashboard and `/eureka/**` API. Only health
+  is anonymous. `EUREKA_USER/PASSWORD` configure the registry and all three Java clients. CSRF
+  remains enabled on every path: mutating calls also need the independent `EUREKA_CSRF_TOKEN`
+  in `X-CSRF-TOKEN`. A deployment-provisioned token repository lets machine clients supply it
+  without browser sessions; clients add the header only to their Eureka transport, preserving TLS
+  configuration. Basic credentials alone cannot authorize a mutation. Browsers cannot forge this
+  secret header through a cross-origin form; no cross-origin access is enabled on the registry.
+  Generate a long random value (for example `openssl rand -hex 32`), never log it, and rotate it
+  together on the registry and all Java clients. The example value is development-only.
+  Use URL-safe credentials because client URLs carry them. Do not log those URLs. The shared
+  credential limits registration to its holders; a compromised Java client can still register
+  arbitrary instances. HTTP is a local/demo trade-off, so use TLS before deploying across hosts.
 - **Object storage:** separate SeaweedFS S3 identities. file-service reads/writes only
   `deepfake-uploads`; the orchestrator only `analysis-artifacts`; detectors read uploads and write
   artifacts. SeaweedFS internal APIs stay on loopback and are signed with per-deployment JWT keys.
@@ -64,10 +80,17 @@ upload throttling; other Redis uses fail open ([reliability](reliability.md)).
   ([broker users](reliability.md#broker-users-and-internal-storage-apis)).
 - **Network:** every published port binds to `127.0.0.1`; databases, broker, Redis and storage are
   not reachable from other machines.
-- **Containers:** Eureka, gateway, file-service and monitoring drop all Linux capabilities, forbid
+- **Containers:** Eureka, gateway, file-service, orchestrator and monitoring drop all Linux capabilities, forbid
   privilege escalation and limit process count; several run with a read-only root filesystem. The
   frontend image runs unprivileged nginx.
 - **Secrets:** `.env` (or Infisical) only, never committed; `.env.example` holds placeholders.
+
+Alloy runs as root with the Docker socket mounted using `:ro`. That flag protects the socket
+inode, **not Docker API operations**: a compromised Alloy can create privileged containers and
+access every host/VM volume. This is a development-only, host-equivalent trust decision. Project
+label filtering limits collected logs, not API permissions. A production deployment must remove
+the direct socket mount or introduce an authenticated proxy that permits only the required
+container discovery/log/event reads and denies writes.
 
 ## Security in the delivery pipeline
 

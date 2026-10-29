@@ -19,6 +19,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.UUID;
@@ -46,6 +47,17 @@ public class UploadConcurrencyFilter extends OncePerRequestFilter {
         slots = new Semaphore(maximum);
         this.maximumPerUser = maximumPerUser;
         Files.createDirectories(Path.of(location));
+        // The spool belongs to this replica; no request can be active during construction.
+        try (var files = Files.list(Path.of(location))) {
+            for (Path file : files.toList()) {
+                String name = file.getFileName().toString();
+                if (Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+                        && ((name.startsWith("upload-") && name.endsWith(".media"))
+                            || (name.startsWith("upload_") && name.endsWith(".tmp")))) {
+                    Files.deleteIfExists(file);
+                }
+            }
+        }
     }
 
     @Override

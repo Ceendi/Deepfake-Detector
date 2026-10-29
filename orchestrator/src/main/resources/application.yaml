@@ -17,8 +17,8 @@ spring:
           jwk-set-uri: ${JWK_SET_URI:http://localhost:8180/realms/deepfake/protocol/openid-connect/certs}
   datasource:
     url: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-    username: ${POSTGRES_USER}
-    password: ${POSTGRES_PASSWORD}
+    username: ${ORCHESTRATOR_DB_USER}
+    password: ${ORCHESTRATOR_DB_PASSWORD}
     hikari:
       # Pool size env-overridable so the MO benchmark can A/B 10 vs 20 without a rebuild.
       maximum-pool-size: ${DB_POOL_MAX:20}
@@ -73,7 +73,7 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka-server:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE:http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/}
 storage:
   endpoint: ${S3_ENDPOINT:http://seaweedfs:8333}
   region: us-east-1

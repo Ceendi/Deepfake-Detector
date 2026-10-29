@@ -34,7 +34,7 @@ class AnalysisCacheIntegrationTest {
 
     @Container
     static final GenericContainer<?> redis =
-            new GenericContainer<>(DockerImageName.parse("redis:8.8.0-alpine")).withExposedPorts(6379);
+            new GenericContainer<>(DockerImageName.parse("redis:8.10.2-alpine")).withExposedPorts(6379);
 
     AnalysisCache cache;
 

@@ -60,7 +60,7 @@ class GatewayRateLimitIntegrationTest {
     static final GenericContainer<?> redis = redisContainer();
 
     private static GenericContainer<?> redisContainer() {
-        var container = new GenericContainer<>(DockerImageName.parse("redis:8-alpine")).withExposedPorts(6379);
+        var container = new GenericContainer<>(DockerImageName.parse("redis:8.10.2-alpine")).withExposedPorts(6379);
         try (var socket = new ServerSocket(0)) {
             // Stop/start must keep the gateway's Redis address, rather than allocate a new port.
             container.setPortBindings(List.of(socket.getLocalPort() + ":6379"));

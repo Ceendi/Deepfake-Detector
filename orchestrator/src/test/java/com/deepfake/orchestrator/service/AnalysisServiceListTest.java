@@ -17,7 +17,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -28,6 +27,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import com.deepfake.orchestrator.cache.AnalysisCache;
 import com.deepfake.orchestrator.dto.response.AnalysisSummary;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 
 @ExtendWith(MockitoExtension.class)
 class AnalysisServiceListTest {
@@ -35,7 +35,7 @@ class AnalysisServiceListTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    RabbitTemplate rabbitTemplate;
+    AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock

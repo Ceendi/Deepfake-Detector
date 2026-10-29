@@ -20,7 +20,7 @@ them with `--force-recreate` after changing it.
 | Prometheus | 9090             | Scrapes `/actuator/prometheus` (Java) and `/metrics` (detectors); retention 15 d |
 | Loki       | 3100             | Log store; retention 7 d |
 | Tempo      | 3200             | Trace store, OTLP on 4317/4318 (internal); retention 72 h |
-| Alloy      | 12345            | Tails this Compose project's container stdout through the Docker socket (read-only) into Loki |
+| Alloy      | 12345            | Tails this Compose project's container stdout through the Docker socket (full API access, dev-only) into Loki |
 
 ## Logs (D2)
 
@@ -78,7 +78,8 @@ ingestion, retention and trace lookup after a restart.
 - **Native ECS logging**, not `logstash-logback-encoder`.
 - **Grafana Alloy**, not the Loki Docker driver (a host plugin) or Promtail (EOL 2026-03).
 - **Dev trade-offs:** Prometheus, Loki, Tempo and Alloy run as root with named volumes, and Alloy
-  mounts the Docker socket read-only. Loki, Tempo and Alloy have no healthcheck (distroless images),
+  mounts the Docker socket with `:ro`, which does not restrict Docker API writes. A compromised
+  Alloy has host-equivalent access; see [security](security.md#least-privilege-between-components). Loki, Tempo and Alloy have no healthcheck (distroless images),
   so dependents wait on `service_started`.
 
 ## Local verification
@@ -89,3 +90,8 @@ ingestion, retention and trace lookup after a restart.
 4. Prometheus targets for the Java services are `up`; after an analysis the dashboard shows real
    values.
 5. With export on, a request produces a Tempo trace reachable from its log line and back.
+
+The business dashboard includes a **File lifecycle** panel with purged uploads and reclaimed
+orphan objects over the last hour, summed across file-service replicas. Percentile queries
+filter groups whose observation rate is zero, so idle histograms use the panel empty-value
+message instead of retaining a NaN series.

@@ -9,7 +9,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -32,6 +31,7 @@ import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.report.ReportPdfService;
 import com.deepfake.orchestrator.security.CurrentUserArgumentResolver;
 import com.deepfake.orchestrator.security.JwtRoleConverter;
+import com.deepfake.orchestrator.service.AnalysisDeletionService;
 import com.deepfake.orchestrator.service.AnalysisService;
 import com.deepfake.orchestrator.service.AnalysisCreationService;
 import com.deepfake.orchestrator.service.ArtifactService;
@@ -56,6 +56,9 @@ class AnalysisDeleteControllerTest {
     AnalysisCreationService creationService;
 
     @MockitoBean
+    AnalysisDeletionService deletionService;
+
+    @MockitoBean
     ArtifactService artifactService;
 
     @MockitoBean
@@ -66,15 +69,14 @@ class AnalysisDeleteControllerTest {
     }
 
     @Test
-    void deleteReturns204WithoutRemoteStorageCalls() throws Exception {
+    void deleteDelegatesVerifiedJwtToLifecycleFacade() throws Exception {
         UUID id = UUID.randomUUID();
-        when(service.delete(eq(id), eq("user-a"))).thenReturn(List.of(id + "/video/cam.png"));
 
         mvc.perform(delete("/api/analysis/{id}/record", id)
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
                 .andExpect(status().isNoContent());
 
-        verify(service).delete(id, "user-a");
+        verify(deletionService).delete(id, "user-a", "token");
         org.mockito.Mockito.verifyNoInteractions(artifactService);
     }
 
@@ -82,7 +84,7 @@ class AnalysisDeleteControllerTest {
     void idorReturns404WithErrorCode() throws Exception {
         UUID id = UUID.randomUUID();
         doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND))
-                .when(service).delete(eq(id), eq("user-a"));
+                .when(deletionService).delete(eq(id), eq("user-a"), eq("token"));
 
         mvc.perform(delete("/api/analysis/{id}/record", id)
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))
@@ -96,7 +98,7 @@ class AnalysisDeleteControllerTest {
     void inProgressReturns409WithConflictCode() throws Exception {
         UUID id = UUID.randomUUID();
         doThrow(new ResponseStatusException(HttpStatus.CONFLICT, "cancel it first"))
-                .when(service).delete(eq(id), eq("user-a"));
+                .when(deletionService).delete(eq(id), eq("user-a"), eq("token"));
 
         mvc.perform(delete("/api/analysis/{id}/record", id)
                         .with(jwt().jwt(j -> j.subject("user-a")).authorities(userRole())))

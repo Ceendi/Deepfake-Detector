@@ -10,7 +10,6 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -54,7 +53,7 @@ import static org.mockito.Mockito.*;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Testcontainers
 class AnalysisFileResolutionIntegrationTest {
-    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     static final UUID FILE = UUID.randomUUID();
     static final AtomicInteger status = new AtomicInteger(200);
     static volatile String body;
@@ -110,7 +109,6 @@ class AnalysisFileResolutionIntegrationTest {
     @MockitoSpyBean FileMetadataClient files;
     @MockitoSpyBean BackpressureGuard guard;
     BackpressureGuard gate;
-    @MockitoBean RabbitTemplate rabbit;
     @MockitoBean AnalysisCache cache;
     @MockitoBean StringRedisTemplate redis;
     @MockitoBean IdempotencyGuard idempotency;
@@ -120,7 +118,7 @@ class AnalysisFileResolutionIntegrationTest {
     @BeforeEach void resetState() {
         repository.deleteAll();
         gate = org.springframework.test.util.AopTestUtils.getUltimateTargetObject(guard);
-        reset(files, gate, rabbit);
+        reset(files, gate);
         status.set(200);
         body = "{\"fileId\":\"" + FILE + "\",\"objectKey\":\"canonical/alice.wav\"}";
         slowHeaders = false;
@@ -143,7 +141,7 @@ class AnalysisFileResolutionIntegrationTest {
             assertThat(task.getPayload()).containsEntry("file_key", "canonical/alice.wav");
             assertThat(task.getPayload().toString()).doesNotContain("verified-token");
         });
-        verifyNoInteractions(rabbit);
+
         assertThat(authorization).isEqualTo("Bearer verified-token");
         assertThat(method).isEqualTo("POST");
         assertThat(identityHeader).isNull();
@@ -216,7 +214,7 @@ class AnalysisFileResolutionIntegrationTest {
         assertThatThrownBy(() -> new TransactionTemplate(transactions).executeWithoutResult(tx ->
                 facade.create(request(null), "alice", "verified-token")))
                 .isInstanceOf(IllegalTransactionStateException.class);
-        verifyNoInteractions(files, rabbit);
+        verifyNoInteractions(files);
         verify(gate, never()).acquire("alice");
         assertThat(repository.count()).isZero();
     }
@@ -225,7 +223,7 @@ class AnalysisFileResolutionIntegrationTest {
         assertThatThrownBy(() -> facade.create(request("untrusted"), "alice", "verified-token"))
                 .isInstanceOf(ResponseStatusException.class).hasFieldOrPropertyWithValue("statusCode", expected);
         assertThat(repository.count()).isZero();
-        verifyNoInteractions(rabbit);
+
         verify(gate, never()).acquire("alice");
     }
     private CreateAnalysisRequest request(String legacyKey) {

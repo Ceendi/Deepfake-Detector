@@ -23,7 +23,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -37,6 +36,7 @@ import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /**
@@ -51,7 +51,7 @@ class AnalysisServiceCancelTest {
     @Mock
     AnalysisRepository repository;
     @Mock
-    RabbitTemplate rabbitTemplate;
+    AnalysisTaskOutboxRepository outbox;
     @Mock
     StringRedisTemplate redis;
     @Mock
@@ -92,7 +92,8 @@ class AnalysisServiceCancelTest {
         // Cooperative cancellation: detectors poll this flag and abort queued/in-flight work.
         verify(valueOps).set(eq("cancel:" + id), eq("1"), any(Duration.class));
         verify(streams).sendResult(eq(id), any());
-        verifyNoInteractions(rabbitTemplate); // cancel is not an AMQP event
+        verify(outbox).deleteUnsent(id);
+        verify(outbox, never()).save(any());
     }
 
     @Test
@@ -126,7 +127,7 @@ class AnalysisServiceCancelTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.CONFLICT);
         verifyNoInteractions(backpressure);
-        verifyNoInteractions(rabbitTemplate, streams, redis);
+        verifyNoInteractions(outbox, streams, redis);
     }
 
     @Test
@@ -138,7 +139,7 @@ class AnalysisServiceCancelTest {
                 .isInstanceOf(ResponseStatusException.class)
                 .hasFieldOrPropertyWithValue("statusCode", HttpStatus.NOT_FOUND);
         verify(repository, never()).cancelIfActive(any(), any(), any(), any());
-        verifyNoInteractions(backpressure, rabbitTemplate, streams, redis);
+        verifyNoInteractions(backpressure, outbox, streams, redis);
     }
 
     @Test
@@ -163,7 +164,7 @@ class AnalysisServiceCancelTest {
         assertThat(response.status()).isEqualTo(AnalysisStatus.CANCELLED);
         verify(repository, never()).cancelIfActive(any(), any(), any(), any());
         verifyNoInteractions(backpressure);
-        verifyNoInteractions(rabbitTemplate, streams, redis);
+        verifyNoInteractions(outbox, streams, redis);
     }
 
     @Test

@@ -12,7 +12,6 @@ import java.util.concurrent.Future;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -51,7 +50,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceAggregationRaceIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
 
     @DynamicPropertySource
     static void datasource(DynamicPropertyRegistry registry) {
@@ -68,7 +67,6 @@ class AnalysisServiceAggregationRaceIntegrationTest {
     @MockitoBean IdempotencyGuard idempotency;
     @MockitoBean AnalysisCache cache;
     @MockitoBean AnalysisStreamRegistry streams;
-    @MockitoBean RabbitTemplate rabbitTemplate;
     @MockitoBean StringRedisTemplate redis;
     @MockitoBean AnalysisMetrics metrics;
 

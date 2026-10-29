@@ -1,6 +1,8 @@
 server:
   port: 8080
 spring:
+  reactor:
+    context-propagation: auto
   application:
     name: gateway
   security:
@@ -52,7 +54,7 @@ spring:
             - id: orchestrator
               uri: lb://orchestrator
               predicates:
-                - Path=/api/analysis/**,/ws/**
+                - Path=/api/analysis/**
               filters:
                 - name: RequestRateLimiter
                   args:
@@ -65,13 +67,14 @@ spring:
               args:
                 maxSize: 501MB
 gateway:
+  upload-deadline: ${UPLOAD_DEADLINE:15m}
   cors-origins: ${GATEWAY_CORS_ORIGINS:http://localhost:5173,http://localhost:4173}
   redis-limiter-budget: ${GATEWAY_REDIS_LIMITER_BUDGET:750ms}
   redis-degraded-bypass: ${GATEWAY_REDIS_DEGRADED_BYPASS:2s}
 eureka:
   client:
     service-url:
-      defaultZone: http://eureka-server:8761/eureka/
+      defaultZone: ${EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE:http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/}
 management:
   server:
     port: 9090

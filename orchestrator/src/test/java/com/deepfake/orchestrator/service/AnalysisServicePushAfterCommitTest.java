@@ -23,7 +23,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -35,6 +34,7 @@ import com.deepfake.orchestrator.entity.AnalysisStatus;
 import com.deepfake.orchestrator.entity.AnalysisType;
 import com.deepfake.orchestrator.metrics.AnalysisMetrics;
 import com.deepfake.orchestrator.repository.AnalysisRepository;
+import com.deepfake.orchestrator.repository.AnalysisTaskOutboxRepository;
 import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 
 /** The terminal SSE push must fire on afterCommit, not inside the tx â€” a rollback can't leak it. */
@@ -42,7 +42,7 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServicePushAfterCommitTest {
 
     @Mock AnalysisRepository repository;
-    @Mock RabbitTemplate rabbitTemplate;
+    @Mock AnalysisTaskOutboxRepository outbox;
     @Mock StringRedisTemplate redis;
     @Mock AnalysisCache cache;
     @Mock AnalysisStreamRegistry streams;

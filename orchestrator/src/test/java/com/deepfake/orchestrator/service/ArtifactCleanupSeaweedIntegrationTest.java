@@ -33,7 +33,7 @@ import software.amazon.awssdk.services.s3.model.*;
 /** The actual Compose-pinned SeaweedFS protocol, paging and idempotent deletion; disposable data only. */
 @Testcontainers
 class ArtifactCleanupSeaweedIntegrationTest {
-    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container static final GenericContainer<?> seaweed = new GenericContainer<>("chrislusf/seaweedfs:4.51")
         .withExposedPorts(8333)
         .withCopyToContainer(Transferable.of("""

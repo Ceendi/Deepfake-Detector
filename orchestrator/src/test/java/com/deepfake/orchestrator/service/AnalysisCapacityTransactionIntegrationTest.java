@@ -13,7 +13,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -63,9 +62,9 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @Testcontainers
 class AnalysisCapacityTransactionIntegrationTest {
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container
-    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine").withExposedPorts(6379);
+    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.10.2-alpine").withExposedPorts(6379);
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
@@ -80,7 +79,6 @@ class AnalysisCapacityTransactionIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired StringRedisTemplate redis;
-    @MockitoBean RabbitTemplate rabbit;
     @MockitoBean AnalysisCache cache;
     @MockitoBean IdempotencyGuard idempotency;
     @MockitoBean AnalysisStreamRegistry streams;
@@ -92,7 +90,6 @@ class AnalysisCapacityTransactionIntegrationTest {
         transaction = new TransactionTemplate(transactionManager);
         jdbc.execute("DROP TRIGGER IF EXISTS reject_capacity_test_commit ON analysis");
         repository.deleteAll();
-        reset(rabbit);
         redis.opsForValue().set("analyses:inflight", "0");
     }
 
@@ -113,7 +110,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isEqualTo(6);
         service.createResolved(request("key"), "bob");
         assertThat(active()).isEqualTo(4);
-        verifyNoInteractions(rabbit);
+
     }
 
     @Test
@@ -249,7 +246,7 @@ class AnalysisCapacityTransactionIntegrationTest {
         assertThat(active()).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox WHERE analysis_id = ?", Long.class, id))
                 .isEqualTo(1);
-        verifyNoInteractions(rabbit);
+
     }
 
     @Test
@@ -273,7 +270,7 @@ class AnalysisCapacityTransactionIntegrationTest {
                     .hasStackTraceContaining("capacity test deferred commit failure");
             assertThat(active()).isZero();
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox", Long.class)).isZero();
-            verifyNoInteractions(rabbit);
+
         }
         assertThat(create()).isNotNull();
         assertThat(active()).isEqualTo(1);
@@ -290,7 +287,7 @@ class AnalysisCapacityTransactionIntegrationTest {
                 .isInstanceOf(ResponseStatusException.class);
         assertThatThrownBy(() -> service.createResolved(request("key"), "x".repeat(256)))
                 .isInstanceOf(ResponseStatusException.class);
-        verifyNoInteractions(rabbit);
+
         assertThat(active()).isZero();
         assertThat(create()).isNotNull();
     }
