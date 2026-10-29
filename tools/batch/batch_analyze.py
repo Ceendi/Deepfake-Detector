@@ -203,6 +203,12 @@ class RunState:
             self.attempts.pop(rel, None)
             self._save()
 
+    def set_creating(self, rel, creating):
+        if rel is not None:
+            with self.lock:
+                self.attempts[rel]['creating'] = creating
+                self._save()
+
     def save(self):
         with self.lock:
             self._save()
@@ -516,14 +522,14 @@ class Batch:
         if start > now:
             self.pause(start - now)
 
-    def call(self, what, method, path, data=None, headers=None, timeout=None, typ=''):
+    def call(self, what, method, path, data=None, headers=None, timeout=None, typ='', create_rel=None):
         """Wait out 429 and safely retry transient errors; reconcile uncertain creates."""
         waits = transient = 0
         while True:
             if self.stop.is_set():
                 raise Stopped()
             try:
-                response = self.request_once(method, path, data, headers, timeout, typ)
+                response = self.request_once(method, path, data, headers, timeout, typ, create_rel)
             except OSError as error:
                 response, reason = None, f'{type(error).__name__}: {error}'
             else:
@@ -542,16 +548,20 @@ class Batch:
             log(f'  {what}: {reason}, ponowienie za {delay:.0f} s')
             self.pause(delay)
 
-    def request_once(self, method, path, data, headers, timeout, typ):
+    def request_once(self, method, path, data, headers, timeout, typ, create_rel):
         creating = method == 'POST' and path == '/api/analysis'
+        self.state.set_creating(create_rel, True)
         try:
             response = self.api.request(method, path, data, headers, timeout)
         except OSError as error:
             cause = error.reason if isinstance(error, URLError) else error
             if not creating or isinstance(cause, ConnectionRefusedError):
+                self.state.set_creating(create_rel, False)
                 raise
         else:
             if not creating or response.status == 503 or (response.status < 500 and response.status != 408):
+                if response.status != 201:
+                    self.state.set_creating(create_rel, False)
                 return response
         return self.recover_create(json.loads(data)['fileId'], typ)
 
@@ -621,12 +631,12 @@ class Batch:
         # Same rule as the frontend: the server-detected MIME picks the analysis type.
         if not self.settings.type_override:
             typ = 'AUDIO' if str(uploaded.get('mimetype') or '').lower().startswith('audio/') else 'FULL'
-        attempt = {'file_id': uploaded['fileId'], 'creating': True}
+        attempt = {'file_id': uploaded['fileId'], 'creating': False}
         self.state.put(item.rel, attempt)
         try:
             response = self.call(f'analiza {item.rel}', 'POST', '/api/analysis',
                                  json.dumps({'fileId': uploaded['fileId'], 'type': typ}).encode(),
-                                 {'Content-Type': 'application/json'}, typ=typ)
+                                 {'Content-Type': 'application/json'}, typ=typ, create_rel=item.rel)
         except FileError as error:
             if error.code != 'START_UNCERTAIN':
                 attempt['creating'] = False
@@ -669,7 +679,9 @@ class Batch:
         """Ctrl+C: best-effort DELETE of analyses still running on the server, in parallel."""
         with self.active_lock:
             ids = sorted(self.active)
-        if not ids:
+        unstarted = [rel for rel, attempt in self.state.snapshot().items()
+                     if not attempt.get('analysis_id') and not attempt.get('creating')]
+        if not ids and not unstarted:
             return
         log(f'Anuluję analizy w toku na serwerze: {len(ids)}...')
         settled = []
@@ -684,6 +696,8 @@ class Batch:
                         self.release_attempt(rel, timeout)
 
         threads = [threading.Thread(target=cancel, args=(i,), daemon=True) for i in ids]
+        threads += [threading.Thread(target=self.release_attempt, args=(rel, timeout), daemon=True)
+                    for rel in unstarted]
         for thread in threads:
             thread.start()
         deadline = time.monotonic() + 2 * timeout + 1

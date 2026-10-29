@@ -273,6 +273,21 @@ class UploadCleanupTest(unittest.TestCase):
             api.release.assert_not_called()
             self.assertTrue(ba.RunState(out, tmp).get(item.rel)['creating'])
 
+    def test_interrupt_while_waiting_after_safe_rejection_can_release_unstarted_upload(self):
+        for failure in (ba.Response(429, {}, None), ba.Response(503, {}, None),
+                        URLError(ConnectionRefusedError('refused'))):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp, patch.object(ba, 'log'):
+                api = Mock(upload_timeout=900)
+                api.request.side_effect = [ba.Response(200, {}, {'fileId': 'file'}), failure]
+                api.release.return_value = ba.Response(204, {}, None)
+                item = ba.MediaFile(touch(tmp, 'a.mp4'), 'a.mp4', 16)
+                batch = ba.Batch(api, ba.Settings(), wait=lambda s: True)
+                with self.assertRaises(ba.Stopped):
+                    batch.analyse(item)
+                self.assertFalse(batch.state.get(item.rel).get('creating'))
+                batch.cancel_active()
+                api.release.assert_called_once_with('file', ba.CANCEL_TIMEOUT)
+
 
 class RetryTest(unittest.TestCase):
     def test_retry_after_header(self):
@@ -812,7 +827,7 @@ class DeviceLoginTest(unittest.TestCase):
 
 class CreateRecoveryTest(unittest.TestCase):
     def test_uncertain_create_recovers_by_file_id_on_later_history_page(self):
-        for failure in (ba.Response(502, {}, None), ba.Response(504, {}, None),
+        for failure in (ba.Response(502, {}, None), ba.Response(504, {}, None), ba.Response(408, {}, None),
                         TimeoutError('read'), URLError(ConnectionResetError('reset'))):
             with self.subTest(failure=failure):
                 api = Mock()

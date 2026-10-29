@@ -113,7 +113,8 @@ Przepustowość wyznacza czas detektorów, nie narzędzie: przy 3 analizach w to
 ## Wznawianie
 
 `Ctrl+C` przerywa przebieg (kod 130); zapisane wiersze zostają. Analizy w toku są anulowane na
-serwerze (`DELETE /api/analysis/{id}`), a uploady potwierdzonych anulowań są usuwane
+serwerze (`DELETE /api/analysis/{id}`), a uploady potwierdzonych anulowań oraz prób,
+które jeszcze nie wystartowały, są usuwane
 (`DELETE /api/files/{id}`; dwa żądania po maks. 5 s, równolegle dla prób, bez gwarancji),
 chyba że podasz `--no-cancel`
 — wtedy kończą się na serwerze. Przerwane pliki nie dostają wiersza, więc wznowienie analizuje je
