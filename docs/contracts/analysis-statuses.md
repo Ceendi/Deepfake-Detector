@@ -43,11 +43,15 @@ PENDING ──► PROCESSING ──► COMPLETED
   ('PENDING','PROCESSING')` / analogously audio), so two concurrent disjoint-column writes both
   survive under the Postgres row-lock. Every terminal transition (complete/fail/cancel) is then a
   compare-and-set on the status (`SET status = :terminal WHERE id = :id AND status IN
-  ('PENDING','PROCESSING')`); the row count picks a single winner, so the slot releases and the SSE
+  ('PENDING','PROCESSING')`); the row count picks a single winner, so database-counted capacity is freed and the SSE
   fires exactly once even when a result and a cancel race (week 6).
-- Stuck-job recovery: a `@Scheduled` scan (every 5 min) fails analyses left
-  `PENDING`/`PROCESSING` with no progress past the threshold (default 600s) — sets `FAILED`,
-  releases the in-flight slot, and notifies the client over SSE.
+- [Stuck-job recovery](../reliability.md#stuck-job-recovery): a scheduled scan (every 300 s,
+  first scan after 600 s) fails active analyses past any deadline: unsent dispatch 120 s,
+  per-source pickup 1800 s from dispatch, per-source idle 600 s, or absolute age 7200 s
+  from creation. Sources track `video_started_at`/`audio_started_at` and
+  `video_progress_at`/`audio_progress_at` independently; sibling progress cannot extend
+  their deadlines, and no progress extends absolute age. The terminal status CAS sets
+  `FAILED`, frees capacity counted in PostgreSQL, and sends SSE after commit.
 - DLQ consumer: a valid task or terminal result dead letter fails only an expected,
   unaccepted source of an active analysis. Accepted FULL sources and cancelled/terminal
   analyses are preserved; poison and permanent data failures are durably quarantined, while
@@ -60,4 +64,6 @@ PENDING ──► PROCESSING ──► COMPLETED
    (or a detector task lands in `analysis.video.dlq` / `analysis.audio.dlq`); the DLQ
    consumer fails an active analysis only for an expected, unaccepted source. Progress
    has an independent advisory policy and never causes this transition.
-3. Stuck-job recovery fires (no progress past the threshold while `PENDING`/`PROCESSING`).
+3. [Stuck-job recovery](../reliability.md#stuck-job-recovery) fires while `PENDING`/`PROCESSING`:
+   dispatch 120 s, per-source pickup 1800 s, per-source idle 600 s, or absolute age 7200 s.
+   These are eligibility deadlines; failure happens on the next scan after a transactional recheck.
