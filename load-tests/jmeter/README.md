@@ -2,7 +2,7 @@
 
 Shows that replicating `file-service` behind the gateway's Eureka load balancer
 (`lb://file-service`) improves throughput / p95: 50 concurrent threads × 60 s of ~5 MB multipart
-uploads through the gateway, all on one token. The production limits (5 uploads/min, 4 concurrent
+uploads through the gateway, all on one token. The production limits (10 uploads/min, 4 concurrent
 uploads per replica, 2 per user, 5 GiB quota) are raised for the benchmark below.
 
 **Tools:** Apache JMeter 5.6.x on PATH, ffmpeg (sample), Docker. Results:

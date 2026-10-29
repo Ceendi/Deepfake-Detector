@@ -109,9 +109,10 @@ Published to `analysis.video` or `analysis.audio`.
 
 ```json
 {
+  "task_id": "1a4fd596-cd86-4dcc-85cf-2be23e293b13",
   "analysis_id": "550e8400-e29b-41d4-a716-446655440000",
   "file_bucket": "deepfake-uploads",
-  "file_key": "550e8400-e29b-41d4-a716-446655440000_test.mp4",
+  "file_key": "550e8400-e29b-41d4-a716-446655440000.mp4",
   "correlation_id": "corr-uuid",
   "timestamp": "2026-04-21T10:30:00Z",
   "mode": "accurate"
@@ -125,10 +126,15 @@ robust to recent generators, e.g. ElevenLabs). The Audio Detector falls back to
 it explicitly (REST `mode` absent → `"accurate"`). Video tasks do not carry the
 field.
 
-`file_key` follows the convention from
-[`object-storage.md`](./object-storage.md): full `{fileId}` UUID + `_` +
-original filename. Never shorten the UUID — it's the collision-resistance
-guarantee.
+`task_id` — UUID of the durable outbox task, equal to the AMQP `message_id`.
+It stays the same across publication retries and is informational for detectors;
+result idempotency remains per `analysis_id` and `source`.
+
+`file_key` is the canonical key returned by file-service, following
+[`object-storage.md`](./object-storage.md): `{fileId}.{detectedExtension}` for new
+uploads (extension chosen from detected MIME). Existing legacy keys such as
+`{fileId}_{originalFilename}` remain valid. Treat the key as opaque; never reconstruct
+it from a filename or shorten its full UUID.
 
 ### Progress — Detector → Orchestrator
 

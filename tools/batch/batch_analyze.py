@@ -23,7 +23,7 @@ from collections import Counter
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from pathlib import Path, PurePosixPath
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
@@ -137,6 +137,8 @@ def read_results(path):
 
 def should_retry(row, retry_failed):
     status = row.get('status') or ''
+    if not row.get('czas_s') or any(row.get(key) is None for key in COLUMNS):
+        return True
     if status not in KNOWN_STATUSES or status == ERROR:
         return True  # transient give-up or a row cut off by a crash
     return retry_failed and status != 'COMPLETED'
@@ -159,7 +161,69 @@ def write_results(path, rows):
         writer = csv.DictWriter(f, COLUMNS)
         writer.writeheader()
         writer.writerows(rows)
+        f.flush()
+        os.fsync(f.fileno())
     os.replace(tmp, path)
+
+
+class RunState:
+    """Durable root binding and upload ownership, shared by the workers; never stores tokens."""
+
+    def __init__(self, out=None, root=None):
+        self.path = Path(str(out) + '.meta.json') if out is not None else None
+        self.root = str(Path(root).resolve()) if root is not None else None
+        self.lock = threading.Lock()
+        self.attempts = {}
+        if self.path and self.path.exists():
+            data = json.loads(self.path.read_text(encoding='utf-8'))
+            if not isinstance(data, dict) or data.get('version') != 1 or data.get('root') != self.root:
+                raise ValueError(f'{self.path}: inny katalog źródłowy lub nieznany format metadanych')
+            self.attempts = data.get('attempts', {})
+            if not isinstance(self.attempts, dict) or any(
+                    not isinstance(a, dict) or not a.get('file_id') for a in self.attempts.values()):
+                raise ValueError(f'{self.path}: nieprawidłowe dane prób')
+        elif self.path and Path(out).exists():
+            raise ValueError(f'{out}: brak {self.path.name}; nie można potwierdzić katalogu źródłowego')
+
+    def get(self, rel):
+        with self.lock:
+            return dict(self.attempts.get(rel, {}))
+
+    def snapshot(self):
+        with self.lock:
+            return {rel: dict(attempt) for rel, attempt in self.attempts.items()}
+
+    def put(self, rel, attempt):
+        with self.lock:
+            self.attempts[rel] = dict(attempt)
+            self._save()
+
+    def remove(self, rel):
+        with self.lock:
+            self.attempts.pop(rel, None)
+            self._save()
+
+    def set_creating(self, rel, creating):
+        if rel is not None:
+            with self.lock:
+                self.attempts[rel]['creating'] = creating
+                self._save()
+
+    def save(self):
+        with self.lock:
+            self._save()
+
+    def _save(self):
+        if self.path is None:
+            return
+        tmp = self.path.with_name(self.path.name + '.tmp')
+        with tmp.open('w', encoding='utf-8') as f:
+            json.dump({'version': 1, 'root': self.root, 'attempts': self.attempts}, f,
+                      ensure_ascii=False, indent=2)
+            f.write('\n')
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, self.path)
 
 
 class RowWriter:
@@ -190,7 +254,7 @@ def retry_after(headers, now=None):
         seconds = when.timestamp() - (time.time() if now is None else now)
     if not math.isfinite(seconds):
         return None
-    return min(max(seconds, 0.0), RETRY_AFTER_CAP)
+    return min(max(seconds, 1.0), RETRY_AFTER_CAP)
 
 
 def backoff(attempt):
@@ -290,12 +354,15 @@ class DeviceLogin(TokenSource):
         self.device_url = url.rsplit('/', 1)[0] + '/auth/device'
         self.sleep = sleep
         self.refresh_token = None
+        self.failed_login = None
 
     def _store(self, data):
         super()._store(data)
         self.refresh_token = data.get('refresh_token')
 
     def _fetch(self):
+        if self.failed_login is not None:
+            raise self.failed_login
         if self.refresh_token:
             status, data = post_form(self.url, {'grant_type': 'refresh_token', 'client_id': self.client_id,
                                                 'refresh_token': self.refresh_token})
@@ -305,7 +372,11 @@ class DeviceLogin(TokenSource):
                 raise keycloak_failure(status, '')
             self.refresh_token = None
             log('Sesja Keycloak wygasła, zaloguj się ponownie.')
-        return self._login()
+        try:
+            return self._login()
+        except FatalError as error:
+            self.failed_login = error
+            raise
 
     def _login(self):
         status, grant = post_form(self.device_url, {'client_id': self.client_id})
@@ -372,6 +443,9 @@ class Api:
         # Cached token only: an interrupted run must not start a browser login.
         return self.request('DELETE', f'/api/analysis/{quote(analysis_id)}', timeout=timeout, renew=False)
 
+    def release(self, file_id, timeout=CANCEL_TIMEOUT):
+        return self.request('DELETE', f'/api/files/{quote(file_id)}', timeout=timeout, renew=False)
+
 
 def multipart(path, mime):
     """Streaming multipart body: a 500 MiB upload is never held in memory."""
@@ -422,8 +496,9 @@ class Settings:
 
 
 class Batch:
-    def __init__(self, api, settings, wait=None):
+    def __init__(self, api, settings, wait=None, state=None):
         self.api, self.settings = api, settings
+        self.state = state or RunState()
         self.stop = threading.Event()  # Ctrl+C: abandon everything
         self.drain = threading.Event()  # fatal error: finish files in flight, start no new ones
         self.upload_slots = threading.Semaphore(UPLOAD_SLOTS)
@@ -447,14 +522,14 @@ class Batch:
         if start > now:
             self.pause(start - now)
 
-    def call(self, what, method, path, data=None, headers=None, timeout=None, typ=''):
-        """Request that waits out 429 (without a limit) and retries 5xx/network errors (bounded)."""
+    def call(self, what, method, path, data=None, headers=None, timeout=None, typ='', create_rel=None):
+        """Wait out 429 and safely retry transient errors; reconcile uncertain creates."""
         waits = transient = 0
         while True:
             if self.stop.is_set():
                 raise Stopped()
             try:
-                response = self.api.request(method, path, data, headers, timeout)
+                response = self.request_once(method, path, data, headers, timeout, typ, create_rel)
             except OSError as error:
                 response, reason = None, f'{type(error).__name__}: {error}'
             else:
@@ -473,10 +548,78 @@ class Batch:
             log(f'  {what}: {reason}, ponowienie za {delay:.0f} s')
             self.pause(delay)
 
+    def request_once(self, method, path, data, headers, timeout, typ, create_rel):
+        creating = method == 'POST' and path == '/api/analysis'
+        self.state.set_creating(create_rel, True)
+        try:
+            response = self.api.request(method, path, data, headers, timeout)
+        except OSError as error:
+            cause = error.reason if isinstance(error, URLError) else error
+            if not creating or isinstance(cause, ConnectionRefusedError):
+                self.state.set_creating(create_rel, False)
+                raise
+        else:
+            if not creating or response.status == 503 or (response.status < 500 and response.status != 408):
+                if response.status != 201:
+                    self.state.set_creating(create_rel, False)
+                return response
+        return self.recover_create(json.loads(data)['fileId'], typ)
+
+    def recover_create(self, file_id, typ):
+        # A lost response can hide a committed transaction; never blindly repeat a create.
+        page = 0
+        while True:
+            try:
+                response = self.call('odszukanie analizy', 'GET', f'/api/analysis?size=100&page={page}', typ=typ)
+            except FileError:
+                break
+            if response.status != 200 or not isinstance(response.body, dict):
+                break
+            for analysis in response.body.get('content', []):
+                if analysis.get('fileId') == file_id:
+                    return Response(201, {}, analysis)
+            page += 1
+            if page >= response.body.get('page', {}).get('totalPages', 0):
+                break
+        raise FileError(ERROR, 'START_UNCERTAIN',
+                        f'Nie można potwierdzić startu dla pliku {file_id}. Sprawdź historię; '
+                        'POST nie został ponowiony.', typ)
+
+    def release_attempt(self, rel, timeout=CANCEL_TIMEOUT):
+        attempt = self.state.get(rel)
+        if not attempt:
+            return True
+        try:
+            response = self.api.release(attempt['file_id'], timeout)
+            if response.status in (200, 204, 404):
+                self.state.remove(rel)
+                return True
+        except OSError:
+            pass
+        log(f'  {rel}: nie udało się usunąć uploadu {attempt["file_id"]}; ponowię przy wznowieniu.')
+        return False
+
+    def cancel_one(self, analysis_id, timeout=CANCEL_TIMEOUT):
+        try:
+            return self.api.cancel(analysis_id, timeout).status in (200, 409, 404)
+        except OSError:
+            return False
+
     def analyse(self, item):
         typ = self.settings.type_override or item.guessed_type
         if item.size > MAX_UPLOAD_BYTES:
             raise FileError(REJECTED, 'PAYLOAD_TOO_LARGE', 'Plik przekracza 500 MiB.', typ)
+        previous = self.state.get(item.rel)
+        if previous.get('creating') and not previous.get('analysis_id'):
+            response = self.recover_create(previous['file_id'], typ)
+            previous.update(analysis_id=response.body['id'], creating=False)
+            self.state.put(item.rel, previous)
+            return self.track_and_poll(previous['analysis_id'], typ)
+        if previous:
+            if previous.get('analysis_id') and not self.cancel_one(previous['analysis_id']):
+                raise FileError(ERROR, 'CLEANUP_PENDING', 'Nie udało się anulować poprzedniej próby.', typ)
+            if not self.release_attempt(item.rel):
+                raise FileError(ERROR, 'CLEANUP_PENDING', 'Nie udało się usunąć poprzedniego uploadu.', typ)
         body, headers = multipart(item.path, MIME_BY_EXT[item.path.suffix.lower()])
         with self.upload_slots:
             self.pace_upload()
@@ -488,18 +631,40 @@ class Batch:
         # Same rule as the frontend: the server-detected MIME picks the analysis type.
         if not self.settings.type_override:
             typ = 'AUDIO' if str(uploaded.get('mimetype') or '').lower().startswith('audio/') else 'FULL'
-        response = self.call(f'analiza {item.rel}', 'POST', '/api/analysis',
-                             json.dumps({'fileId': uploaded['fileId'], 'type': typ}).encode(),
-                             {'Content-Type': 'application/json'}, typ=typ)
+        attempt = {'file_id': uploaded['fileId'], 'creating': False}
+        self.state.put(item.rel, attempt)
+        try:
+            response = self.call(f'analiza {item.rel}', 'POST', '/api/analysis',
+                                 json.dumps({'fileId': uploaded['fileId'], 'type': typ}).encode(),
+                                 {'Content-Type': 'application/json'}, typ=typ, create_rel=item.rel)
+        except FileError as error:
+            if error.code != 'START_UNCERTAIN':
+                attempt['creating'] = False
+                self.state.put(item.rel, attempt)
+            raise
         if response.status != 201:
+            attempt['creating'] = False
+            self.state.put(item.rel, attempt)
             raise http_error(response, typ)
         analysis_id = response.body['id']
+        attempt.update(analysis_id=analysis_id, creating=False)
+        self.state.put(item.rel, attempt)
+        return self.track_and_poll(analysis_id, typ)
+
+    def track_and_poll(self, analysis_id, typ):
         with self.active_lock:
             self.active.add(analysis_id)
         try:
             analysis = self.poll(analysis_id, typ)
         except Stopped:
             raise  # stays active: the interrupt handler cancels it on the server
+        except FileError as error:
+            if error.code == 'CLIENT_TIMEOUT':
+                cancelled = self.cancel_one(analysis_id)
+                error.message += (' Anulowano na serwerze.' if cancelled else
+                                  ' Anulowanie nie powiodło się; sprawdź historię.')
+            self._settled(analysis_id)
+            raise
         except Exception:
             self._settled(analysis_id)
             raise
@@ -514,24 +679,28 @@ class Batch:
         """Ctrl+C: best-effort DELETE of analyses still running on the server, in parallel."""
         with self.active_lock:
             ids = sorted(self.active)
-        if not ids:
+        unstarted = [rel for rel, attempt in self.state.snapshot().items()
+                     if not attempt.get('analysis_id') and not attempt.get('creating')]
+        if not ids and not unstarted:
             return
         log(f'Anuluję analizy w toku na serwerze: {len(ids)}...')
         settled = []
 
         def cancel(analysis_id):
-            try:
-                response = self.api.cancel(analysis_id, timeout)
-            except OSError:
-                return
             # 409: it finished first; either way nothing keeps running for this file.
-            if response.status in (200, 409):
+            if self.cancel_one(analysis_id, timeout):
                 settled.append(analysis_id)
+                self._settled(analysis_id)
+                for rel, attempt in self.state.snapshot().items():
+                    if attempt.get('analysis_id') == analysis_id:
+                        self.release_attempt(rel, timeout)
 
         threads = [threading.Thread(target=cancel, args=(i,), daemon=True) for i in ids]
+        threads += [threading.Thread(target=self.release_attempt, args=(rel, timeout), daemon=True)
+                    for rel in unstarted]
         for thread in threads:
             thread.start()
-        deadline = time.monotonic() + timeout + 1
+        deadline = time.monotonic() + 2 * timeout + 1
         for thread in threads:
             thread.join(max(0.0, deadline - time.monotonic()))
         missed = len(ids) - len(settled)
@@ -561,7 +730,7 @@ class Batch:
                     waits += 1
             if time.monotonic() + delay > deadline:
                 raise FileError(ERROR, 'CLIENT_TIMEOUT', f'Brak wyniku po {self.settings.timeout:.0f} s '
-                                f'(analiza {analysis_id} może nadal trwać).', typ)
+                                f'(analiza {analysis_id}).', typ)
             self.pause(delay)
 
     def process(self, item):
@@ -602,7 +771,7 @@ class Batch:
                 except Exception as error:  # noqa: BLE001 - one broken file must not end the run
                     row = dict.fromkeys(COLUMNS, '')
                     row.update(plik=item.rel, typ=item.guessed_type, status=ERROR,
-                               blad=f'[CLIENT_ERROR] {type(error).__name__}: {error}')
+                               blad=f'[CLIENT_ERROR] {type(error).__name__}: {error}', czas_s='0.0')
                     results.put(('row', row))
 
         threads = [threading.Thread(target=worker, daemon=True)
@@ -622,6 +791,10 @@ class Batch:
                         progress(f'BŁĄD: {payload} Kończę pliki w toku, nowych nie zaczynam.')
                     continue
                 write(payload)
+                attempt = self.state.get(payload['plik'])
+                if (payload['status'] in (ERROR, REJECTED, 'CANCELLED')
+                        and error_code(payload) != 'CLEANUP_PENDING' and not attempt.get('creating')):
+                    self.release_attempt(payload['plik'])
                 done += 1
                 progress(f'[{done}/{len(items)}] {payload["plik"]}: {payload["status"]} '
                          f'{payload["werdykt"] or payload["blad"]} ({payload["czas_s"]} s)'.rstrip())
@@ -738,9 +911,16 @@ def format_metrics(m):
     return '\n'.join(lines)
 
 
-def report_metrics(rows, metrics_out=None):
+def report_metrics(rows, metrics_out=None, discovered=None):
+    stale = 0
+    if discovered is not None:
+        current = set(discovered)
+        stale = sum(row.get('plik') not in current for row in rows)
+        rows = [row for row in rows if row.get('plik') in current]
     metrics = compute_metrics(rows)
+    metrics['stale_rows_ignored'] = stale
     print(format_metrics(metrics))
+    print(f'Pominięte stare wiersze spoza odkrytych plików: {stale}')
     if metrics_out:
         Path(metrics_out).write_text(json.dumps(metrics, indent=2, ensure_ascii=False) + '\n',
                                      encoding='utf-8')
@@ -811,19 +991,38 @@ def main(argv=None, api=None, wait=None):
     out = Path(args.out)
     try:
         existing = read_results(out) if out.exists() else []
-    except ValueError as error:
+    except (ValueError, OSError) as error:
         log(f'BŁĄD: {error}. Użyj innego --out.')
         return 2
     if args.metrics_only:
         if not out.exists():
             log(f'BŁĄD: brak pliku {out}.')
             return 2
-        report_metrics(existing, args.metrics_out)
+        meta = Path(str(out) + '.meta.json')
+        try:
+            folder = args.folder
+            if meta.exists() and not folder:
+                raise ValueError('Podaj folder źródłowy także z --metrics-only; metadane służą tylko do weryfikacji')
+            if folder:
+                RunState(out, folder)
+                if not Path(folder).is_dir():
+                    raise ValueError(f'{folder}: katalog źródłowy jest niedostępny')
+            discovered = [item.rel for item in discover(folder)] if folder else None
+        except (ValueError, OSError) as error:
+            log(f'BŁĄD: {error}')
+            return 2
+        report_metrics(existing, args.metrics_out, discovered)
         return 0
 
     root = Path(args.folder)
     if not root.is_dir():
         log(f'BŁĄD: {root} nie jest folderem.')
+        return 2
+    try:
+        state = RunState(out, root)
+        state.save()
+    except (ValueError, OSError) as error:
+        log(f'BŁĄD: {error}. Użyj innego --out.')
         return 2
     items = discover(root)
     kept = plan_resume(existing, args.retry_failed)
@@ -842,7 +1041,7 @@ def main(argv=None, api=None, wait=None):
                 except (FatalError, OSError) as error:
                     log(f'BŁĄD logowania: {error}')
                     return 3
-            batch = Batch(api, settings, wait)
+            batch = Batch(api, settings, wait, state=state)
             with out.open('a', newline='', encoding='utf-8') as f:
                 code = batch.run(todo, RowWriter(f))
         except KeyboardInterrupt:
@@ -851,7 +1050,7 @@ def main(argv=None, api=None, wait=None):
                 + ('' if args.cancel else ' Analizy w toku kończą się na serwerze.'))
             return 130
     if args.labels_from_folders:
-        report_metrics(read_results(out), args.metrics_out)
+        report_metrics(read_results(out), args.metrics_out, [item.rel for item in items])
     return code
 
 

@@ -55,8 +55,10 @@ virtual-hosted style (`bucket.endpoint/key`). Set
   top-frames next). Detectors publish the bare object keys in `result.gradcam_keys`
   (see [`amqp-messages.md`](./amqp-messages.md)); the Orchestrator persists them and
   serves the PNGs to the owner via `GET /api/analysis/{id}/artifacts/{source}/{name}`.
-- Upload quota is 5368709120 bytes (5 GiB) per owner over non-deleted metadata rows.
-  Soft-delete frees logical quota immediately; physical space is reclaimed after 72 hours.
+- Upload quota is 5368709120 bytes (5 GiB) per owner over all metadata rows, including
+  soft-deleted files. Soft-delete hides the file from the API immediately; quota and physical
+  space are freed only after the purge removes the object and metadata (72 h retention by
+  default, plus up to the hourly cleanup interval). See [REST upload limits](./rest-api.md).
 - Unclaimed uploads older than 7 days are soft-deleted, then follow the same purge path.
   `POST /api/files/{id}/claim` stores the first use timestamp atomically. Claimed files
   are excluded from unused retention. Historical rows are conservatively marked used
