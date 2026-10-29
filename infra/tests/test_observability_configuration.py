@@ -138,7 +138,7 @@ class ObservabilityConfigurationTest(unittest.TestCase):
                     expression = target['expr']
                     if 'histogram_quantile' not in expression:
                         continue
-                    # Every idle group must disappear, while a different active group still renders.
+                    # Idle histograms disappear; active histograms must retain their p95.
                     metric = expression.split('rate(', 1)[1].split('_bucket', 1)[0]
                     labels = {'job': 'orchestrator'} if panel['id'] == 5 else {}
                     if panel['id'] == 4:
@@ -155,13 +155,11 @@ class ObservabilityConfigurationTest(unittest.TestCase):
                     percentile_tests.append({'interval': '1m', 'input_series': series,
                         'promql_expr_test': [{'expr': expression, 'eval_time': '5m',
                                               'exp_samples': []}]})
-                    for series_item in series:
-                        series_item['values'] = '0+1x10'
-                    # Copy before changing the inputs for the active case.
                     idle_test = percentile_tests[-1]
                     active_test = json.loads(json.dumps(idle_test))
-                    for series_item in idle_test['input_series']:
-                        series_item['values'] = '0+0x10'
+                    for series_item in active_test['input_series']:
+                        # Exactly one observation/second avoids fractional rate rounding.
+                        series_item['values'] = '0+60x10'
                     output_labels = {key: value for key, value in labels.items()
                                      if (panel['id'] == 4 and key == 'type')
                                      or (panel['id'] == 5 and key == 'job')}

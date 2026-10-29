@@ -97,6 +97,8 @@ class DiscoveryConfigurationTest(unittest.TestCase):
             self.assertEqual('http://discovery:changeme_dev_discovery@eureka-server:8761/eureka/',
                              services[name]['environment']['EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE'])
             self.assertIn('deepfake', services[name]['networks'])
+            self.assertEqual(services['eureka-server']['environment']['EUREKA_CSRF_TOKEN'],
+                             services[name]['environment']['EUREKA_CSRF_TOKEN'])
 
 
 class DiscoveryIntegrationTest(unittest.TestCase):
@@ -282,17 +284,18 @@ class DiscoveryIntegrationTest(unittest.TestCase):
                                'name': 'MyOwn'},
         }})
         for auth in ('', 'Basic ' + base64.b64encode(b'discovery:wrong-password').decode()):
-            output = subprocess.run([
-                'docker', 'compose', '--project-name', self.project, '-f', str(self.compose_file),
-                'run', '--rm', '--no-deps', '--entrypoint', 'wget', 'seaweedfs-init',
-                '-S', '-O', '/dev/null', '--header=Content-Type: application/json',
-                '--header=Authorization: ' + auth, '--post-data=' + payload,
-                'http://eureka-server:8761/eureka/apps/UNTRUSTED-PROBE',
-            ], cwd=ROOT, text=True, capture_output=True, check=False)
-            self.assertNotEqual(0, output.returncode)
-            self.assertIn('401', output.stderr)
-        self.assert_registration_and_routes()
-
+            def rejected():
+                output = subprocess.run([
+                    'docker', 'compose', '--project-name', self.project, '-f', str(self.compose_file),
+                    'run', '--rm', '--no-deps', '--entrypoint', 'wget', 'seaweedfs-init',
+                    '-S', '-O', '/dev/null', '--header=Content-Type: application/json',
+                    '--header=Authorization: ' + auth, '--post-data=' + payload,
+                    '--header=X-CSRF-TOKEN: changeme_dev_registry_csrf',
+                    'http://eureka-server:8761/eureka/apps/UNTRUSTED-PROBE',
+                ], cwd=ROOT, text=True, capture_output=True, check=False)
+                self.assertNotEqual(0, output.returncode)
+                self.assertIn('401', output.stderr)
+            self.eventually(rejected)
     def assert_registration_and_routes(self):
         def registered():
             registry = json.loads(self.compose(

@@ -115,12 +115,12 @@ class CoreReliabilityConfigurationTest(unittest.TestCase):
 
 class CoreReliabilityIntegrationTest(unittest.TestCase):
     @classmethod
-    def compose(cls, *args, check=True):
+    def compose(cls, *args, check=True, input_text=None):
         result = subprocess.run([
             'docker', 'compose', '--project-name', cls.project,
             '-f', str(cls.compose_file), '--profile', 'core', *args,
         ], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            check=check)
+            check=check, input=input_text)
         return result.stdout.strip()
 
     @classmethod
@@ -246,19 +246,18 @@ class CoreReliabilityIntegrationTest(unittest.TestCase):
         before = sql('postgres', "SELECT datname, pg_get_userbyid(datdba) FROM pg_database "
                      "WHERE datname <> 'migration_probe' ORDER BY datname")
         script = ROOT / 'infra/postgres/init/02-init-orchestrator-db.sh'
-        self.compose('cp', str(script), 'postgres:/tmp/migrate-role.sh')
         for _ in range(2):
             self.compose('exec', '-T', '-e', 'POSTGRES_DB=migration_probe',
                          '-e', 'ORCHESTRATOR_DB_USER=migration_probe_user',
                          '-e', "ORCHESTRATOR_DB_PASSWORD=disposable'quoted-password",
-                         'postgres', 'bash', '/tmp/migrate-role.sh')
+                         'postgres', 'bash', '-s', input_text=script.read_text())
         authenticated = self.compose('exec', '-T',
             '-e', "PGPASSWORD=disposable'quoted-password", 'postgres', 'psql', '-X', '-At',
             '-h', '127.0.0.1', '-U', 'migration_probe_user', '-d', 'migration_probe',
             '-c', 'SELECT current_user')
         self.assertEqual('migration_probe_user', authenticated)
         rejected = self.compose('exec', '-T', '-e', 'ORCHESTRATOR_DB_USER=deepfake',
-                                'postgres', 'bash', '/tmp/migrate-role.sh', check=False)
+                                'postgres', 'bash', '-s', check=False, input_text=script.read_text())
         self.assertIn('Refusing overlapping', rejected)
         self.assertEqual('1|keep me', sql('migration_probe', 'SELECT * FROM preserved',
                                         'migration_probe_user'))

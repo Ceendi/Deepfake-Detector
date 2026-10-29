@@ -31,9 +31,12 @@ cd ../orchestrator; ./mvnw.cmd -B verify
 Eureka has no published host port. Its dashboard and registration API are available at
 `http://eureka-server:8761` on the Compose network; services register at
 `http://eureka-server:8761/eureka/` with HTTP Basic and the gateway routes through `lb://SERVICE-NAME`.
-Set `EUREKA_USER` and `EUREKA_PASSWORD` in `.env` (URL-safe characters). Compose passes an authenticated
-`EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE` to gateway, orchestrator and file-service. IDE runs need
-these credentials too, or an explicit authenticated registry URL. Only `/actuator/health` is public.
+Set `EUREKA_USER` and `EUREKA_PASSWORD` in `.env` (URL-safe characters), plus an independent random
+`EUREKA_CSRF_TOKEN`. Compose passes an authenticated `EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE` and
+the CSRF secret to gateway, orchestrator and file-service. Their dedicated Eureka transports add
+`X-CSRF-TOKEN` to requests, so the registry keeps CSRF enabled, including registration/heartbeat/delete.
+IDE runs need the CSRF secret and Basic credentials too, or an explicit authenticated registry URL
+plus the CSRF secret. Only `/actuator/health` is public.
 The gateway host port is bound to `127.0.0.1:8080`.
 
 Inspect the registry without opening a host port:

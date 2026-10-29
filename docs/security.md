@@ -61,8 +61,14 @@ upload throttling; other Redis uses fail open ([reliability](reliability.md)).
   and has no superuser, database/role creation, replication or RLS-bypass privileges. file-service
   has its own role and database. Existing data needs the [role migration](../SETUP.md#existing-postgresql-volume-role-migration).
 - **Discovery:** Eureka requires HTTP Basic for its dashboard and `/eureka/**` API. Only health
-  is anonymous. `EUREKA_USER/PASSWORD` configure the registry and all three Java clients; CSRF
-  stays enabled outside `/eureka/**`, whose machine clients authenticate every request with Basic.
+  is anonymous. `EUREKA_USER/PASSWORD` configure the registry and all three Java clients. CSRF
+  remains enabled on every path: mutating calls also need the independent `EUREKA_CSRF_TOKEN`
+  in `X-CSRF-TOKEN`. A deployment-provisioned token repository lets machine clients supply it
+  without browser sessions; clients add the header only to their Eureka transport, preserving TLS
+  configuration. Basic credentials alone cannot authorize a mutation. Browsers cannot forge this
+  secret header through a cross-origin form; no cross-origin access is enabled on the registry.
+  Generate a long random value (for example `openssl rand -hex 32`), never log it, and rotate it
+  together on the registry and all Java clients. The example value is development-only.
   Use URL-safe credentials because client URLs carry them. Do not log those URLs. The shared
   credential limits registration to its holders; a compromised Java client can still register
   arbitrary instances. HTTP is a local/demo trade-off, so use TLS before deploying across hosts.

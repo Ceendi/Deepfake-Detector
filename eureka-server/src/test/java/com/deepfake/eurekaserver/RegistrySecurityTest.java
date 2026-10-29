@@ -13,7 +13,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"EUREKA_USER=registry-test", "EUREKA_PASSWORD=disposable-test-password"})
+        properties = {"EUREKA_USER=registry-test", "EUREKA_PASSWORD=disposable-test-password",
+                "EUREKA_CSRF_TOKEN=disposable-csrf-token"})
 class RegistrySecurityTest {
     @Value("${local.server.port}")
     private int port;
@@ -21,12 +22,19 @@ class RegistrySecurityTest {
     private final HttpClient client = HttpClient.newHttpClient();
 
     private int request(String method, String path, String password, String body) throws Exception {
+        return request(method, path, password, body, null);
+    }
+
+    private int request(String method, String path, String password, String body, String csrf) throws Exception {
         var builder = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
                 .method(method, HttpRequest.BodyPublishers.ofString(body));
         if (password != null) {
             builder.header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
                     ("registry-test:" + password).getBytes(StandardCharsets.UTF_8)));
+        }
+        if (csrf != null) {
+            builder.header("X-CSRF-TOKEN", csrf);
         }
         return client.send(builder.build(), HttpResponse.BodyHandlers.discarding()).statusCode();
     }
@@ -37,11 +45,13 @@ class RegistrySecurityTest {
         assertEquals(401, request("POST", "/eureka/apps/PROBE", null, "{}"));
         assertEquals(401, request("GET", "/eureka/apps", "incorrect", ""));
         assertEquals(401, request("POST", "/eureka/apps/PROBE", "incorrect", "{}"));
+        assertEquals(401, request("POST", "/eureka/apps/PROBE", null, "{}", "disposable-csrf-token"));
+        assertEquals(401, request("POST", "/eureka/apps/PROBE", "incorrect", "{}", "disposable-csrf-token"));
         assertEquals(401, request("GET", "/", null, ""));
     }
 
     @Test
-    void authenticatedClientCanRegisterRenewAndDeregisterWithoutCsrfToken() throws Exception {
+    void authenticatedClientMustSupplyValidCsrfHeaderForRegistryMutations() throws Exception {
         String payload = """
                 {"instance":{"instanceId":"security-probe","app":"PROBE",
                 "hostName":"localhost","ipAddr":"127.0.0.1","status":"UP",
@@ -49,10 +59,15 @@ class RegistrySecurityTest {
                 "dataCenterInfo":{"@class":"com.netflix.appinfo.InstanceInfo$DefaultDataCenterInfo",
                 "name":"MyOwn"}}}
                 """;
-        assertEquals(204, request("POST", "/eureka/apps/PROBE", "disposable-test-password", payload));
+        assertEquals(401, request("POST", "/eureka/apps/PROBE", "disposable-test-password", payload));
+        assertEquals(401, request("POST", "/eureka/apps/PROBE", "disposable-test-password", payload, "wrong"));
+        assertEquals(204, request("POST", "/eureka/apps/PROBE", "disposable-test-password", payload,
+                "disposable-csrf-token"));
         assertEquals(200, request("GET", "/eureka/apps/PROBE/security-probe", "disposable-test-password", ""));
-        assertEquals(200, request("PUT", "/eureka/apps/PROBE/security-probe", "disposable-test-password", ""));
-        assertEquals(200, request("DELETE", "/eureka/apps/PROBE/security-probe", "disposable-test-password", ""));
+        assertEquals(200, request("PUT", "/eureka/apps/PROBE/security-probe", "disposable-test-password", "",
+                "disposable-csrf-token"));
+        assertEquals(200, request("DELETE", "/eureka/apps/PROBE/security-probe", "disposable-test-password", "",
+                "disposable-csrf-token"));
     }
 
     @Test

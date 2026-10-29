@@ -546,6 +546,7 @@ services:
       <<: *logging-env
       EUREKA_USER: ${EUREKA_USER}
       EUREKA_PASSWORD: ${EUREKA_PASSWORD}
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
       interval: 10s
@@ -570,6 +571,7 @@ services:
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-250ms}
       REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-250ms}
@@ -616,6 +618,7 @@ services:
     environment:
       <<: [*jwt-env, *otel-env, *logging-env]
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
       FILE_SERVICE_DB_NAME: ${FILE_SERVICE_DB_NAME}
       FILE_SERVICE_DB_USER: ${FILE_SERVICE_DB_USER}
       FILE_SERVICE_DB_PASSWORD: ${FILE_SERVICE_DB_PASSWORD}
@@ -658,6 +661,7 @@ services:
       ORCHESTRATOR_DB_USER: ${ORCHESTRATOR_DB_USER}
       ORCHESTRATOR_DB_PASSWORD: ${ORCHESTRATOR_DB_PASSWORD}
       EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://${EUREKA_USER}:${EUREKA_PASSWORD}@eureka-server:8761/eureka/
+      EUREKA_CSRF_TOKEN: ${EUREKA_CSRF_TOKEN}
       REDIS_PASSWORD: ${REDIS_PASSWORD}
       REDIS_CONNECT_TIMEOUT: ${REDIS_CONNECT_TIMEOUT:-250ms}
       REDIS_COMMAND_TIMEOUT: ${REDIS_COMMAND_TIMEOUT:-250ms}

@@ -43,7 +43,7 @@ detectors are `healthy` in `docker compose ps`.
 - **Updating:** `docker compose pull`, then `docker compose up -d`. A plain `up` reuses the images
   already on the machine. Before upgrading an existing PostgreSQL volume to separate orchestrator
   credentials, follow the [data-preserving role migration](#existing-postgresql-volume-role-migration).
-  Add `EUREKA_USER/PASSWORD` from the current example to `.env`. Remove an old explicit
+  Add `EUREKA_USER/PASSWORD` and an independent random `EUREKA_CSRF_TOKEN` to `.env`. Remove an old explicit
   `JWT_ALLOWED_CLIENTS` override or include `deepfake-cli`; otherwise CLI login succeeds but API
   calls return 401. With no override, Compose tracks the current supported clients automatically.
 - **Pinning a version:** `DEEPFAKE_IMAGE_TAG=sha-<7-character commit>` in `.env` runs the images
@@ -151,19 +151,20 @@ Do not use legacy PowerShell binary redirection for database dumps.
    an isolated PostgreSQL instance before proceeding. Keep backups outside version control.
 
 3. Add a distinct `ORCHESTRATOR_DB_USER=orchestrator` and a strong
-   `ORCHESTRATOR_DB_PASSWORD` to `.env`; add URL-safe `EUREKA_USER/PASSWORD` for the upgrade.
+   `ORCHESTRATOR_DB_PASSWORD` to `.env`; add URL-safe `EUREKA_USER/PASSWORD` and an independent
+   random `EUREKA_CSRF_TOKEN` for the upgrade. All three Java clients send that secret in a CSRF
+   header; CSRF protection remains enabled on the registry API.
    Existing containers retain their old environment, so this alone changes no running service.
-   Copy the reviewed migration script to the running PostgreSQL container:
+   Stream the reviewed migration script to Bash in the running PostgreSQL container; no file copy
+   to its read-only root filesystem is needed:
 
    ```bash
-   docker compose -p deepfake-detector cp \
-     infra/postgres/init/02-init-orchestrator-db.sh postgres:/tmp/migrate-orchestrator-role.sh
    read -r -p 'New orchestrator database role: ' ORCHESTRATOR_DB_USER
    read -r -s -p 'New database password (same as .env): ' ORCHESTRATOR_DB_PASSWORD; echo
    export ORCHESTRATOR_DB_USER ORCHESTRATOR_DB_PASSWORD
    docker compose -p deepfake-detector exec -T \
      -e ORCHESTRATOR_DB_USER -e ORCHESTRATOR_DB_PASSWORD \
-     postgres bash /tmp/migrate-orchestrator-role.sh
+     postgres bash -s < infra/postgres/init/02-init-orchestrator-db.sh
    unset ORCHESTRATOR_DB_PASSWORD
    ```
 
