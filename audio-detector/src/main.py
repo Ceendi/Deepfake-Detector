@@ -1,26 +1,13 @@
-import logging
 import threading
 import time
 from contextlib import asynccontextmanager
 
-import structlog
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
 from . import consumer
 
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso", utc=True),
-        structlog.processors.dict_tracebacks,
-        structlog.processors.JSONRenderer(),
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-    cache_logger_on_first_use=True,
-)
 _consumer_alive = consumer.runtime.health_state
 # The I/O loop keeps beating during inference; silence means the connection thread is stuck.
 HEALTH_MAX_SILENCE_SECONDS = 60

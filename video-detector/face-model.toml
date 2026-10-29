@@ -1,0 +1,3 @@
+# Official release asset; its checksum prevents a replaced archive from entering the image.
+url = "https://github.com/deepinsight/insightface/releases/download/model-zoo/buffalo_l.zip"
+sha256 = "80ffe37d8a5940d59a7384c201a2a38d4741f2f3c51eef46ebb28218a7b0ca2f"

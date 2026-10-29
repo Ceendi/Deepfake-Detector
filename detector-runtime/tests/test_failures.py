@@ -45,6 +45,29 @@ def _client_error(code, status):
                         "ResponseMetadata": {"HTTPStatusCode": status}}, "GetObject")
 
 
+def test_failure_after_cancellation_is_acked_without_result(runtime):
+    runtime.process_task.side_effect = RuntimeError("decode failed after cancel")
+    runtime.redis_client.exists.side_effect = [0, 1]
+    channel = _deliver(runtime)
+    channel.basic_ack.assert_called_once_with(delivery_tag=7)
+    channel.basic_publish.assert_not_called()
+    runtime.record_outcome.assert_called_once_with("cancelled", None)
+
+
+def test_s3_attempts_have_bounded_timeouts_without_hidden_retries(monkeypatch):
+    from detector_runtime import storage
+
+    client = MagicMock()
+    monkeypatch.setattr(storage.boto3, "client", client)
+    monkeypatch.setenv("S3_ACCESS_KEY", "test")
+    monkeypatch.setenv("S3_SECRET_KEY", "test")
+    storage.create_s3_client("http://localhost:8333")
+    config = client.call_args.kwargs["config"]
+    assert config.connect_timeout == 5
+    assert config.read_timeout == 10
+    assert config.retries == {"mode": "standard", "total_max_attempts": 1}
+
+
 def _use_real_process(runtime, artifacts=lambda msg, result, attempt: []):
     def process(msg, progress_callback):
         return runtime.process(msg, model=object(), artifacts=artifacts,
@@ -188,12 +211,45 @@ class TestStorageFailures:
     def test_download_log_carries_only_the_file_uuid(self, runtime):
         _use_real_process(runtime)
         _deliver(runtime)
+        transfer = runtime.s3_client.download_file.call_args.kwargs["Config"]
+        assert transfer.num_download_attempts == 1
         download = [call for call in runtime.log.info.call_args_list
                     if call.args == ("downloading_file",)]
         assert download[0].kwargs == {"bucket": "deepfake-uploads", "file_id": FILE_ID}
 
 
 class TestTaskWatchdog:
+    def test_cancelled_hung_task_exits_after_grace_period(self, runtime, monkeypatch):
+        now = [100.0]
+        monkeypatch.setattr(runtime_module.time, "monotonic", lambda: now[0])
+        runtime._task_started = 40.0
+        runtime._task_context = {"analysis_id": ANALYSIS_ID}
+        runtime.exit_process = MagicMock()
+        runtime.redis_client.exists.return_value = 1
+        now[0] = 99.9
+        runtime.check_task_deadline()
+        runtime.redis_client.exists.assert_not_called()
+        now[0] = 100.0
+        runtime.check_task_deadline()
+        runtime.redis_client.exists.assert_called_once_with(f"cancel:{ANALYSIS_ID}")
+        runtime.exit_process.assert_called_once_with(1)
+
+    def test_watchdog_cancel_checks_are_throttled_and_fail_open(self, runtime, monkeypatch):
+        now = [100.0]
+        monkeypatch.setattr(runtime_module.time, "monotonic", lambda: now[0])
+        runtime._task_started = 40.0
+        runtime._task_context = {"analysis_id": ANALYSIS_ID}
+        runtime.exit_process = MagicMock()
+        runtime.redis_client.exists.side_effect = redis_lib.RedisError("offline")
+        runtime.check_task_deadline()
+        now[0] = 109.9
+        runtime.check_task_deadline()
+        assert runtime.redis_client.exists.call_count == 1
+        now[0] = 110.0
+        runtime.check_task_deadline()
+        assert runtime.redis_client.exists.call_count == 2
+        runtime.exit_process.assert_not_called()
+
     def test_task_over_hard_limit_marks_down_and_exits(self, runtime, monkeypatch):
         runtime.exit_process = MagicMock()
         runtime.health_state["ok"] = True

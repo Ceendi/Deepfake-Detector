@@ -151,7 +151,7 @@ def test_actual_analyze_no_speech_publishes_confirmed_failed_before_ack(
     redis.exists.return_value = 0
     monkeypatch.setattr(consumer.runtime, "redis_client", redis)
     s3 = MagicMock()
-    s3.download_file.side_effect = lambda bucket, key, path: Path(path).write_bytes(b"input")
+    s3.download_file.side_effect = lambda bucket, key, path, **kw: Path(path).write_bytes(b"input")
     monkeypatch.setattr(consumer.runtime, "s3_client", s3)
     channel = MagicMock()
     if failed_transport == "ack":

@@ -3,19 +3,17 @@
 src.inference is stubbed before import so the suite needs no torch/onnx — these tests
 cover the AMQP/Redis/S3 glue in consumer.py, not the model.
 """
-import sys
-import types
 from unittest.mock import MagicMock
 
 import pytest
 from detector_runtime import AnalysisCancelled
 
-# Stub the heavy inference module before src.consumer imports it.
-_fake_inference = types.ModuleType("src.inference")
-_fake_inference.AudioInference = MagicMock()
-sys.modules.setdefault("src.inference", _fake_inference)
 
-from src import consumer
+@pytest.fixture(autouse=True)
+def adapter(consumer_modules):
+    global consumer
+    consumer, _ = consumer_modules
+
 
 ANALYSIS_ID = "550e8400-e29b-41d4-a716-446655440000"
 
@@ -138,7 +136,7 @@ class TestInputTempCleanup:
     def test_downloaded_input_is_removed_when_analyze_aborts(self, s3, inference, abort):
         import pathlib
         paths = []
-        def download(bucket, key, dst):
+        def download(bucket, key, dst, **kwargs):
             paths.append(pathlib.Path(dst))
             paths[-1].write_bytes(b"x")
         s3.download_file.side_effect = download

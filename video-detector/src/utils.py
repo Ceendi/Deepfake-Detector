@@ -110,6 +110,7 @@ def derive_outputs(logit: float, threshold: float = 0.5) -> tuple[float, str, fl
     else:
         z = math.exp(shifted)
         prob = z / (1.0 + z)
+    prob = round(prob, 4)
     verdict = "FAKE" if prob > 0.5 else "REAL"
     confidence = abs(prob - 0.5) * 2.0
     return round(prob, 4), verdict, round(confidence, 4)

@@ -5,7 +5,6 @@ import os
 import subprocess
 import sys
 import time
-import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -13,15 +12,11 @@ import pika
 import pytest
 from detector_runtime import consumer as runtime_module
 
-_fake_inference = types.ModuleType("src.inference")
-_fake_inference.AudioInference = MagicMock()
-sys.modules.setdefault("src.inference", _fake_inference)
-
-from src import consumer, main
-
 
 @pytest.fixture(autouse=True)
-def ready_model(monkeypatch):
+def ready_model(monkeypatch, consumer_modules):
+    global consumer, main
+    consumer, main = consumer_modules
     monkeypatch.setattr(consumer, "audio_inference", MagicMock())
     monkeypatch.setattr(main, "_consumer_alive", {"ok": False, "last_beat": 0.0})
 

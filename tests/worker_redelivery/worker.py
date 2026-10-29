@@ -83,6 +83,10 @@ if os.getenv("TEST_RECONNECT_SECONDS"):
     runtime_module.RECONNECT_DELAY_SECONDS = float(os.environ["TEST_RECONNECT_SECONDS"])
     runtime_module.STORAGE_BACKOFF_MAX_SECONDS = float(os.environ["TEST_RECONNECT_SECONDS"])
 
+if os.getenv("TEST_CANCEL_GRACE_SECONDS"):
+    runtime_module.WATCHDOG_CANCEL_GRACE_SECONDS = float(os.environ["TEST_CANCEL_GRACE_SECONDS"])
+    runtime_module.WATCHDOG_CANCEL_INTERVAL_SECONDS = 0.1
+
 
 def observe_health():
     while True:
@@ -99,7 +103,7 @@ class ControlledInput:
     def __init__(self):
         self.outages = int(os.getenv("S3_DOWNLOAD_OUTAGES", "0"))
 
-    def download_file(self, bucket, key, destination):
+    def download_file(self, bucket, key, destination, **kwargs):
         event("download")
         if self.outages > 0:
             self.outages -= 1

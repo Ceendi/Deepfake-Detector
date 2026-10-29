@@ -34,6 +34,7 @@ import onnxruntime as ort
 import structlog
 import torch
 from detector_runtime import MediaTooLongError
+from detector_runtime.logging import model_output
 from detector_runtime.metrics import inference_duration_buckets
 from detector_runtime.model_files import ensure_model_files
 from prometheus_client import Gauge, Histogram
@@ -150,10 +151,11 @@ class VideoInference:
 
             opts = ort.SessionOptions()
             opts.intra_op_num_threads = ONNX_INTRA_THREADS
-            app = FaceAnalysis(name="buffalo_l", root=INSIGHTFACE_ROOT,
-                               allowed_modules=["detection"], sess_options=opts,
-                               providers=["CPUExecutionProvider"])
-            app.prepare(ctx_id=-1, det_size=(DET_SIZE, DET_SIZE))
+            with model_output():
+                app = FaceAnalysis(name="buffalo_l", root=INSIGHTFACE_ROOT,
+                                   allowed_modules=["detection"], sess_options=opts,
+                                   providers=["CPUExecutionProvider"])
+                app.prepare(ctx_id=-1, det_size=(DET_SIZE, DET_SIZE))
             self.face_app = app
         return self.face_app
 
@@ -354,11 +356,11 @@ class VideoInference:
             "metadata": {
                 "duration_seconds": round(duration, 2),
                 "fps": round(fps, 2),
-                "frames_sampled": len(crops),
+                "frames_sampled": len(frames),
                 "faces_detected": faces_detected,
                 "frame_predictions": [
                     {"timestamp": timestamps[i], "attention": round(float(attention[i]), 4)}
-                    for i in range(len(crops))
+                    for i in range(faces_detected)
                 ],
             },
             "local_gradcam_paths": gradcam_paths,  # consumer uploaduje i zamienia na gradcam_keys

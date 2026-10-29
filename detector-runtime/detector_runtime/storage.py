@@ -31,7 +31,10 @@ def create_s3_client(endpoint: str):
         aws_access_key_id=required_env("S3_ACCESS_KEY"),
         aws_secret_access_key=required_env("S3_SECRET_KEY"),
         region_name=os.getenv("S3_REGION", "us-east-1"),
-        config=Config(s3={"addressing_style": "path"}),
+        # AMQP owns the outage retry budget; SDK retries would multiply each attempt.
+        config=Config(connect_timeout=5, read_timeout=10,
+                      retries={"mode": "standard", "total_max_attempts": 1},
+                      s3={"addressing_style": "path"}),
     )
 
 

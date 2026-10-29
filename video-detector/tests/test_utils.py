@@ -76,6 +76,11 @@ class TestNormalizeClip:
 
 
 class TestDeriveOutputs:
+    @pytest.mark.parametrize("probability", [0.50004, 0.49996, 0.5])
+    def test_rounding_at_boundary_keeps_published_fields_consistent(self, probability):
+        logit = math.log(probability / (1 - probability))
+        assert derive_outputs(logit) == (0.5, "REAL", 0.0)
+
     def test_logit_zero_is_the_decision_boundary(self):
         prob, verdict, confidence = derive_outputs(0.0, threshold=0.5)
         assert prob == 0.5 and verdict == "REAL" and confidence == 0.0
