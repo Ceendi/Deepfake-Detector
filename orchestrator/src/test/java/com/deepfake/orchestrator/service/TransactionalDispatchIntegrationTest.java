@@ -4,10 +4,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
 import java.math.BigDecimal;
+import java.net.ConnectException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Timestamp;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,6 +32,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.amqp.AmqpConnectException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -71,12 +79,12 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
 class TransactionalDispatchIntegrationTest {
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container
-    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
+    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.10.2-alpine")
             .withExposedPorts(6379);
     @Container
-    static final GenericContainer<?> rabbitContainer = new GenericContainer<>("rabbitmq:4.3.1-alpine")
+    static final GenericContainer<?> rabbitContainer = new GenericContainer<>("rabbitmq:4.3.6-management-alpine")
             .withEnv("RABBITMQ_DEFAULT_USER", "test").withEnv("RABBITMQ_DEFAULT_PASS", "test")
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
 
@@ -131,6 +139,42 @@ class TransactionalDispatchIntegrationTest {
     @AfterEach
     void stopWorkers() throws Exception {
         for (Process worker : workers) kill(worker);
+    }
+
+    @Test
+    void requestTraceSurvivesOutboxAndDispatchDoesNotChangeCachedTimestamp() {
+        String trace = "1234567890abcdef1234567890abcdef";
+        var parent = SpanContext.create(trace, "1234567890abcdef", TraceFlags.getSampled(), TraceState.getDefault());
+        UUID id;
+        try (var scope = Span.wrap(parent).makeCurrent()) {
+            id = create(AnalysisType.VIDEO);
+        }
+        Object updated = stored(id).get("updated_at");
+        var scheduler = SpanContext.create("abcdef1234567890abcdef1234567890", "abcdef1234567890",
+                TraceFlags.getSampled(), TraceState.getDefault());
+        try (var scope = Span.wrap(scheduler).makeCurrent()) {
+            publisher.dispatchDue();
+            assertThat(Span.current().getSpanContext()).isEqualTo(scheduler);
+        }
+        var task = rabbit.receive("analysis.video", 5000);
+        assertThat(task).isNotNull();
+        assertThat(task.getMessageProperties().getHeader("traceparent").toString()).contains(trace);
+        assertThat(stored(id).get("updated_at")).isEqualTo(updated);
+    }
+
+    @Test
+    void lateBrokerRetryStaysInsideDispatchWindowAndTerminalRemovesUnsentRows() {
+        UUID id = create(AnalysisType.FULL);
+        jdbc.update("UPDATE analysis_task_outbox SET attempts=4 WHERE analysis_id=?", id);
+        doAnswer(call -> { throw new AmqpConnectException(new ConnectException()); })
+                .when(rabbit).send(anyString(), anyString(), any(), any());
+        publisher.dispatchDue();
+        var next = jdbc.queryForObject("SELECT MIN(next_attempt_at) FROM analysis_task_outbox WHERE analysis_id=?",
+                Timestamp.class, id).toInstant();
+        assertThat(next).isBefore(Instant.now().plusSeconds(21));
+        service.cancel(id, "alice");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox WHERE analysis_id=? AND sent_at IS NULL",
+                Long.class, id)).isZero();
     }
 
     @Test
@@ -261,7 +305,7 @@ class TransactionalDispatchIntegrationTest {
         publisher.dispatchDue();
         assertThat(rabbit.receive("analysis.video")).isNull();
         assertThat(rabbit.receive("analysis.audio")).isNull();
-        assertThat(attempts(cancelled, "video")).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM analysis_task_outbox WHERE analysis_id=?", Long.class, cancelled)).isZero();
         UUID failed = create(AnalysisType.VIDEO);
         service.failFromDlq(failed, "video", "test failure before dispatch");
         publisher.dispatchDue();
@@ -365,8 +409,8 @@ class TransactionalDispatchIntegrationTest {
             if (started) {
                 service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 0, "stage", "LOADING"));
             }
-            assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
-                    java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).contains(id);
+            assertThat(repository.findExpiredIds(Instant.now().minusSeconds(600), Instant.now().minusSeconds(120),
+                    Instant.now().minusSeconds(1800), Instant.now().minusSeconds(7200))).contains(id);
             service.failStuck(id, 600);
             assertThat(stored(id).get("status")).isEqualTo("FAILED");
             assertThat(redis.opsForValue().get("cancel:" + id)).isEqualTo("1");
@@ -415,15 +459,15 @@ class TransactionalDispatchIntegrationTest {
         jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE id=?", id);
         jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE analysis_id=? AND sent_at IS NOT NULL", id);
         // A fresh unsent outbox uses its finite dispatch deadline, rather than the progress clock.
-        assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
-                java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).doesNotContain(id);
+        assertThat(repository.findExpiredIds(Instant.now().minusSeconds(600), Instant.now().minusSeconds(120),
+                Instant.now().minusSeconds(1800), Instant.now().minusSeconds(7200))).doesNotContain(id);
         publisher.dispatchDue();
         service.failStuck(id, 600); // Old scan decision must not survive a new confirmed dispatch.
         assertThat(stored(id).get("status")).isEqualTo("PENDING");
         jdbc.update("UPDATE analysis SET updated_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE id=?", id);
         jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP - INTERVAL '1801 seconds' WHERE analysis_id=? AND sent_at IS NOT NULL", id);
-        assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
-                java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).contains(id);
+        assertThat(repository.findExpiredIds(Instant.now().minusSeconds(600), Instant.now().minusSeconds(120),
+                Instant.now().minusSeconds(1800), Instant.now().minusSeconds(7200))).contains(id);
         service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 50));
         service.failStuck(id, 600);
         assertThat(stored(id).get("status")).isEqualTo("PROCESSING");
@@ -435,8 +479,8 @@ class TransactionalDispatchIntegrationTest {
         jdbc.update("UPDATE analysis_task_outbox SET sent_at=CURRENT_TIMESTAMP WHERE analysis_id=? AND source='video'", id);
         jdbc.update("UPDATE analysis SET created_at=CURRENT_TIMESTAMP - INTERVAL '121 seconds' WHERE id=?", id);
         service.handleProgress(Map.of("analysis_id", id.toString(), "source", "video", "progress", 90));
-        assertThat(repository.findExpiredIds(java.time.Instant.now().minusSeconds(600), java.time.Instant.now().minusSeconds(120),
-                java.time.Instant.now().minusSeconds(1800), java.time.Instant.now().minusSeconds(7200))).contains(id);
+        assertThat(repository.findExpiredIds(Instant.now().minusSeconds(600), Instant.now().minusSeconds(120),
+                Instant.now().minusSeconds(1800), Instant.now().minusSeconds(7200))).contains(id);
         publisher.dispatchDue();
         assertThat(rabbit.receive("analysis.audio")).isNull();
         service.failStuck(id, 600);

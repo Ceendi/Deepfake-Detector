@@ -1,6 +1,7 @@
 package com.deepfake.orchestrator.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -66,9 +67,9 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 class AnalysisServiceDeleteCommitIntegrationTest {
 
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container
-    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
+    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.10.2-alpine")
             .withExposedPorts(6379);
 
     @DynamicPropertySource
@@ -101,6 +102,20 @@ class AnalysisServiceDeleteCommitIntegrationTest {
             connection.serverCommands().flushAll();
             return null;
         });
+    }
+
+    @Test
+    void releaseFailureRollsBackRecordAndCleanupSoDeleteCanBeRetried() {
+        UUID id = persist(AnalysisType.VIDEO);
+        jdbc.update("UPDATE analysis SET status='COMPLETED' WHERE id=?", id);
+        assertThatThrownBy(() -> service.deleteWithInput(id, "alice", () -> {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE);
+        })).isInstanceOf(ResponseStatusException.class);
+        assertThat(repository.existsById(id)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM artifact_cleanup", Long.class)).isZero();
+        verify(metrics, never()).deleted(any());
+        service.deleteWithInput(id, "alice", () -> {});
+        assertThat(repository.existsById(id)).isFalse();
     }
 
     @Test

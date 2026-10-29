@@ -11,6 +11,7 @@ import com.deepfake.orchestrator.security.AuthenticatedUser;
 import com.deepfake.orchestrator.security.CurrentUser;
 import com.deepfake.orchestrator.service.AnalysisService;
 import com.deepfake.orchestrator.service.AnalysisCreationService;
+import com.deepfake.orchestrator.service.AnalysisDeletionService;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import com.deepfake.orchestrator.service.ArtifactService;
@@ -47,6 +48,7 @@ import java.util.UUID;
 public class AnalysisController {
     private final AnalysisService service;
     private final AnalysisCreationService creationService;
+    private final AnalysisDeletionService deletionService;
     private final ReportPdfService reportPdfService;
     private final ArtifactService artifactService;
 
@@ -150,12 +152,13 @@ public class AnalysisController {
     // collide — overloading DELETE /{id} would turn a retried/double-clicked cancel on an already
     // CANCELLED analysis (idempotent 200 today) into a silent hard delete.
     @Operation(summary = "Permanently delete a finished analysis from the caller's history")
-    @ApiResponse(responseCode = "204", description = "Deleted")
+    @ApiResponse(responseCode = "204", description = "Deleted; input released if no other owned analysis references it")
+    @ApiResponse(responseCode = "503", description = "Input file release unavailable; record deletion rolled back, safe to retry")
     @ApiResponse(responseCode = "409", description = "Still in progress — cancel it first")
     @ApiResponse(responseCode = "404", description = "Missing or not owned (IDOR)")
     @DeleteMapping("/{id}/record")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void delete(@PathVariable UUID id, @CurrentUser AuthenticatedUser user) {
-        service.delete(id, user.id());
+    public void delete(@PathVariable UUID id, @CurrentUser AuthenticatedUser user, @AuthenticationPrincipal Jwt jwt) {
+        deletionService.delete(id, user.id(), jwt.getTokenValue());
     }
 }

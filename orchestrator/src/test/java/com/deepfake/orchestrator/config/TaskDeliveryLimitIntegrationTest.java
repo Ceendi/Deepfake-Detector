@@ -23,7 +23,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Testcontainers
 class TaskDeliveryLimitIntegrationTest {
     @Container
-    static final GenericContainer<?> broker = new GenericContainer<>("rabbitmq:4.3.6-alpine")
+    static final GenericContainer<?> broker = new GenericContainer<>("rabbitmq:4.3.6-management-alpine")
             .withEnv("RABBITMQ_DEFAULT_USER", "test").withEnv("RABBITMQ_DEFAULT_PASS", "test")
             .withExposedPorts(5672).waitingFor(Wait.forLogMessage(".*Server startup complete.*", 1));
 

@@ -41,7 +41,7 @@ import static org.mockito.Mockito.when;
 @Testcontainers
 @org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics
 class UploadSpoolIntegrationTest {
-    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    @Container static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @TempDir static Path spool;
     @DynamicPropertySource static void properties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);

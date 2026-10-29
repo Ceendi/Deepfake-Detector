@@ -27,7 +27,8 @@ export type FileClaimResponse = FileMetadata
 // Upload errors (ErrorResponse.code): 409 STORAGE_QUOTA_EXCEEDED, 422 INVALID_FILE with a message
 // prefix: UNSUPPORTED_MEDIA, INVALID_MEDIA_DURATION, MEDIA_TOO_LONG or MEDIA_RESOLUTION_TOO_HIGH;
 // 413 PAYLOAD_TOO_LARGE: file > 500 MiB or multipart request > 501 MiB.
-// 429 UPLOAD_USER_LIMIT and 503 SERVICE_UNAVAILABLE (replica full or probe failure), both Retry-After: 5.
+// 408: gateway upload deadline exceeded (default 15 minutes).
+// 429 UPLOAD_USER_LIMIT and 503 SERVICE_UNAVAILABLE (capacity, probe or temporary S3/DB failure), Retry-After: 5.
 export interface PresignResponse {
   url: string
   expiresAt: string // ISO 8601
@@ -37,6 +38,7 @@ export interface PresignResponse {
 export interface StartAnalysisRequest {
   fileId: string
   type: AnalysisType
+  mode?: 'fast' | 'accurate'
 }
 
 export interface SourceDetails {

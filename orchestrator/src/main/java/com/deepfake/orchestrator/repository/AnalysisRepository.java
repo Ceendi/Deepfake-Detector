@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface AnalysisRepository extends JpaRepository<Analysis, UUID> {
+    boolean existsByUserIdAndFileId(String userId, String fileId);
 
     // A scalar projection bypasses the persistence-context identity map. REQUIRES_NEW also
     // excludes the caller's uncommitted changes and any repeatable-read snapshot.

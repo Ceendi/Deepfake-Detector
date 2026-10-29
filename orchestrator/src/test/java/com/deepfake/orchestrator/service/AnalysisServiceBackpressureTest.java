@@ -22,7 +22,6 @@ import org.mockito.Spy;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.deepfake.orchestrator.cache.AnalysisCache;
@@ -44,8 +43,6 @@ class AnalysisServiceBackpressureTest {
 
     @Mock
     AnalysisRepository repository;
-    @Mock
-    RabbitTemplate rabbitTemplate;
     @Mock
     StringRedisTemplate redis;
     @Mock
@@ -89,7 +86,7 @@ class AnalysisServiceBackpressureTest {
                 .isInstanceOf(TooManyAnalysesException.class);
 
         verifyNoInteractions(repository);
-        verifyNoInteractions(rabbitTemplate);
+        verifyNoInteractions(outbox);
     }
 
     @Test

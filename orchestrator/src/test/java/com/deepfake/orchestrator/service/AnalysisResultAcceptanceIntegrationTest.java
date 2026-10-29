@@ -26,7 +26,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
@@ -70,9 +69,9 @@ import com.deepfake.orchestrator.sse.AnalysisStreamRegistry;
 @Testcontainers
 class AnalysisResultAcceptanceIntegrationTest {
     @Container
-    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.4-alpine");
+    static final PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:18.6-alpine3.24");
     @Container
-    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.8.0-alpine")
+    static final GenericContainer<?> redisContainer = new GenericContainer<>("redis:8.10.2-alpine")
             .withExposedPorts(6379);
 
     @DynamicPropertySource
@@ -88,7 +87,6 @@ class AnalysisResultAcceptanceIntegrationTest {
     @Autowired StringRedisTemplate redis;
     @Autowired IdempotencyGuard idempotency;
     @Autowired PlatformTransactionManager transactionManager;
-    @MockitoBean RabbitTemplate rabbit;
     @MockitoBean AnalysisCache cache;
     @MockitoBean AnalysisStreamRegistry streams;
     @MockitoBean AnalysisMetrics metrics;
@@ -99,7 +97,7 @@ class AnalysisResultAcceptanceIntegrationTest {
         repository.deleteAll();
         var keys = redis.keys("dedup:*"); // Only this class's disposable Redis instance.
         if (keys != null && !keys.isEmpty()) redis.delete(keys);
-        clearInvocations(streams, metrics, rabbit, cache);
+        clearInvocations(streams, metrics, cache);
     }
 
     @AfterEach
