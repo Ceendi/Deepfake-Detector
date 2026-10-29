@@ -16,7 +16,8 @@ from contextlib import redirect_stdout
 from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from urllib.error import URLError
 from urllib.parse import parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -24,7 +25,8 @@ import batch_analyze as ba
 
 
 def row(plik, status='COMPLETED', werdykt='', blad=''):
-    return {**dict.fromkeys(ba.COLUMNS, ''), 'plik': plik, 'status': status, 'werdykt': werdykt, 'blad': blad}
+    return {**dict.fromkeys(ba.COLUMNS, ''), 'plik': plik, 'status': status, 'werdykt': werdykt,
+            'blad': blad, 'czas_s': '1.0'}
 
 
 def touch(root, rel, size=16):
@@ -113,6 +115,30 @@ class ResumeTest(unittest.TestCase):
     def test_retry_failed_keeps_only_completed(self):
         self.assertEqual(['a.mp4', 'g.mp4'], sorted(ba.plan_resume(self.rows, retry_failed=True)))
 
+    def test_rows_cut_after_a_known_status_are_retried(self):
+        for status in ba.KNOWN_STATUSES:
+            with self.subTest(status=status):
+                self.assertTrue(ba.should_retry({**row('a.mp4', status), 'czas_s': None}, False))
+                self.assertTrue(ba.should_retry({**row('a.mp4', status), 'czas_s': ''}, False))
+
+    def test_atomic_rewrite_syncs_before_replace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            events = []
+            replace = ba.os.replace
+            with patch.object(ba.os, 'fsync', side_effect=lambda fd: events.append('sync')), \
+                    patch.object(ba.os, 'replace', side_effect=lambda *args: (events.append('replace'), replace(*args))):
+                ba.write_results(Path(tmp, 'r.csv'), self.rows)
+            self.assertEqual(['sync', 'replace'], events)
+
+    def test_resume_refuses_a_legacy_csv_without_root_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, 'r.csv')
+            ba.write_results(out, self.rows)
+            before = out.read_bytes()
+            with patch.object(ba, 'log'):
+                self.assertEqual(2, ba.main([tmp, '--out', str(out)]))
+            self.assertEqual(before, out.read_bytes())
+
     def test_rewrite_keeps_one_row_per_file_and_rejects_foreign_csv(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp, 'r.csv')
@@ -128,11 +154,133 @@ class ResumeTest(unittest.TestCase):
                 self.assertEqual(2, ba.main([tmp, '--out', str(foreign)]))
 
 
+class UploadCleanupTest(unittest.TestCase):
+    def test_timeout_upload_is_released_only_after_row_is_durable(self):
+        api = Mock(upload_timeout=900)
+        api.request.side_effect = [ba.Response(200, {}, {'fileId': 'file', 'mimetype': 'video/mp4'}),
+                                   ba.Response(201, {}, {'id': 'analysis'}),
+                                   ba.Response(200, {}, {'status': 'PROCESSING'})]
+        api.cancel.return_value = ba.Response(200, {}, None)
+        api.release.return_value = ba.Response(204, {}, None)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(ba, 'log'):
+            item = ba.MediaFile(touch(tmp, 'a.mp4'), 'a.mp4', 16)
+            batch = ba.Batch(api, ba.Settings(timeout=0.000001), wait=lambda s: False)
+            written = []
+
+            def write(result):
+                api.release.assert_not_called()
+                written.append(result)
+
+            self.assertEqual(0, batch.run([item], write))
+        self.assertEqual('ERROR', written[0]['status'])
+        api.cancel.assert_called_once_with('analysis', ba.CANCEL_TIMEOUT)
+        api.release.assert_called_once_with('file', ba.CANCEL_TIMEOUT)
+
+    def test_retry_failed_releases_previous_attempt_before_replacing_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, 'r.csv')
+            media = Path(tmp, 'media')
+            item = ba.MediaFile(touch(media, 'a.mp4'), 'a.mp4', 16)
+            state = ba.RunState(out, media)
+            state.put(item.rel, {'file_id': 'old-file', 'analysis_id': 'old-analysis'})
+            state = ba.RunState(out, media)
+            api = Mock(upload_timeout=900)
+            api.cancel.return_value = ba.Response(409, {}, None)
+            api.release.return_value = ba.Response(204, {}, None)
+            api.request.side_effect = [ba.Response(200, {}, {'fileId': 'new-file'}),
+                                       ba.Response(201, {}, {'id': 'new-analysis'}),
+                                       ba.Response(200, {}, {'status': 'COMPLETED'})]
+            batch = ba.Batch(api, ba.Settings(), wait=lambda s: False, state=state)
+            with patch.object(ba, 'log'):
+                batch.run([item], lambda result: None)
+            self.assertEqual('old-file', api.release.call_args.args[0])
+            self.assertEqual('new-file', state.get(item.rel)['file_id'])
+
+    def test_interrupt_releases_only_cancelled_uploads(self):
+        api = Mock()
+        api.cancel.side_effect = [ba.Response(200, {}, None), OSError('offline')]
+        api.release.return_value = ba.Response(204, {}, None)
+        batch = ba.Batch(api, ba.Settings())
+        batch.active.update({'a', 'b'})
+        batch.state.put('a.mp4', {'file_id': 'fa', 'analysis_id': 'a'})
+        batch.state.put('b.mp4', {'file_id': 'fb', 'analysis_id': 'b'})
+        with patch.object(ba, 'log'):
+            batch.cancel_active()
+        self.assertEqual(1, api.release.call_count)
+        self.assertEqual(1, len(batch.state.attempts))
+
+
+    def test_unresolved_create_is_recovered_after_restart_without_upload_or_post(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(ba, 'log'):
+            out = Path(tmp, 'r.csv')
+            item = ba.MediaFile(touch(tmp, 'a.mp4'), 'a.mp4', 16)
+            state = ba.RunState(out, tmp)
+            state.put(item.rel, {'file_id': 'file', 'creating': True})
+            api = Mock()
+            api.request.side_effect = [ba.Response(200, {}, {'content': [{'id': 'analysis', 'fileId': 'file'}],
+                                                           'page': {'totalPages': 1}}),
+                                       ba.Response(200, {}, {'status': 'COMPLETED', 'verdict': 'REAL'})]
+            batch = ba.Batch(api, ba.Settings(), state=ba.RunState(out, tmp))
+            rows = []
+            batch.run([item], rows.append)
+            self.assertEqual('COMPLETED', rows[0]['status'])
+            self.assertTrue(all(call.args[0] == 'GET' for call in api.request.call_args_list))
+            api.release.assert_not_called()
+            self.assertEqual('analysis', ba.RunState(out, tmp).get(item.rel)['analysis_id'])
+
+    def test_cleanup_failure_preserves_attempt_and_prevents_another_upload(self):
+        for cancel_status, release_status in ((503, 204), (409, 503), (409, OSError('offline'))):
+            with self.subTest(cancel=cancel_status, release=release_status), \
+                    tempfile.TemporaryDirectory() as tmp, patch.object(ba, 'log'):
+                out = Path(tmp, 'r.csv')
+                item = ba.MediaFile(touch(tmp, 'a.mp4'), 'a.mp4', 16)
+                state = ba.RunState(out, tmp)
+                state.put(item.rel, {'file_id': 'old', 'analysis_id': 'old-analysis'})
+                api = Mock()
+                api.cancel.return_value = ba.Response(cancel_status, {}, None)
+                if isinstance(release_status, Exception):
+                    api.release.side_effect = release_status
+                else:
+                    api.release.return_value = ba.Response(release_status, {}, None)
+                rows = []
+                ba.Batch(api, ba.Settings(), state=state).run([item], rows.append)
+                self.assertTrue(rows[0]['blad'].startswith('[CLEANUP_PENDING]'))
+                api.request.assert_not_called()
+                self.assertEqual('old', ba.RunState(out, tmp).get(item.rel)['file_id'])
+
+    def test_safe_create_exhaustion_releases_upload_after_final_row(self):
+        api = Mock(upload_timeout=900)
+        api.request.side_effect = [ba.Response(200, {}, {'fileId': 'file'}), ba.Response(503, {}, None)]
+        api.release.return_value = ba.Response(204, {}, None)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(ba, 'log'):
+            item = ba.MediaFile(touch(tmp, 'a.mp4'), 'a.mp4', 16)
+            batch = ba.Batch(api, ba.Settings(max_retries=0))
+            batch.run([item], lambda result: api.release.assert_not_called())
+            api.release.assert_called_once_with('file', ba.CANCEL_TIMEOUT)
+            self.assertEqual({}, batch.state.get(item.rel))
+
+    def test_uncertain_create_is_journalled_and_not_released(self):
+        api = Mock(upload_timeout=900)
+        api.request.side_effect = [ba.Response(200, {}, {'fileId': 'file'}), TimeoutError('read'),
+                                   ba.Response(200, {}, {'content': [], 'page': {'totalPages': 0}})]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(ba, 'log'):
+            out = Path(tmp, 'r.csv')
+            item = ba.MediaFile(touch(tmp, 'a.mp4'), 'a.mp4', 16)
+            batch = ba.Batch(api, ba.Settings(), state=ba.RunState(out, tmp))
+            rows = []
+            batch.run([item], rows.append)
+            self.assertTrue(rows[0]['blad'].startswith('[START_UNCERTAIN]'))
+            api.release.assert_not_called()
+            self.assertTrue(ba.RunState(out, tmp).get(item.rel)['creating'])
+
+
 class RetryTest(unittest.TestCase):
     def test_retry_after_header(self):
         self.assertEqual(7.0, ba.retry_after({'Retry-After': '7'}))
         self.assertEqual(300.0, ba.retry_after({'Retry-After': '86400'}))
-        self.assertEqual(0.0, ba.retry_after({'Retry-After': '-3'}))
+        self.assertEqual(1.0, ba.retry_after({'Retry-After': '-3'}))
+        self.assertEqual(1.0, ba.retry_after({'Retry-After': '0'}))
+        self.assertEqual(1.0, ba.retry_after({'Retry-After': formatdate(900, usegmt=True)}, now=1000))
         self.assertIsNone(ba.retry_after({}))
         self.assertIsNone(ba.retry_after(None))
         self.assertIsNone(ba.retry_after({'Retry-After': 'soon'}))
@@ -197,6 +345,8 @@ class FakeBackend:
         self.lock = threading.Lock()
         self.tokens = 0
         self.uploads = []
+        self.files = {}
+        self.released = []
         self.analyses = {}
         self.calls = {'upload': 0, 'create': 0}
         self.expired = set()
@@ -207,6 +357,7 @@ class FakeBackend:
         self.hold_slow = True  # files named *slow* stay PROCESSING until released
         self.held = threading.Event()  # set once a held analysis is being polled
         self.cancelled = []
+        self.lost_create_response = False
         backend = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -282,6 +433,12 @@ class FakeBackend:
                     return None
                 analysis_id = self.path.rsplit('/', 1)[-1]
                 with backend.lock:
+                    if self.path.startswith('/api/files/'):
+                        name = backend.files.pop(analysis_id, None)
+                        if name is None:
+                            return self.send(404)
+                        backend.released.append(name)
+                        return self.send(204)
                     analysis = backend.analyses.get(analysis_id)
                     if analysis is None:
                         return self.send(404)
@@ -304,6 +461,7 @@ class FakeBackend:
                 file_id = str(uuid.uuid4())
                 with backend.lock:
                     backend.analyses[file_id] = {'name': name}
+                    backend.files[file_id] = name
                 return self.send(200, {'fileId': file_id, 'fileKey': file_id + '.bin', 'size': 16, 'mimetype': mime})
 
             def create(self, request):
@@ -313,12 +471,19 @@ class FakeBackend:
                         return self.send(429)  # no Retry-After and no body: the backoff path
                     analysis = backend.analyses.pop(request['fileId'])
                     analysis_id = str(uuid.uuid4())
-                    backend.analyses[analysis_id] = {**analysis, 'type': request['type'], 'polls': 0}
+                    backend.analyses[analysis_id] = {**analysis, 'type': request['type'], 'polls': 0,
+                                                     'fileId': request['fileId'], 'id': analysis_id}
+                    if backend.lost_create_response:
+                        return self.send(502)
                 return self.send(201, {'id': analysis_id, 'status': 'PENDING', 'type': request['type']})
 
             def do_GET(self):
                 if not self.authorized():
                     return None
+                if self.path.startswith('/api/analysis?'):
+                    with backend.lock:
+                        content = [dict(a) for a in backend.analyses.values() if 'id' in a]
+                    return self.send(200, {'content': content, 'page': {'totalPages': 1}})
                 analysis_id = self.path.rsplit('/', 1)[-1]
                 with backend.lock:
                     analysis = backend.analyses.get(analysis_id)
@@ -422,6 +587,7 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual((0, uploads), (self.run_cli()[0], len(self.backend.uploads)))
         self.assertEqual(0, self.run_cli('--retry-failed')[0])
         self.assertEqual(sorted(self.backend.uploads[uploads:]), ['broken.wav', 'noface.mp4'])
+        self.assertEqual(['noface.mp4'], self.backend.released)
         self.assertEqual(8, len(self.rows()))
         with self.out.open(encoding='utf-8') as f:
             self.assertEqual(9, len(f.read().splitlines()))
@@ -442,6 +608,35 @@ class EndToEndTest(unittest.TestCase):
         self.backend.device_answers = ['expired_token']
         self.assertEqual(3, self.run_cli(secret=None)[0])
         self.assertEqual([], self.backend.uploads)
+
+    def test_resume_refuses_another_root_with_the_same_relative_paths(self):
+        self.assertEqual(0, self.run_cli()[0])
+        before = self.out.read_bytes()
+        self.root = self.root.parent / 'other-media'
+        touch(self.root, 'fake/deep1.mp4')
+        self.assertEqual(2, self.run_cli()[0])
+        self.assertEqual(before, self.out.read_bytes())
+
+    def test_metrics_ignore_rows_for_removed_files(self):
+        self.assertEqual(0, self.run_cli()[0])
+        (self.root / 'fake/deep1.mp4').unlink()
+        code, _ = self.run_cli('--labels-from-folders', '--metrics-out', str(self.metrics))
+        self.assertEqual(0, code)
+        metrics = json.loads(self.metrics.read_text(encoding='utf-8'))
+        self.assertEqual(7, metrics['files'])
+        self.assertEqual(1, metrics['stale_rows_ignored'])
+        self.assertEqual(0, metrics['confusion_matrix']['TP'])
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(0, ba.main(['--metrics-only', '--out', str(self.out),
+                                         '--metrics-out', str(self.metrics)]))
+        self.assertEqual(7, json.loads(self.metrics.read_text(encoding='utf-8'))['files'])
+
+    def test_lost_create_response_tracks_the_committed_analysis(self):
+        self.backend.lost_create_response = True
+        self.assertEqual(0, self.run_cli()[0])
+        self.assertEqual(8, len(self.rows()))
+        self.assertEqual(8, self.backend.calls['create'])
+        self.assertEqual(7, len([a for a in self.backend.analyses.values() if 'id' in a]))
 
     def test_expired_token_is_renewed_once(self):
         self.backend.expired.add('token-1')
@@ -487,6 +682,7 @@ class EndToEndTest(unittest.TestCase):
     def test_ctrl_c_cancels_analyses_in_flight_and_resume_reruns_them(self):
         messages = self.interrupt_with_slow_analysis_in_flight()
         self.assertIn('slow.mp4', self.backend.cancelled)
+        self.assertIn('slow.mp4', self.backend.released)
         self.assertTrue(any(m.startswith('Anulowano:') for m in messages), messages)
         self.assertNotIn('fake/slow.mp4', self.rows())
         self.backend.hold_slow = False
@@ -498,6 +694,7 @@ class EndToEndTest(unittest.TestCase):
     def test_no_cancel_leaves_analyses_running(self):
         messages = self.interrupt_with_slow_analysis_in_flight('--no-cancel')
         self.assertEqual([], self.backend.cancelled)
+        self.assertEqual([], self.backend.released)
         self.assertTrue(any(m.startswith('Przerwano') and 'kończą się na serwerze' in m for m in messages))
 
     def test_cancel_uses_the_cached_token_and_tolerates_failures(self):
@@ -518,6 +715,8 @@ class EndToEndTest(unittest.TestCase):
         self.assertEqual(7, len(timed_out))
         self.assertTrue(all(r['blad'].startswith('[CLIENT_TIMEOUT]') for r in timed_out))
         self.assertEqual(['real/broken.wav'], list(ba.plan_resume(rows.values())))
+        self.assertEqual(7, len(self.backend.cancelled))
+        self.assertEqual(7, len(self.backend.released))
 
 
 class DeviceLoginTest(unittest.TestCase):
@@ -586,6 +785,77 @@ class DeviceLoginTest(unittest.TestCase):
         self.assertEqual(404, api.request('GET', '/api/analysis/unknown').status)
         self.assertEqual(['token-2'], [tokens.current()])
         self.assertEqual(1, self.backend.device_codes)
+
+    def test_failed_relogin_is_shared_by_all_workers(self):
+        tokens = self.login()
+        tokens.get()
+        self.now[0] = 500
+        self.backend.refresh_works = False
+        self.backend.device_answers = ['expired_token'] * 3
+        failures = []
+
+        def request_token():
+            try:
+                tokens.get()
+            except ba.FatalError as error:
+                failures.append(str(error))
+
+        threads = [threading.Thread(target=request_token) for _ in range(3)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(3, len(failures))
+        self.assertEqual(2, self.backend.device_codes)
+
+
+class CreateRecoveryTest(unittest.TestCase):
+    def test_uncertain_create_recovers_by_file_id_on_later_history_page(self):
+        for failure in (ba.Response(502, {}, None), ba.Response(504, {}, None),
+                        TimeoutError('read'), URLError(ConnectionResetError('reset'))):
+            with self.subTest(failure=failure):
+                api = Mock()
+                calls = []
+
+                def request(method, path, *args, calls=calls, failure=failure):
+                    calls.append((method, path))
+                    if method == 'POST':
+                        if isinstance(failure, Exception):
+                            raise failure
+                        return failure
+                    if 'page=0' in path:
+                        return ba.Response(200, {}, {'content': [{'id': 'unrelated', 'fileId': 'other'}],
+                                                     'page': {'totalPages': 2}})
+                    return ba.Response(200, {}, {'content': [{'id': 'recovered', 'fileId': 'file'}],
+                                                 'page': {'totalPages': 2}})
+
+                api.request.side_effect = request
+                batch = ba.Batch(api, ba.Settings(), wait=lambda s: False)
+                response = batch.call('create', 'POST', '/api/analysis', b'{"fileId":"file"}')
+                self.assertEqual('recovered', response.body['id'])
+                self.assertEqual(1, sum(method == 'POST' for method, _ in calls))
+
+    def test_uncertain_create_without_a_match_does_not_repeat_post(self):
+        api = Mock()
+        api.request.side_effect = [TimeoutError('read'),
+                                   ba.Response(200, {}, {'content': [], 'page': {'totalPages': 0}})]
+        batch = ba.Batch(api, ba.Settings(), wait=lambda s: False)
+        with self.assertRaises(ba.FileError) as error:
+            batch.call('create', 'POST', '/api/analysis', b'{"fileId":"file"}')
+        self.assertEqual('START_UNCERTAIN', error.exception.code)
+        self.assertEqual(2, api.request.call_count)
+
+    def test_safe_create_failures_may_retry(self):
+        for failure in (ba.Response(429, {}, None), ba.Response(503, {}, None),
+                        URLError(ConnectionRefusedError('refused'))):
+            with self.subTest(failure=failure), patch.object(ba, 'log'):
+                api = Mock()
+                api.request.side_effect = [failure, ba.Response(201, {}, {'id': 'new'})]
+                batch = ba.Batch(api, ba.Settings(), wait=lambda s: False)
+                self.assertEqual('new', batch.call('create', 'POST', '/api/analysis',
+                                                   b'{"fileId":"file"}').body['id'])
+                self.assertEqual(2, api.request.call_count)
 
 
 if __name__ == '__main__':
