@@ -8,12 +8,17 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.boot.webmvc.autoconfigure.*;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
@@ -21,6 +26,7 @@ import org.springframework.context.annotation.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.context.request.NativeWebRequest;
 import org.springframework.web.context.request.async.*;
+import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.config.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.deepfake.orchestrator.dto.sse.*;
@@ -159,17 +165,16 @@ class SseHttpIsolationTest {
         @Bean TestRegistry streams(SseLimits limits) { return new TestRegistry(limits); }
         @Bean Gate gate(TestRegistry streams) { return new Gate(streams); }
         @Bean LateHeaderFilter late() { return new LateHeaderFilter(); }
-        @Bean org.springframework.boot.web.servlet.FilterRegistrationBean<LateHeaderFilter> lateRegistration(LateHeaderFilter late) {
-            var registration=new org.springframework.boot.web.servlet.FilterRegistrationBean<>(late);
+        @Bean FilterRegistrationBean<LateHeaderFilter> lateRegistration(LateHeaderFilter late) {
+            var registration=new FilterRegistrationBean<>(late);
             registration.addUrlPatterns("/late/*"); return registration;
         }
     }
     /** Stands in for a header-writing filter that unwinds after the handler started async processing. */
-    static class LateHeaderFilter extends org.springframework.web.filter.OncePerRequestFilter {
+    static class LateHeaderFilter extends OncePerRequestFilter {
         volatile boolean committedInsideChain; final CountDownLatch unwound=new CountDownLatch(1);
-        @Override protected void doFilterInternal(jakarta.servlet.http.HttpServletRequest request,
-                jakarta.servlet.http.HttpServletResponse response,jakarta.servlet.FilterChain chain)
-                throws jakarta.servlet.ServletException,IOException {
+        @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)
+                throws ServletException,IOException {
             chain.doFilter(request,response);
             long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(1);
             try { while(!response.isCommitted() && System.nanoTime()<deadline) Thread.sleep(10); }
@@ -236,7 +241,7 @@ class SseHttpIsolationTest {
         final AnalysisStreamRegistry streams; final Gate gate;
         Endpoint(AnalysisStreamRegistry streams,Gate gate){this.streams=streams;this.gate=gate;}
         @GetMapping(value={"/test/{id}","/preinit/{id}","/late/{id}"},produces="text/event-stream")
-        SseEmitter stream(@PathVariable UUID id,@RequestParam String owner,jakarta.servlet.http.HttpServletRequest request) {
+        SseEmitter stream(@PathVariable UUID id,@RequestParam String owner,HttpServletRequest request) {
             var emitter=streams.register(id,owner);
             if(request.getRequestURI().startsWith("/preinit")) {
                 gate.emitter=emitter;for(int i=0;i<10000;i++)streams.sendProgress(id,progress(id,i));streams.sendResult(id,result(id));

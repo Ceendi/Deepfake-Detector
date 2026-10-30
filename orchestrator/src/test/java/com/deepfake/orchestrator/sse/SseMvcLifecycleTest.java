@@ -2,8 +2,11 @@ package com.deepfake.orchestrator.sse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import jakarta.servlet.Filter;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
@@ -15,7 +18,7 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 class SseMvcLifecycleTest {
     final AnalysisStreamRegistry registry = new AnalysisStreamRegistry();
     final SseMvcLifecycle lifecycle = new SseMvcLifecycle(
-            new StaticListableBeanFactory(java.util.Map.of("registry", registry)).getBeanProvider(AnalysisStreamRegistry.class));
+            new StaticListableBeanFactory(Map.of("registry", registry)).getBeanProvider(AnalysisStreamRegistry.class));
     final AnalysisStreamRegistry.Session session = registry.session(registry.register(UUID.randomUUID(), "alice"));
 
     @AfterEach void release() { session.physicalCompletion(); }
@@ -25,7 +28,7 @@ class SseMvcLifecycleTest {
         var insideChain = new boolean[1];
         Filter handler = (req, res, chain) -> {
             try { interceptor().afterConcurrentHandlingStarted(request, new MockHttpServletResponse(), new Object()); }
-            catch (Exception failure) { throw new jakarta.servlet.ServletException(failure); }
+            catch (Exception failure) { throw new ServletException(failure); }
             insideChain[0] = writerStarted();
         };
         lifecycle.sseDeliveryStart().getFilter().doFilter(request, new MockHttpServletResponse(), new MockFilterChain(new MockServlet(), handler));
@@ -52,5 +55,5 @@ class SseMvcLifecycleTest {
         lifecycle.addInterceptors(interceptors);
         return (AsyncHandlerInterceptor) interceptors.all().getFirst();
     }
-    static final class MockServlet extends jakarta.servlet.http.HttpServlet { }
+    static final class MockServlet extends HttpServlet { }
 }
