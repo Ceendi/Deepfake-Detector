@@ -90,14 +90,17 @@ class MonitoringIntegrationTest(unittest.TestCase):
         prometheus.pop('profiles', None)
         prometheus['ports'][0]['published'] = str(port)
         # Serve real HTTP metrics without loading ML models or consuming worker queues.
+        # Concurrent like uvicorn: a timed-out scrape of a removed replica keeps retrying its SYN
+        # and can connect to the next replica that reuses the IP, leaving an idle socket that
+        # would block a serial server forever.
         server = (
-            'from http.server import BaseHTTPRequestHandler, HTTPServer\n'
+            'from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n'
             'class Metrics(BaseHTTPRequestHandler):\n'
             ' def do_GET(self):\n'
             '  self.send_response(200)\n'
             '  self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")\n'
             '  self.end_headers(); self.wfile.write(b"fixture_up 1\\n")\n'
-            'HTTPServer(("0.0.0.0", 8000), Metrics).serve_forever()\n'
+            'ThreadingHTTPServer(("0.0.0.0", 8000), Metrics).serve_forever()\n'
         )
         detectors = {name: {
             'image': services['rabbitmq-init']['image'],
