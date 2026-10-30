@@ -34,6 +34,7 @@ class SseHttpIsolationTest {
     @LocalServerPort int port;
     @Autowired TestRegistry streams;
     @Autowired Gate gate;
+    @Autowired LateHeaderFilter late;
     final List<Peer> peers=new ArrayList<>();
     @AfterEach void cleanup() throws Exception {
         gate.release.countDown(); peers.forEach(Peer::close); streams.unblock();
@@ -115,6 +116,15 @@ class SseHttpIsolationTest {
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(streams.admitted()).isZero());
         assertThat(gate.failedSession.writerStarted).isFalse();
     }
+    @Test void deliveryWaitsUntilFiltersStopTouchingResponseHeaders() throws Exception {
+        // Spring Security's HeaderWriterFilter adds headers after the chain returns; a writer committing
+        // concurrently corrupted Tomcat's header list (an empty-named header line reached the gateway).
+        var peer=raw(UUID.randomUUID(),"alice",true,"/late/"); peers.add(peer);
+        assertThat(peer.status).contains("200").contains("X-Late-Header: present").containsIgnoringCase("text/event-stream");
+        assertThat(late.unwound.await(3,TimeUnit.SECONDS)).isTrue();
+        assertThat(late.committedInsideChain).isFalse();
+        await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(peer.lines).contains(":hb"));
+    }
     Peer open(UUID id,String owner,boolean drain) throws Exception { var peer=raw(id,owner,drain,"/test/"); assertThat(peer.status).contains("200"); return peer; }
     Peer raw(UUID id,String owner,boolean drain,String prefix) throws Exception {
         var peer=new Peer(id,port,prefix+id+"?owner="+owner); peer.status=peer.headers(); if(drain)peer.drain(); return peer;
@@ -141,13 +151,32 @@ class SseHttpIsolationTest {
     @Import({SseMvcLifecycle.class,GlobalExceptionHandler.class,Endpoint.class})
     static class Harness {
         @Bean TomcatServletWebServerFactory server() {
-            var factory=new TomcatServletWebServerFactory(); factory.addConnectorCustomizers(connector -> {
+            var factory=new TomcatServletWebServerFactory(); factory.setPort(0); factory.addConnectorCustomizers(connector -> {
                 connector.setProperty("socket.txBufSize","1024"); connector.setProperty("socket.appWriteBufSize","1024");
                 connector.setProperty("connectionTimeout","120000");
             });return factory;
         }
         @Bean TestRegistry streams(SseLimits limits) { return new TestRegistry(limits); }
         @Bean Gate gate(TestRegistry streams) { return new Gate(streams); }
+        @Bean LateHeaderFilter late() { return new LateHeaderFilter(); }
+        @Bean org.springframework.boot.web.servlet.FilterRegistrationBean<LateHeaderFilter> lateRegistration(LateHeaderFilter late) {
+            var registration=new org.springframework.boot.web.servlet.FilterRegistrationBean<>(late);
+            registration.addUrlPatterns("/late/*"); return registration;
+        }
+    }
+    /** Stands in for a header-writing filter that unwinds after the handler started async processing. */
+    static class LateHeaderFilter extends org.springframework.web.filter.OncePerRequestFilter {
+        volatile boolean committedInsideChain; final CountDownLatch unwound=new CountDownLatch(1);
+        @Override protected void doFilterInternal(jakarta.servlet.http.HttpServletRequest request,
+                jakarta.servlet.http.HttpServletResponse response,jakarta.servlet.FilterChain chain)
+                throws jakarta.servlet.ServletException,IOException {
+            chain.doFilter(request,response);
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(1);
+            try { while(!response.isCommitted() && System.nanoTime()<deadline) Thread.sleep(10); }
+            catch(InterruptedException error) { Thread.currentThread().interrupt(); }
+            committedInsideChain=response.isCommitted();
+            response.setHeader("X-Late-Header","present"); unwound.countDown();
+        }
     }
     static class GatedEmitter extends SseEmitter {
         volatile boolean blocked;
@@ -206,7 +235,7 @@ class SseHttpIsolationTest {
     @RestController @org.springframework.boot.test.context.TestComponent static class Endpoint {
         final AnalysisStreamRegistry streams; final Gate gate;
         Endpoint(AnalysisStreamRegistry streams,Gate gate){this.streams=streams;this.gate=gate;}
-        @GetMapping(value={"/test/{id}","/preinit/{id}"},produces="text/event-stream")
+        @GetMapping(value={"/test/{id}","/preinit/{id}","/late/{id}"},produces="text/event-stream")
         SseEmitter stream(@PathVariable UUID id,@RequestParam String owner,jakarta.servlet.http.HttpServletRequest request) {
             var emitter=streams.register(id,owner);
             if(request.getRequestURI().startsWith("/preinit")) {
