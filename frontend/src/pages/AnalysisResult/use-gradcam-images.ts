@@ -10,9 +10,16 @@ export interface GradcamImage {
 
 type Loaded = Record<string, { objectUrl: string | null; status: 'ready' | 'error' }>
 
+// Entries belong to the frame list that loaded them: its cleanup revokes their object URLs, and an
+// <img> pointing at a revoked URL fails with net::ERR_FILE_NOT_FOUND.
+interface Frames {
+  key: string
+  loaded: Loaded
+}
+
 export function useGradcamImages(urls: string[]): GradcamImage[] {
   const key = urls.join('|')
-  const [loaded, setLoaded] = useState<Loaded>({})
+  const [frames, setFrames] = useState<Frames>({ key, loaded: {} })
 
   useEffect(() => {
     const list = key ? key.split('|') : []
@@ -21,6 +28,11 @@ export function useGradcamImages(urls: string[]): GradcamImage[] {
     const controller = new AbortController()
     const created: string[] = []
     let active = true
+    const settle = (url: string, entry: Loaded[string]) =>
+      setFrames((prev) => ({
+        key,
+        loaded: { ...(prev.key === key ? prev.loaded : {}), [url]: entry },
+      }))
 
     list.forEach((url) => {
       fetchArtifact(url, controller.signal)
@@ -28,11 +40,11 @@ export function useGradcamImages(urls: string[]): GradcamImage[] {
           if (!active) return
           const objectUrl = URL.createObjectURL(blob)
           created.push(objectUrl)
-          setLoaded((prev) => ({ ...prev, [url]: { objectUrl, status: 'ready' } }))
+          settle(url, { objectUrl, status: 'ready' })
         })
         .catch(() => {
           if (!active || controller.signal.aborted) return
-          setLoaded((prev) => ({ ...prev, [url]: { objectUrl: null, status: 'error' } }))
+          settle(url, { objectUrl: null, status: 'error' })
         })
     })
 
@@ -40,9 +52,12 @@ export function useGradcamImages(urls: string[]): GradcamImage[] {
       active = false
       controller.abort()
       created.forEach((objectUrl) => URL.revokeObjectURL(objectUrl))
+      // The same list may come back later; its old entries now hold revoked URLs.
+      setFrames((prev) => (prev.key === key ? { key: '', loaded: {} } : prev))
     }
   }, [key])
 
+  const loaded = frames.key === key ? frames.loaded : {}
   return (key ? key.split('|') : []).map((url) => {
     const entry = loaded[url]
     return entry
