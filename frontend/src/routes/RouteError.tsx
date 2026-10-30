@@ -16,6 +16,9 @@ export function RouteError() {
     <div role="alert">
       <h2>Coś poszło nie tak</h2>
       <p>Nie udało się wyświetlić tej strony.</p>
+      <button type="button" onClick={() => window.location.reload()}>
+        Odśwież stronę
+      </button>
     </div>
   )
 }

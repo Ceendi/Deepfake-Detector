@@ -104,3 +104,31 @@ describe('BatchQueue', () => {
     expect(onReset).toHaveBeenCalledOnce()
   })
 })
+
+it('does not render unchanged rows when another upload advances', () => {
+  const first = item('first.mp4', { status: 'uploading', progress: 10 })
+  const second = item('second.mp4')
+  const size = vi.spyOn(second.file, 'size', 'get')
+  const props = {
+    skipped: [],
+    started: true,
+    finished: false,
+    cancelling: false,
+    onStart: vi.fn(),
+    onCancelAll: vi.fn(),
+    onReset: vi.fn(),
+  }
+  const { rerender } = render(
+    <MemoryRouter>
+      <BatchQueue {...props} items={[first, second]} />
+    </MemoryRouter>,
+  )
+  expect(size).toHaveBeenCalledOnce()
+  rerender(
+    <MemoryRouter>
+      <BatchQueue {...props} items={[{ ...first, progress: 20 }, second]} />
+    </MemoryRouter>,
+  )
+  expect(size).toHaveBeenCalledOnce()
+  expect(row('first.mp4')).toHaveTextContent('20%')
+})

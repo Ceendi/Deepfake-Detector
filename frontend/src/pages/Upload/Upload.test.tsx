@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import Upload from './Upload'
@@ -7,6 +7,7 @@ import Upload from './Upload'
 vi.mock('@/api/files', () => ({ uploadFileWithProgress: vi.fn() }))
 vi.mock('@/api/analysis', () => ({
   startAnalysis: vi.fn(),
+  listAnalyses: vi.fn(),
   getAnalysis: vi.fn(),
   cancelAnalysis: vi.fn(),
 }))
@@ -14,6 +15,8 @@ vi.mock('@/api/stream', () => ({ streamAnalysis: vi.fn() }))
 vi.mock('./media-duration', () => ({ probeDuration: vi.fn(() => Promise.resolve(null)) }))
 
 import { uploadFileWithProgress } from '@/api/files'
+import { startAnalysis, listAnalyses } from '@/api/analysis'
+import { ApiError } from '@/api/errors'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -22,13 +25,13 @@ beforeEach(() => {
 })
 
 function renderUpload() {
-  const view = render(
-    <MemoryRouter>
-      <Upload />
-    </MemoryRouter>,
-  )
+  const router = createMemoryRouter([
+    { path: '/', element: <Upload /> },
+    { path: '/history', element: <h1>History destination</h1> },
+  ])
+  const view = render(<RouterProvider router={router} />)
   const input = view.container.querySelector('input[type="file"]') as HTMLInputElement
-  return { ...view, input }
+  return { ...view, input, router }
 }
 
 function pick(input: HTMLInputElement, file: File) {
@@ -176,4 +179,80 @@ it('prevents browser navigation when a file is dropped outside the dropzone', ()
   Object.defineProperty(after, 'dataTransfer', { value: { types: ['Files'] } })
   document.body.dispatchEvent(after)
   expect(after.defaultPrevented).toBe(false)
+})
+
+it.each([false, true])(
+  'blocks navigation during sending (batch=%s), allows staying and confirmed leaving',
+  async (batch) => {
+    vi.mocked(uploadFileWithProgress).mockReturnValue(new Promise(() => {}))
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true
+    }
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false
+    }
+    const { input, router } = renderUpload()
+    fireEvent.change(input, {
+      target: {
+        files: batch
+          ? [new File(['x'], 'a.mp4'), new File(['x'], 'b.mp4')]
+          : [new File(['x'], 'a.mp4')],
+      },
+    })
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole('button', { name: batch ? /Analizuj wszystkie/ : /Analizuj plik/ }),
+      ),
+    )
+    await act(async () => {
+      void router.navigate('/history')
+    })
+    expect(screen.getByRole('dialog')).toHaveTextContent('Opuścić stronę?')
+    expect(screen.queryByText('History destination')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Zostań' }))
+    expect(router.state.location.pathname).toBe('/')
+    await act(async () => {
+      void router.navigate('/history')
+    })
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Opuść stronę' })))
+    expect(screen.getByText('History destination')).toBeInTheDocument()
+  },
+)
+
+it('directs an uncertain start to history and never offers another POST', async () => {
+  vi.mocked(uploadFileWithProgress).mockResolvedValue({
+    fileId: 'file',
+    fileKey: 'key',
+    size: 1,
+    mimetype: 'video/mp4',
+  })
+  vi.mocked(startAnalysis).mockRejectedValue(new TypeError('lost response'))
+  vi.mocked(listAnalyses).mockResolvedValue({
+    content: [],
+    page: { number: 0, size: 100, totalPages: 1, totalElements: 0 },
+  })
+  const { input } = renderUpload()
+  pick(input, new File(['x'], 'a.mp4'))
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /Analizuj plik/ })))
+  expect(screen.getByRole('alert')).toHaveTextContent('Sprawdź historię')
+  expect(screen.queryByRole('button', { name: 'Spróbuj ponownie' })).not.toBeInTheDocument()
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Sprawdź historię' })))
+  expect(screen.getByText('History destination')).toBeInTheDocument()
+  expect(startAnalysis).toHaveBeenCalledOnce()
+})
+it('offers a fresh preview after a missing upload is reported', async () => {
+  vi.mocked(uploadFileWithProgress).mockResolvedValue({
+    fileId: 'file',
+    fileKey: 'key',
+    size: 1,
+    mimetype: 'video/mp4',
+  })
+  vi.mocked(startAnalysis).mockRejectedValue(new ApiError({ status: 404, message: 'gone' }))
+  const { input } = renderUpload()
+  pick(input, new File(['x'], 'a.mp4'))
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: /Analizuj plik/ })))
+  expect(screen.getByRole('alert')).toHaveTextContent('Nie znaleziono przesłanego pliku')
+  fireEvent.click(screen.getByRole('button', { name: 'Spróbuj ponownie' }))
+  expect(screen.getByRole('button', { name: /Analizuj plik/ })).toBeInTheDocument()
+  expect(startAnalysis).toHaveBeenCalledOnce()
 })

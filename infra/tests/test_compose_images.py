@@ -130,6 +130,11 @@ class ComposeImagesTest(unittest.TestCase):
         # The browser must be sent to the same Keycloak URL that tokens are issued for.
         self.assertEqual(self.services['keycloak']['environment']['KC_HOSTNAME'],
                          frontend['environment']['KEYCLOAK_URL'])
+        # CSP media-src must follow the host that presigned preview URLs are issued for.
+        endpoint = 'https://media.example.test/s3'
+        services = compose_config(STORAGE_PUBLIC_ENDPOINT=endpoint)['services']
+        self.assertEqual(endpoint, services['file-service']['environment']['STORAGE_PUBLIC_ENDPOINT'])
+        self.assertEqual(endpoint, services['frontend']['environment']['MEDIA_URL'])
         origin = 'http://localhost:' + port['published']
         for variant in ('realm-export.json', 'dev/realm-export.json'):
             realm = json.loads((ROOT / 'infra/keycloak' / variant).read_text())

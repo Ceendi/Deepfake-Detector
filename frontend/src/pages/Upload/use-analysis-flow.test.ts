@@ -8,13 +8,14 @@ import { useAnalysisFlow } from './use-analysis-flow'
 vi.mock('@/api/files', () => ({ uploadFileWithProgress: vi.fn() }))
 vi.mock('@/api/analysis', () => ({
   startAnalysis: vi.fn(),
+  listAnalyses: vi.fn(),
   getAnalysis: vi.fn(),
   cancelAnalysis: vi.fn(),
 }))
 vi.mock('@/api/stream', () => ({ streamAnalysis: vi.fn() }))
 
 import { uploadFileWithProgress } from '@/api/files'
-import { startAnalysis, getAnalysis, cancelAnalysis } from '@/api/analysis'
+import { startAnalysis, getAnalysis, cancelAnalysis, listAnalyses } from '@/api/analysis'
 import { streamAnalysis } from '@/api/stream'
 
 let streamHandlers: {
@@ -556,5 +557,43 @@ describe('useAnalysisFlow', () => {
     expect(result.current.cancelling).toBe(false)
     expect(result.current.cancelError).toBe('Nie udało się anulować analizy. Spróbuj ponownie.')
     expect(result.current.state.name).toBe('analyzing')
+  })
+})
+
+it.each([502, 504, 500, 0])(
+  'recovers ambiguous POST (%s) by fileId without creating a duplicate',
+  async (status) => {
+    vi.mocked(startAnalysis).mockRejectedValueOnce(
+      status ? new ApiError({ status, message: 'lost' }) : new TypeError('Failed to fetch'),
+    )
+    vi.mocked(listAnalyses).mockResolvedValue({
+      content: [analysis()],
+      page: { number: 0, size: 100, totalPages: 1, totalElements: 1 },
+    })
+    vi.mocked(getAnalysis).mockResolvedValue(analysis())
+    const { result } = renderFlow()
+    await startUntilAnalyzing(result)
+    expect(result.current.state).toEqual({ name: 'analyzing', analysisId: 'an-1' })
+    expect(startAnalysis).toHaveBeenCalledOnce()
+  },
+)
+it('does not offer a new POST when an ambiguous start cannot be recovered', async () => {
+  vi.mocked(startAnalysis).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+  vi.mocked(listAnalyses).mockResolvedValue({
+    content: [],
+    page: { number: 0, size: 100, totalPages: 1, totalElements: 0 },
+  })
+  const { result } = renderFlow()
+  await startUntilAnalyzing(result)
+  expect(result.current.state).toMatchObject({ name: 'failed', retry: 'history' })
+  act(() => result.current.retry())
+  expect(startAnalysis).toHaveBeenCalledOnce()
+})
+it('explains that a start 404 refers to the uploaded file', async () => {
+  vi.mocked(startAnalysis).mockRejectedValueOnce(new ApiError({ status: 404, message: 'gone' }))
+  const { result } = renderFlow()
+  await startUntilAnalyzing(result)
+  expect(result.current.state).toMatchObject({
+    message: 'Nie znaleziono przesłanego pliku — wgraj go ponownie.',
   })
 })

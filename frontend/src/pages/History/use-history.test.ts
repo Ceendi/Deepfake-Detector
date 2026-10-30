@@ -92,3 +92,55 @@ describe('useHistory', () => {
     expect(result.current.state).toBe('loading')
   })
 })
+
+it('limits concurrent history requests to two', async () => {
+  vi.mocked(listAnalyses).mockReset()
+  let active = 0
+  let peak = 0
+  vi.mocked(listAnalyses).mockImplementation(async (page) => {
+    active++
+    peak = Math.max(peak, active)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    active--
+    return paged([summary(String(page))], 8)
+  })
+  const { result } = renderHook(() => useHistory())
+  await waitFor(() => expect(result.current.state).toBe('ready'))
+  expect(peak).toBeLessThanOrEqual(2)
+  expect(result.current.items.map((i) => i.id)).toEqual(['0', '1', '2', '3', '4', '5', '6', '7'])
+})
+it('waits for Retry-After on a history 429 and retries the rejected page', async () => {
+  vi.mocked(listAnalyses).mockReset()
+  vi.useFakeTimers()
+  try {
+    vi.mocked(listAnalyses)
+      .mockRejectedValueOnce(new ApiError({ status: 429, message: 'busy', retryAfterSeconds: 2 }))
+      .mockResolvedValue(paged([summary('a')], 1))
+    const view = renderHook(() => useHistory())
+    await act(async () => {})
+    expect(view.result.current.state).toBe('loading')
+    await act(() => vi.advanceTimersByTimeAsync(1999))
+    expect(listAnalyses).toHaveBeenCalledTimes(1)
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(view.result.current.state).toBe('ready')
+    view.unmount()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('cancels a Retry-After wait on unmount without another request', async () => {
+  vi.mocked(listAnalyses).mockReset()
+  vi.useFakeTimers()
+  try {
+    vi.mocked(listAnalyses).mockRejectedValue(new ApiError({ status: 429, message: 'busy' }))
+    const view = renderHook(() => useHistory())
+    await act(async () => {})
+    view.unmount()
+    await act(() => vi.advanceTimersByTimeAsync(60000))
+    expect(listAnalyses).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    vi.useRealTimers()
+  }
+})

@@ -1,3 +1,20 @@
+# Relative API paths use 'self'; absolute URLs contribute only their origin to CSP.
+map "${API_BASE_URL}" $api_csp_source {
+    default "";
+    "~^(https?://[^/]+)" $1;
+}
+
+map "${KEYCLOAK_URL}" $keycloak_csp_source {
+    default "";
+    "~^(https?://[^/]+)" $1;
+}
+
+# A path in the presigned-URL endpoint would limit media-src to that exact path.
+map "${MEDIA_URL}" $media_csp_source {
+    default "";
+    "~^(https?://[^/]+)" $1;
+}
+
 server {
     listen 8080;
     server_name _;
@@ -6,6 +23,7 @@ server {
 
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; script-src 'self' 'sha256-__THEME_SCRIPT_HASH__'; style-src 'self' 'unsafe-inline'; connect-src 'self' $api_csp_source $keycloak_csp_source; frame-src 'self' $keycloak_csp_source; img-src 'self' blob: data:; media-src 'self' blob: $media_csp_source; form-action 'self';" always;
 
     location = /healthz {
         access_log off;
@@ -20,6 +38,7 @@ server {
         add_header Cache-Control "no-store" always;
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; script-src 'self' 'sha256-__THEME_SCRIPT_HASH__'; style-src 'self' 'unsafe-inline'; connect-src 'self' $api_csp_source $keycloak_csp_source; frame-src 'self' $keycloak_csp_source; img-src 'self' blob: data:; media-src 'self' blob: $media_csp_source; form-action 'self';" always;
         return 200 'window.__APP_CONFIG__ = {"apiBaseUrl": "${API_BASE_URL}", "keycloakUrl": "${KEYCLOAK_URL}", "keycloakRealm": "${KEYCLOAK_REALM}", "keycloakClientId": "${KEYCLOAK_CLIENT_ID}"};\n';
     }
 
@@ -37,13 +56,24 @@ server {
         proxy_buffering off;
         proxy_read_timeout 1h;
         # Same cap as file-service; stream uploads straight to the gateway.
-        client_max_body_size 500m;
+        client_max_body_size 501m;
         proxy_request_buffering off;
+    }
+
+    # Keycloak redirects its hidden frame here to notify the same-origin parent.
+    location = /silent-check-sso.html {
+        add_header Cache-Control "no-store" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Content-Security-Policy "default-src 'none'; script-src 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none';" always;
+        try_files $uri =404;
     }
 
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";
         add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; script-src 'self' 'sha256-__THEME_SCRIPT_HASH__'; style-src 'self' 'unsafe-inline'; connect-src 'self' $api_csp_source $keycloak_csp_source; frame-src 'self' $keycloak_csp_source; img-src 'self' blob: data:; media-src 'self' blob: $media_csp_source; form-action 'self';" always;
         try_files $uri =404;
     }
 
@@ -51,6 +81,7 @@ server {
         add_header Cache-Control "no-cache";
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy strict-origin-when-cross-origin always;
+        add_header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'; script-src 'self' 'sha256-__THEME_SCRIPT_HASH__'; style-src 'self' 'unsafe-inline'; connect-src 'self' $api_csp_source $keycloak_csp_source; frame-src 'self' $keycloak_csp_source; img-src 'self' blob: data:; media-src 'self' blob: $media_csp_source; form-action 'self';" always;
         try_files $uri /index.html;
     }
 }

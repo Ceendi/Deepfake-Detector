@@ -521,6 +521,8 @@ services:
     environment:
       # Read by the browser (/config.js), so it is the published Keycloak URL, as in KC_HOSTNAME.
       KEYCLOAK_URL: http://localhost:${KEYCLOAK_PORT:-8180}
+      # CSP media-src must allow the host that file-service signs preview URLs for.
+      MEDIA_URL: ${STORAGE_PUBLIC_ENDPOINT:-http://localhost:8333}
     ports:
       # Default 4173 is already an allowed origin of the deepfake-web client in the realm.
       - "127.0.0.1:${FRONTEND_PORT:-4173}:8080"

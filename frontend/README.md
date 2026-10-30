@@ -59,3 +59,12 @@ kontekst `frontend/`); po zmianie motywu: `docker compose up -d --build keycloak
 - **Błędy API:** `UPLOAD_USER_LIMIT` (429) ma osobny komunikat, `MEDIA_TOO_LONG`
   i `UNSUPPORTED_MEDIA` są rozpoznawane w polu `code` i w prefiksie `[KOD]` komunikatu 422,
   a techniczne komunikaty 400/409/503 mają polskie odpowiedniki.
+
+### Content Security Policy
+
+The production nginx image rejects framing and limits scripts to the same origin and the hash of
+its built inline theme script. The image generates the hash from `dist/index.html` during the build.
+`API_BASE_URL` and `KEYCLOAK_URL` configure allowed connections; Frames are limited to this origin and Keycloak
+(for silent SSO). Only `/silent-check-sso.html` permits same-origin framing; the application rejects it. `MEDIA_URL` contributes its origin to `media-src`;
+Compose sets it from file-service's `STORAGE_PUBLIC_ENDPOINT` (default `http://localhost:8333`). Inline styles remain allowed
+for dynamic progress and media controls. The Vite development server does not serve this policy.

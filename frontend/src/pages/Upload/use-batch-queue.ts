@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { cancelAnalysis, startAnalysis } from '@/api/analysis'
+import { cancelAnalysis } from '@/api/analysis'
+import { startAnalysisSafely } from '@/api/start-analysis-safely'
 import { CANCEL_FAILED_MESSAGE, cancelAndSettle } from '@/api/cancel-analysis'
 import { analysisFailureMessage } from '@/api/error-codes'
 import { ApiError } from '@/api/errors'
@@ -44,6 +45,7 @@ type Step = 'upload' | 'analysis'
 type Source = AnalysisProgressEvent['source']
 
 interface Job {
+  uploadFailures?: number
   durationChecked?: boolean
   uploaded?: { fileId: string; type: AnalysisType }
   controller?: AbortController
@@ -229,7 +231,12 @@ export function useBatchQueue() {
       const { fileId, mimetype } = await uploadFileWithProgress(file, {
         signal,
         onProgress: (pct) => {
-          if (!signal.aborted) update(key, { progress: pct })
+          const progress = Math.round(pct)
+          if (
+            !signal.aborted &&
+            itemsRef.current.find((item) => item.key === key)?.progress !== progress
+          )
+            update(key, { progress })
         },
       })
       signal.throwIfAborted()
@@ -238,7 +245,12 @@ export function useBatchQueue() {
       update(key, { status: 'queued', progress: undefined })
     } catch (error) {
       if (signal.aborted) return // "cancel all" or unmount already decided the item's state
-      const wait = pauseFor('upload', error)
+      const exhausted =
+        error instanceof ApiError &&
+        error.status === 503 &&
+        error.code !== 'UPLOAD_USER_LIMIT' &&
+        (job.uploadFailures = (job.uploadFailures ?? 0) + 1) >= 5
+      const wait = exhausted ? null : pauseFor('upload', error)
       if (wait === null) fail(key, messageForError(error))
       else update(key, { status: 'pending', progress: undefined, message: waitMessage(wait) })
     } finally {
@@ -258,11 +270,11 @@ export function useBatchQueue() {
 
     let analysis: Analysis
     try {
-      analysis = await startAnalysis(uploaded)
+      analysis = await startAnalysisSafely(uploaded, signal)
     } catch (error) {
       if (signal.aborted) return
       const wait = pauseFor('analysis', error)
-      if (wait === null) fail(key, messageForError(error))
+      if (wait === null) fail(key, messageForError(error, 'start'))
       else update(key, { status: 'queued', message: waitMessage(wait) })
       pump()
       return

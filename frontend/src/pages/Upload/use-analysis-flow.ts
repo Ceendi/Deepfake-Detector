@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { uploadFileWithProgress } from '@/api/files'
-import { startAnalysis, cancelAnalysis } from '@/api/analysis'
+import { cancelAnalysis } from '@/api/analysis'
+import { canRetryStart, startAnalysisSafely } from '@/api/start-analysis-safely'
 import { CANCEL_FAILED_MESSAGE, cancelAndSettle } from '@/api/cancel-analysis'
-import { ApiError } from '@/api/errors'
+import { ApiError, UncertainStartError } from '@/api/errors'
 import { AnalysisAgeLimitError, watchAnalysis } from '@/api/watch-analysis'
 import { analysisFailureMessage } from '@/api/error-codes'
 import type { Analysis, AnalysisProgressEvent, AnalysisStatus, AnalysisType } from '@/api/types'
@@ -24,7 +25,7 @@ export type FlowState =
   | { name: 'starting' }
   | { name: 'analyzing'; analysisId: string }
   | { name: 'stillRunning'; analysisId: string; watching: boolean; timedOut?: boolean }
-  | { name: 'failed'; message: string; retry: 'start' | 'reset' }
+  | { name: 'failed'; message: string; retry: 'start' | 'reset' | 'history' }
 
 // Distinguishes the user's cancel from unmount: only the former cancels a just-created analysis.
 const USER_CANCEL = new DOMException('Cancelled by user', 'AbortError')
@@ -92,7 +93,7 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
 
     let analysis: Analysis
     try {
-      analysis = await startAnalysis({ fileId, type })
+      analysis = await startAnalysisSafely({ fileId, type }, signal)
     } catch (err) {
       if (signal.aborted) return
       // 404: the upload is gone, so only a fresh upload can help.
@@ -100,8 +101,9 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
       if (missingFile) uploadedRef.current = null
       return setState({
         name: 'failed',
-        message: messageForError(err),
-        retry: missingFile ? 'reset' : 'start',
+        message: messageForError(err, 'start'),
+        retry:
+          err instanceof UncertainStartError ? 'history' : canRetryStart(err) ? 'start' : 'reset',
       })
     }
     if (signal.aborted) {
@@ -188,6 +190,7 @@ export function useAnalysisFlow(onComplete: (analysisId: string) => void) {
   }
 
   function retry() {
+    if (state.name === 'failed' && state.retry === 'history') return
     const uploaded = uploadedRef.current
     if (state.name === 'failed' && state.retry === 'start' && uploaded) {
       void launch(uploaded.fileId, uploaded.type, begin())

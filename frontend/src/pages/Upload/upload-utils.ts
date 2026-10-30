@@ -1,4 +1,4 @@
-import { ApiError } from '@/api/errors'
+import { ApiError, UncertainStartError } from '@/api/errors'
 import { MAX_MEDIA_DURATION_SECONDS, messageForCode, parseErrorMessage } from '@/api/error-codes'
 import type { AnalysisType } from '@/api/types'
 
@@ -94,7 +94,8 @@ export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'
 }
 
-export function messageForError(err: unknown): string {
+export function messageForError(err: unknown, step?: 'start'): string {
+  if (err instanceof UncertainStartError) return err.message
   if (err instanceof ApiError) {
     if (err.status === 413) return 'Plik jest za duży — maksymalny rozmiar to 500 MB.'
     if (err.status === 422) return messageForCode(err.code) ?? invalidFileMessage(err.message)
@@ -108,7 +109,10 @@ export function messageForError(err: unknown): string {
       }
       return 'Zbyt wiele żądań. Odczekaj chwilę i spróbuj ponownie.'
     }
-    if (err.status === 404) return 'Nie znaleziono analizy.'
+    if (err.status === 404)
+      return step === 'start'
+        ? 'Nie znaleziono przesłanego pliku — wgraj go ponownie.'
+        : 'Nie znaleziono analizy.'
     if (err.status === 401) return 'Sesja wygasła. Zaloguj się ponownie.'
     const known = messageForCode(err.code) ?? messageForCode(parseErrorMessage(err.message).code)
     if (known) return known

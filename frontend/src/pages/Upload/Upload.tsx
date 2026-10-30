@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { useNavigate } from 'react-router-dom'
+import { useBlocker, useNavigate } from 'react-router-dom'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog/ConfirmDialog'
 
 import { ACCEPT_ATTR, validateDuration, validateFile } from './upload-utils'
 import { useAnalysisFlow } from './use-analysis-flow'
@@ -37,6 +38,7 @@ export default function Upload() {
   }, [previewUrl])
 
   const uploading = flow.state.name === 'uploading' || batch.sending
+  const blocker = useBlocker(uploading)
   useEffect(() => {
     if (!uploading) return
     function warn(event: BeforeUnloadEvent) {
@@ -115,6 +117,16 @@ export default function Upload() {
 
   return (
     <div className={styles.page}>
+      <ConfirmDialog
+        open={blocker.state === 'blocked'}
+        title="Opuścić stronę?"
+        confirmLabel="Opuść stronę"
+        cancelLabel="Zostań"
+        onConfirm={() => blocker.state === 'blocked' && blocker.proceed()}
+        onCancel={() => blocker.state === 'blocked' && blocker.reset()}
+      >
+        Niewysłane pliki zostaną pominięte. Rozpoczęte analizy znajdziesz w historii.
+      </ConfirmDialog>
       <header className={styles.head}>
         <h1>Nowa analiza</h1>
         <p className={styles.subtitle}>
@@ -158,7 +170,14 @@ export default function Upload() {
 
   function renderFlow(file: File, previewUrl: string) {
     if (flow.state.name === 'failed') {
-      return <FailedState message={flow.state.message} onRetry={flow.retry} />
+      const uncertain = flow.state.retry === 'history'
+      return (
+        <FailedState
+          message={flow.state.message}
+          retryLabel={uncertain ? 'Sprawdź historię' : undefined}
+          onRetry={uncertain ? () => navigate('/history') : flow.retry}
+        />
+      )
     }
 
     return (
